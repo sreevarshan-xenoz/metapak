@@ -1,10 +1,10 @@
-# Maintainer: Your Name <your.email@example.com>
+Maintainer: sreevarshan <sreevarshan1511@gmail.com>
 pkgname=arch-tui
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="A unified TUI for Arch Linux package management (Pacman + AUR)"
 arch=('x86_64')
-url="https://github.com/yourusername/arch-tui"
+url="https://github.com/sreevarshan-xenoz/arch-tui"
 license=('MIT')
 depends=('gcc-libs' 'openssl' 'pacman')
 makedepends=('cargo' 'git')
