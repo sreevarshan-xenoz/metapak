@@ -1,4 +1,4 @@
-Maintainer: sreevarshan <sreevarshan1511@gmail.com>
+# Maintainer: sreevarshan <sreevarshan1511@gmail.com>
 pkgname=arch-tui
 pkgver=0.1.0
 pkgrel=1
