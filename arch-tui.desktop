@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Arch TUI
+Comment=Unified Arch Linux Package Manager
+Exec=arch-tui
+Icon=utilities-terminal
+Terminal=true
+Categories=System;TerminalEmulator;Filesystem;
+Keywords=arch;pacman;aur;package;manager;
