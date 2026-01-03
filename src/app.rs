@@ -18,6 +18,7 @@ pub struct App {
     pub selected_index: Option<usize>,
     pub pending_command: Option<(String, Vec<String>)>,
     pub error_message: Option<String>,
+    pub available_updates: Option<usize>,
     // Password Prompt
     pub show_password_prompt: bool,
     pub password_input: String,
@@ -47,6 +48,7 @@ impl App {
             selected_index: None,
             pending_command: None,
             error_message: None,
+            available_updates: None,
             
             // Start with password prompt
             show_password_prompt: true, 

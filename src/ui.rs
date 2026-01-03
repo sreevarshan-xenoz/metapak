@@ -1,6 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
@@ -88,25 +89,30 @@ pub fn render(app: &App, f: &mut Frame) {
 
     // Password Popup
     if app.show_password_prompt {
-        let block = Block::default().title("Sudo Password Required").borders(Borders::ALL);
-        let area = centered_rect(60, 20, f.size());
+        let block = Block::default()
+            .title("Sudo Password Required")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::Black));
+        let area = centered_rect(60, 30, f.size());
         
         f.render_widget(ratatui::widgets::Clear, area);
         f.render_widget(block, area);
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(3)].as_ref())
+            .constraints([Constraint::Length(2), Constraint::Length(3)].as_ref())
             .margin(2)
             .split(area);
             
-        let msg = Paragraph::new("Please enter your sudo password:");
+        let msg = Paragraph::new("Please enter your sudo password:")
+            .style(Style::default().fg(Color::White));
         f.render_widget(msg, layout[0]);
         
         let width = app.password_input.len();
-        let masked: String = "*".repeat(width);
+        let masked: String = format!("{}█", "*".repeat(width)); // Cursor indicator
         let input = Paragraph::new(masked)
-            .block(Block::default().borders(Borders::ALL).style(Style::default().fg(Color::Yellow)));
+            .style(Style::default().fg(Color::Yellow))
+            .block(Block::default().borders(Borders::ALL).title("Password"));
         f.render_widget(input, layout[1]);
         return;
     }
@@ -159,8 +165,32 @@ pub fn render(app: &App, f: &mut Frame) {
             .block(Block::default().borders(Borders::ALL).title("Error"));
         f.render_widget(footer, chunks[2]);
     } else {
-        let footer = Paragraph::new("Esc: Quit | /: Search | Enter: Install")
-            .style(Style::default().fg(Color::Gray))
+        let update_status = match app.available_updates {
+            Some(0) => "Up to Date".to_string(),
+            Some(n) => format!("Updates: {}", n),
+            None => "Checking...".to_string(),
+        };
+        
+        let update_color = match app.available_updates {
+            Some(n) if n > 0 => Color::Yellow,
+            Some(0) => Color::Green,
+            _ => Color::Gray,
+        };
+
+        let footer_line = Line::from(vec![
+            Span::styled("Esc", Style::default().fg(Color::Cyan)),
+            Span::raw(": Quit | "),
+            Span::styled("/", Style::default().fg(Color::Cyan)),
+            Span::raw(": Search | "),
+            Span::styled("Enter", Style::default().fg(Color::Cyan)),
+            Span::raw(": Install | "),
+            Span::styled("u", Style::default().fg(Color::Cyan)),
+            Span::raw(": Update System ("),
+            Span::styled(update_status, Style::default().fg(update_color)),
+            Span::raw(")"),
+        ]);
+        
+        let footer = Paragraph::new(footer_line)
             .block(Block::default().borders(Borders::ALL).title("Status"));
         f.render_widget(footer, chunks[2]);
     }

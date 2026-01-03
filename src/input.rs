@@ -1,8 +1,13 @@
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyEventKind};
 use crate::app::{App, InputMode};
 
 pub fn handle_event(app: &mut App, event: Event) {
     if let Event::Key(key) = event {
+        // Only handle key press events, not release or repeat
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        
         // Global: Password Prompt Handling
         if app.show_password_prompt {
            match key.code {
@@ -109,6 +114,13 @@ pub fn handle_event(app: &mut App, event: Event) {
                 KeyCode::Tab => {
                     app.toggle_selection();
                 },
+                KeyCode::Char('u') => {
+                    app.show_console = true;
+                    app.console_buffer.clear();
+                    if let Some(tx) = &app.action_tx {
+                        let _ = tx.send(crate::action::Action::SystemUpdate);
+                    }
+                }
                 KeyCode::Enter => {
                     // Check batch first
                     if !app.selected_packages.is_empty() {

@@ -39,6 +39,9 @@ async fn main() -> Result<()> {
     let mut app = App::new();
     app.set_sender(action_tx.clone());
 
+    // Initial check for updates
+    let _ = action_tx.send(Action::CheckUpdates);
+
     // Spawn Background Task
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
@@ -108,6 +111,53 @@ async fn main() -> Result<()> {
                     });
                 }
                 Action::CommandInput(_) => {}
+                Action::CheckUpdates => {
+                    let result_tx_clone = result_tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Ok(count) = crate::pacman::check_updates() {
+                            let _ = result_tx_clone.send(ActionResult::UpdateCount(count));
+                        }
+                    });
+                }
+                Action::SystemUpdate => {
+                    let result_tx_clone = result_tx.clone();
+                    let action_tx_clone = action_tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let helper = crate::utils::get_aur_helper();
+                        // For system update, we use -Syu
+                        // If it's a helper like paru/yay, it handles both repo and AUR
+                        let mut cmd = std::process::Command::new("sh");
+                        let full_cmd = if helper == "sudo pacman" {
+                            "sudo pacman -Syu --noconfirm".to_string()
+                        } else {
+                            format!("{} -Syu --noconfirm", helper)
+                        };
+                        
+                        cmd.arg("-c").arg(&full_cmd);
+                        cmd.stdout(Stdio::piped());
+                        cmd.stderr(Stdio::piped());
+                        
+                        match cmd.spawn() {
+                            Ok(mut child) => {
+                                if let Some(stdout) = child.stdout.take() {
+                                    let reader = BufReader::new(stdout);
+                                    for line in reader.lines() {
+                                        if let Ok(l) = line {
+                                            let _ = result_tx_clone.send(ActionResult::CommandOutput(l));
+                                        }
+                                    }
+                                }
+                                let _ = child.wait();
+                                let _ = result_tx_clone.send(ActionResult::CommandFinished);
+                                // After update, check again
+                                let _ = action_tx_clone.send(Action::CheckUpdates);
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone.send(ActionResult::Error(e.to_string()));
+                            }
+                        }
+                    });
+                }
             }
         }
     });
@@ -171,6 +221,9 @@ async fn main() -> Result<()> {
                 }
                 ActionResult::CommandFinished => {
                     app.console_buffer.push("----- Process Finished (Press 'q' or 'Esc' to close) -----".to_string());
+                }
+                ActionResult::UpdateCount(count) => {
+                    app.available_updates = Some(count);
                 }
             }
         }

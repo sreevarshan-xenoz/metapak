@@ -4,6 +4,8 @@ use crate::models::Package;
 pub enum Action {
     Search(String),
     InitSudo(String), 
+    CheckUpdates,
+    SystemUpdate,
     RunCommand { prog: String, args: Vec<String> },
     CommandInput(String),
 }
@@ -14,5 +16,6 @@ pub enum ActionResult {
     SudoResult(bool),
     CommandOutput(String),
     CommandFinished,
+    UpdateCount(usize),
     Error(String),
 }

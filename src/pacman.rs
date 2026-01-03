@@ -55,3 +55,26 @@ pub fn is_installed(pkg_name: &str) -> bool {
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
+
+pub fn check_updates() -> Result<usize> {
+    // Try checkupdates first (from pacman-contrib)
+    if let Ok(output) = Command::new("checkupdates").output() {
+        if output.status.success() {
+            let stdout = String::from_utf8(output.stdout)?;
+            return Ok(stdout.lines().count());
+        }
+    }
+    
+    // Fallback to pacman -Qu (checks against local DB, which might be stale but better than nothing if checkupdates missing)
+    let output = Command::new("pacman")
+        .arg("-Qu")
+        .output()?;
+        
+    if output.status.success() {
+         let stdout = String::from_utf8(output.stdout)?;
+         return Ok(stdout.lines().count());
+    }
+    
+    // If it fails (e.g. no updates or error), return 0
+    Ok(0)
+}
