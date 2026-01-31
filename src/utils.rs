@@ -1,13 +1,35 @@
 use std::process::{Command, Stdio};
 use std::io::Write;
+use crate::errors::AppError;
+use crate::config::AppConfig;
 
-pub fn get_aur_helper() -> &'static str {
-    if check_command("paru") {
-        "paru"
-    } else if check_command("yay") {
-        "yay"
-    } else {
-        "pacman" 
+pub fn get_aur_helper(configured_helper: Option<&str>) -> &'static str {
+    match configured_helper {
+        Some("paru") => {
+            if check_command("paru") {
+                "paru"
+            } else {
+                "pacman"
+            }
+        },
+        Some("yay") => {
+            if check_command("yay") {
+                "yay"
+            } else {
+                "pacman"
+            }
+        },
+        Some("pacman") => "pacman",
+        Some("auto") | None => {
+            if check_command("paru") {
+                "paru"
+            } else if check_command("yay") {
+                "yay"
+            } else {
+                "pacman"
+            }
+        },
+        _ => "pacman", // Default fallback
     }
 }
 
