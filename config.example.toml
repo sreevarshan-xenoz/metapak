@@ -1,0 +1,18 @@
+# Arch-TUI Configuration File
+#
+# Copy this file to ~/.config/arch-tui/config.toml to customize your settings
+
+[aur]
+# Specify which AUR helper to use: "auto", "paru", "yay", or "pacman"
+helper = "auto"
+
+[theme]
+primary_color = "blue"
+secondary_color = "yellow"
+accent_color = "green"
+
+[keyboard]
+quit = "q"
+search = "/"
+install = "enter"
+toggle_selection = "tab"
