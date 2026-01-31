@@ -33,95 +33,134 @@ pub fn handle_event(app: &mut App, event: Event) {
         }
 
         if app.show_confirm_prompt {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    app.show_confirm_prompt = false;
-                    app.show_console = true;
-                    app.console_buffer.clear();
-                    
-                    let packages = std::mem::take(&mut app.packages_pending_confirmation);
-                    if !packages.is_empty() {
-                        // Partition into installs and removes
-                        let (removes, installs): (Vec<&crate::models::Package>, Vec<&crate::models::Package>) = 
-                            packages.iter().partition(|p| p.is_installed);
-                            
-                        let mut commands = Vec::new();
-                        
-                        // Handle Removes
-                        if !removes.is_empty() {
-                            let mut args = vec!["pacman".to_string(), "-Rns".to_string(), "--noconfirm".to_string()];
-                            for p in removes {
-                                args.push(p.name.clone());
-                            }
-                            commands.push(format!("sudo {}", args.join(" ")));
+            // Use 'y' for yes and 'n' for no by default, but could be configurable
+            if matches!(key.code, KeyCode::Char('y')) || key.code == KeyCode::Enter {
+                app.show_confirm_prompt = false;
+                app.show_console = true;
+                app.console_buffer.clear();
+
+                let packages = std::mem::take(&mut app.packages_pending_confirmation);
+                if !packages.is_empty() {
+                    // Partition into installs and removes
+                    let (removes, installs): (Vec<&crate::models::Package>, Vec<&crate::models::Package>) =
+                        packages.iter().partition(|p| p.is_installed);
+
+                    let mut commands = Vec::new();
+
+                    // Handle Removes
+                    if !removes.is_empty() {
+                        let mut args = vec!["pacman".to_string(), "-Rns".to_string(), "--noconfirm".to_string()];
+                        for p in removes {
+                            args.push(p.name.clone());
                         }
-                        
-                        // Handle Installs
-                        if !installs.is_empty() {
-                            // Check if any is AUR
-                            let use_aur_helper = installs.iter().any(|p| matches!(p.source, crate::models::PackageSource::Aur));
-                            let helper = crate::utils::get_aur_helper();
-                            
-                            let prog = if use_aur_helper { helper } else { "sudo pacman" };
-                            let mut args = vec!["-S".to_string(), "--noconfirm".to_string()];
-                            
-                            for p in installs {
-                                args.push(p.name.clone());
-                            }
-                            commands.push(format!("{} {}", prog, args.join(" ")));
+                        commands.push(format!("sudo {}", args.join(" ")));
+                    }
+
+                    // Handle Installs
+                    if !installs.is_empty() {
+                        // Check if any is AUR
+                        let use_aur_helper = installs.iter().any(|p| matches!(p.source, crate::models::PackageSource::Aur));
+                        let helper = crate::utils::get_aur_helper(Some(&app.config.aur_helper));
+
+                        let prog = if use_aur_helper { helper } else { "sudo pacman" };
+                        let mut args = vec!["-S".to_string(), "--noconfirm".to_string()];
+
+                        for p in installs {
+                            args.push(p.name.clone());
                         }
-                        
-                        // Combine commands
-                        if !commands.is_empty() {
-                            let full_cmd = commands.join(" && ");
-                            // Clear selection after action
-                            app.selected_packages.clear();
-                            
-                            if let Some(tx) = &app.action_tx {
-                                 let _ = tx.send(crate::action::Action::RunCommand { 
-                                     prog: "sh".to_string(), 
-                                     args: vec!["-c".to_string(), full_cmd] 
-                                 });
-                            }
+                        commands.push(format!("{} {}", prog, args.join(" ")));
+                    }
+
+                    // Combine commands
+                    if !commands.is_empty() {
+                        let full_cmd = commands.join(" && ");
+                        // Clear selection after action
+                        app.selected_packages.clear();
+
+                        if let Some(tx) = &app.action_tx {
+                             let _ = tx.send(crate::action::Action::RunCommand {
+                                 prog: "sh".to_string(),
+                                 args: vec!["-c".to_string(), full_cmd]
+                             });
                         }
                     }
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
-                    app.show_confirm_prompt = false;
-                    app.packages_pending_confirmation.clear();
-                }
-                _ => {}
+            } else if matches!(key.code, KeyCode::Char('n')) || key.code == KeyCode::Esc {
+                app.show_confirm_prompt = false;
+                app.packages_pending_confirmation.clear();
+            }
+            return;
+        }
+
+        if app.show_package_details {
+            // Use Esc to close package details view
+            if key.code == KeyCode::Esc {
+                app.hide_package_details();
+            }
+            return;
+        }
+
+        if app.show_dependency_visualization {
+            // Use Esc to close dependency visualization
+            if key.code == KeyCode::Esc {
+                app.hide_dependency_visualization();
             }
             return;
         }
 
         if app.show_console {
-             match key.code {
-                 KeyCode::Esc | KeyCode::Char('q') => {
-                     app.show_console = false;
-                 }
-                 _ => {}
+             // Use Esc or 'q' to close console by default
+             if key.code == KeyCode::Esc || matches!(key.code, KeyCode::Char('q')) {
+                 app.show_console = false;
              }
              return;
         }
 
         match app.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                KeyCode::Char('/') | KeyCode::Char('i') => app.input_mode = InputMode::Editing,
-                KeyCode::Down | KeyCode::Char('j') => app.next(),
-                KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                KeyCode::Tab => {
+            InputMode::Normal => {
+                // Handle quit action
+                if matches!(key.code, KeyCode::Char(c) if c == app.config.keyboard.quit.chars().next().unwrap_or('q')) || key.code == KeyCode::Esc {
+                    app.should_quit = true;
+                }
+                // Handle search action
+                else if matches!(key.code, KeyCode::Char(c) if c == app.config.keyboard.search.chars().next().unwrap_or('/')) || matches!(key.code, KeyCode::Char('i')) {
+                    app.input_mode = InputMode::Editing;
+                }
+                // Handle navigation
+                else if key.code == KeyCode::Down || matches!(key.code, KeyCode::Char(c) if c == 'j') {
+                    app.next();
+                }
+                else if key.code == KeyCode::Up || matches!(key.code, KeyCode::Char(c) if c == 'k') {
+                    app.previous();
+                }
+                // Handle selection toggle
+                else if key.code == KeyCode::Tab {
                     app.toggle_selection();
-                },
-                KeyCode::Char('u') => {
+                }
+                // Handle system update
+                else if matches!(key.code, KeyCode::Char(c) if c == app.config.keyboard.install.chars().next().unwrap_or('u')) {
                     app.show_console = true;
                     app.console_buffer.clear();
                     if let Some(tx) = &app.action_tx {
                         let _ = tx.send(crate::action::Action::SystemUpdate);
                     }
                 }
-                KeyCode::Enter => {
+                // Show package details
+                else if key.code == KeyCode::Char('d') {
+                    // Show package details for the selected package
+                    if app.selected_index.is_some() {
+                        app.show_package_details = true;
+                    }
+                }
+                // Show dependency visualization
+                else if key.code == KeyCode::Char('v') {
+                    // Show dependency visualization for the selected package
+                    if app.selected_index.is_some() {
+                        app.show_dependency_visualization = true;
+                    }
+                }
+                // Handle install/remove action
+                else if key.code == KeyCode::Enter {
                     // Check batch first
                     if !app.selected_packages.is_empty() {
                          app.packages_pending_confirmation = app.selected_packages.values().cloned().collect();
@@ -136,14 +175,13 @@ pub fn handle_event(app: &mut App, event: Event) {
                         }
                     }
                 }
-                _ => {}
             },
             InputMode::Editing => match key.code {
                 KeyCode::Esc => app.input_mode = InputMode::Normal,
                 KeyCode::Enter => {
                     app.input_mode = InputMode::Normal;
-                    app.is_loading = true; 
-                    
+                    app.is_loading = true;
+
                     app.results.clear();
                     let query = app.search_input.clone();
 
