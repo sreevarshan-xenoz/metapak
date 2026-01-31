@@ -7,8 +7,12 @@ mod pacman;
 mod aur;
 mod action;
 mod utils;
+mod errors;
+mod config;
+mod services;
+mod i18n;
+mod dependency_visualization;
 
-use anyhow::Result;
 use crossterm::{
     event::{self},
     execute,
@@ -18,58 +22,84 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, time::Duration};
 use std::process::Stdio;
 use std::io::{BufRead, BufReader};
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::app::App;
 use crate::action::{Action, ActionResult};
+use crate::errors::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize tracing
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    // Load configuration
+    let app_config = crate::config::AppConfig::load()
+        .map_err(|e| crate::errors::AppError::Config(e))?;
+
     // Setup terminal
-    enable_raw_mode()?;
+    enable_raw_mode().map_err(|e| crate::errors::AppError::Io(e))?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen).map_err(|e| crate::errors::AppError::Io(e))?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(backend).map_err(|e| crate::errors::AppError::Io(e))?;
 
     // Channels
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
     let (result_tx, mut result_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Create app
+    let aur_helper = app_config.aur_helper.clone(); // Extract aur_helper before moving app_config
     let mut app = App::new();
+    app.config = app_config;
     app.set_sender(action_tx.clone());
 
     // Initial check for updates
     let _ = action_tx.send(Action::CheckUpdates);
 
     // Spawn Background Task
+    let aur_helper_for_spawn = aur_helper.clone(); // Clone for the spawned task
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
             match action {
                 Action::Search(query) => {
                     let result_tx_clone = result_tx.clone();
-                    
                     let query_clone = query.clone();
-                    tokio::task::spawn_blocking(move || {
+
+                    tokio::spawn(async move {
                         let mut results = Vec::new();
-                        
-                        // Pacman
-                        if let Ok(mut pkgs) = crate::pacman::search(&query_clone) {
-                            results.append(&mut pkgs);
+
+                        // Pacman - using blocking for now since it's not async yet
+                        if let Ok(pkgs_result) = tokio::task::spawn_blocking({
+                            let query_clone = query_clone.clone();
+                            move || crate::pacman::search(&query_clone)
+                        }).await {
+                            if let Ok(mut pkgs) = pkgs_result {
+                                results.append(&mut pkgs);
+                            }
                         }
-                        
-                        // AUR
-                        if let Ok(mut pkgs) = crate::aur::search(&query_clone) {
-                             for pkg in &mut pkgs {
-                                if crate::pacman::is_installed(&pkg.name) {
+
+                        // AUR - now async
+                        if let Ok(aur_pkgs) = crate::aur::search(&query_clone).await {
+                            // Update installation status for AUR packages
+                            let mut updated_aur_pkgs = Vec::new();
+                            for pkg in aur_pkgs {
+                                let mut pkg = pkg;
+                                if tokio::task::spawn_blocking({
+                                    let pkg_name = pkg.name.clone();
+                                    move || crate::pacman::is_installed(&pkg_name)
+                                }).await.unwrap_or(false) {
                                     pkg.is_installed = true;
                                 }
+                                updated_aur_pkgs.push(pkg);
                             }
-                            results.append(&mut pkgs);
+                            results.extend(updated_aur_pkgs);
                         }
-                        
+
                         let _ = result_tx_clone.send(ActionResult::SearchResults(results));
-                    }).await.ok();
+                    });
                 }
                 Action::InitSudo(password) => {
                     let result_tx_clone = result_tx.clone();
@@ -87,7 +117,7 @@ async fn main() -> Result<()> {
                         cmd.args(&args);
                         cmd.stdout(Stdio::piped());
                         cmd.stderr(Stdio::piped()); // Capture stderr too
-                        
+
                         match cmd.spawn() {
                             Ok(mut child) => {
                                 if let Some(stdout) = child.stdout.take() {
@@ -98,7 +128,7 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
-                                
+
                                 // Ideally we read stderr concurrently but doing it sequentially is okay for basic logs
                                 // or mix them. For now let's just wait.
                                 let _ = child.wait();
@@ -122,8 +152,9 @@ async fn main() -> Result<()> {
                 Action::SystemUpdate => {
                     let result_tx_clone = result_tx.clone();
                     let action_tx_clone = action_tx.clone();
+                    let aur_helper_value = aur_helper_for_spawn.clone(); // Use the cloned value
                     tokio::task::spawn_blocking(move || {
-                        let helper = crate::utils::get_aur_helper();
+                        let helper = crate::utils::get_aur_helper(Some(&aur_helper_value));
                         // For system update, we use -Syu
                         // If it's a helper like paru/yay, it handles both repo and AUR
                         let mut cmd = std::process::Command::new("sh");
@@ -132,11 +163,11 @@ async fn main() -> Result<()> {
                         } else {
                             format!("{} -Syu --noconfirm", helper)
                         };
-                        
+
                         cmd.arg("-c").arg(&full_cmd);
                         cmd.stdout(Stdio::piped());
                         cmd.stderr(Stdio::piped());
-                        
+
                         match cmd.spawn() {
                             Ok(mut child) => {
                                 if let Some(stdout) = child.stdout.take() {
@@ -230,9 +261,9 @@ async fn main() -> Result<()> {
     }
 
     // Restore terminal
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    disable_raw_mode().map_err(|e| crate::errors::AppError::Io(e))?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(|e| crate::errors::AppError::Io(e))?;
+    terminal.show_cursor().map_err(|e| crate::errors::AppError::Io(e))?;
 
     Ok(())
 }
