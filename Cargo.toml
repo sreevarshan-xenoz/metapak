@@ -16,3 +16,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1.0"
 config = "0.14"
 dirs = "5.0"
+secrecy = { version = "0.8", features = ["alloc"] }
+async-trait = "0.1"
+dashmap = "5.5"
+regex = "1.10"
+urlencoding = "2.1"
+lazy_static = "1.4"
