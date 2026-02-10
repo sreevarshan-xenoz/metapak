@@ -6,8 +6,32 @@
 //!
 //! ## Features
 //!
-//! - Unified search across pacman repositories and AUR
+//! - Unified search across pacman repositories and AUR with caching
 //! - Batch operations for installing/removing multiple packages
 //! - Interactive TUI with keyboard shortcuts
-//! - Configuration support for customizing behavior
-//! - Proper error handling and logging
+//! - Search debouncing and history
+//! - Pagination for large result sets
+//! - Filter and sort functionality
+//! - Comprehensive theming system
+//! - Secure password handling
+//! - Undo functionality for selections
+//! - Progress indicators
+//! - Internationalization support
+//! - Dependency visualization
+
+pub mod app;
+pub mod ui;
+pub mod ui_utils;
+pub mod input;
+pub mod models;
+pub mod pacman;
+pub mod aur;
+pub mod action;
+pub mod utils;
+pub mod errors;
+pub mod config;
+pub mod services;
+pub mod i18n;
+pub mod dependency_visualization;
+pub mod traits;
+pub mod theme;
