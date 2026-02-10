@@ -1,10 +1,10 @@
 //! Package dependency visualization module
-//! 
+//!
 //! This module provides functionality for visualizing package dependencies
 //! in a tree-like structure to help users understand relationships between packages.
 
 use crate::models::Package;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Represents a dependency relationship between packages
 #[derive(Debug, Clone)]
@@ -46,11 +46,11 @@ pub struct DependencyVisualizationService;
 
 impl DependencyVisualizationService {
     /// Builds a dependency tree for a given package
-    /// 
+    ///
     /// # Arguments
     /// * `package` - The package to visualize dependencies for
     /// * `max_depth` - Maximum depth to traverse (to prevent infinite loops)
-    /// 
+    ///
     /// # Returns
     /// A DependencyNode representing the root of the dependency tree
     pub fn build_dependency_tree(package: &Package, max_depth: usize) -> DependencyNode {
@@ -170,7 +170,7 @@ mod tests {
         let child1 = DependencyNode::new("child1".to_string(), "1.0".to_string(), false);
         let mut child2 = DependencyNode::new("child2".to_string(), "2.0".to_string(), true);
         let grandchild = DependencyNode::new("grandchild".to_string(), "1.5".to_string(), false);
-        
+
         child2.add_child(grandchild);
         root.add_child(child1);
         root.add_child(child2);
@@ -188,7 +188,7 @@ mod tests {
         let child1 = DependencyNode::new("child1".to_string(), "1.0".to_string(), false);
         let mut child2 = DependencyNode::new("child2".to_string(), "2.0".to_string(), true);
         let grandchild = DependencyNode::new("grandchild".to_string(), "1.5".to_string(), false);
-        
+
         child2.add_child(grandchild);
         root.add_child(child1);
         root.add_child(child2);
