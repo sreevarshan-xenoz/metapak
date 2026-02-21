@@ -5,6 +5,7 @@
 
 use crate::models::Package;
 use std::collections::HashSet;
+use std::process::Command;
 
 /// Represents a dependency relationship between packages
 #[derive(Debug, Clone)]
@@ -44,6 +45,116 @@ impl DependencyNode {
 /// Service for building dependency trees
 pub struct DependencyVisualizationService;
 
+#[derive(Debug, Clone)]
+struct PacmanPackageInfo {
+    version: String,
+    depends_on: Vec<String>,
+    is_installed: bool,
+}
+
+struct PacmanDependencyResolver;
+
+impl PacmanDependencyResolver {
+    fn resolve(&self, package_name: &str) -> Option<PacmanPackageInfo> {
+        self.query_installed(package_name)
+            .or_else(|| self.query_sync_database(package_name))
+    }
+
+    fn query_installed(&self, package_name: &str) -> Option<PacmanPackageInfo> {
+        let output = Command::new("pacman")
+            .arg("-Qi")
+            .arg(package_name)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8(output.stdout).ok()?;
+        Self::parse_pacman_info(&stdout, true)
+    }
+
+    fn query_sync_database(&self, package_name: &str) -> Option<PacmanPackageInfo> {
+        let output = Command::new("pacman")
+            .arg("-Si")
+            .arg(package_name)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8(output.stdout).ok()?;
+        Self::parse_pacman_info(&stdout, false)
+    }
+
+    fn parse_pacman_info(info: &str, is_installed: bool) -> Option<PacmanPackageInfo> {
+        if info.trim().is_empty() {
+            return None;
+        }
+
+        let mut version = "unknown".to_string();
+        let mut depends_on = Vec::new();
+        let mut collecting_depends = false;
+
+        for line in info.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            if let Some((key, value)) = line.split_once(':') {
+                collecting_depends = false;
+                let key = key.trim();
+                let value = value.trim();
+
+                match key {
+                    "Version" => {
+                        if !value.is_empty() {
+                            version = value.to_string();
+                        }
+                    }
+                    "Depends On" => {
+                        collecting_depends = true;
+                        Self::append_dependencies(&mut depends_on, value);
+                    }
+                    _ => {}
+                }
+            } else if collecting_depends {
+                Self::append_dependencies(&mut depends_on, line.trim());
+            }
+        }
+
+        Some(PacmanPackageInfo {
+            version,
+            depends_on,
+            is_installed,
+        })
+    }
+
+    fn append_dependencies(buffer: &mut Vec<String>, raw: &str) {
+        if raw.is_empty() || raw == "None" {
+            return;
+        }
+
+        for token in raw.split_whitespace() {
+            let name = Self::sanitize_dependency_name(token);
+            if !name.is_empty() {
+                buffer.push(name);
+            }
+        }
+    }
+
+    fn sanitize_dependency_name(raw: &str) -> String {
+        raw.split(['<', '>', '='])
+            .next()
+            .unwrap_or(raw)
+            .trim()
+            .to_string()
+    }
+}
+
 impl DependencyVisualizationService {
     /// Builds a dependency tree for a given package
     ///
@@ -54,46 +165,65 @@ impl DependencyVisualizationService {
     /// # Returns
     /// A DependencyNode representing the root of the dependency tree
     pub fn build_dependency_tree(package: &Package, max_depth: usize) -> DependencyNode {
-        Self::build_dependency_tree_recursive(package, max_depth, &mut HashSet::new())
+        let resolver = PacmanDependencyResolver;
+        Self::build_dependency_tree_recursive(
+            &resolver,
+            &package.name,
+            &package.version,
+            package.is_installed,
+            &package.depends_on,
+            max_depth,
+            &mut HashSet::new(),
+        )
     }
 
     /// Recursively builds the dependency tree
     fn build_dependency_tree_recursive(
-        package: &Package,
+        resolver: &PacmanDependencyResolver,
+        package_name: &str,
+        version: &str,
+        is_installed: bool,
+        fallback_depends: &[String],
         remaining_depth: usize,
         visited: &mut HashSet<String>,
     ) -> DependencyNode {
-        let mut node = DependencyNode::new(
-            package.name.clone(),
-            package.version.clone(),
-            package.is_installed,
-        );
+        let mut node =
+            DependencyNode::new(package_name.to_string(), version.to_string(), is_installed);
 
         // Prevent circular dependencies by tracking visited packages
-        if visited.contains(&package.name) {
+        if !visited.insert(package_name.to_string()) {
             return node;
         }
-
-        visited.insert(package.name.clone());
 
         if remaining_depth == 0 {
+            visited.remove(package_name);
             return node;
         }
 
-        // Add direct dependencies as children
-        for dep_name in &package.depends_on {
-            // In a real implementation, we would fetch the actual package info
-            // For now, we'll create placeholder nodes
-            let child_node = DependencyNode::new(
-                dep_name.clone(),
-                "unknown".to_string(),
-                false, // We don't know if it's installed
-            );
-            node.add_child(child_node);
+        let dependencies = resolver
+            .resolve(package_name)
+            .map(|meta| meta.depends_on)
+            .unwrap_or_else(|| fallback_depends.to_vec());
+
+        for dep_name in dependencies {
+            if let Some(meta) = resolver.resolve(&dep_name) {
+                let child = Self::build_dependency_tree_recursive(
+                    resolver,
+                    &dep_name,
+                    &meta.version,
+                    meta.is_installed,
+                    &meta.depends_on,
+                    remaining_depth.saturating_sub(1),
+                    visited,
+                );
+                node.add_child(child);
+            } else {
+                node.add_child(DependencyNode::new(dep_name, "unknown".to_string(), false));
+            }
         }
 
         // Remove from visited set when backtracking
-        visited.remove(&package.name);
+        visited.remove(package_name);
 
         node
     }
@@ -162,6 +292,37 @@ mod tests {
         assert_eq!(tree.children.len(), 2);
         assert_eq!(tree.children[0].name, "dependency1");
         assert_eq!(tree.children[1].name, "dependency2");
+    }
+
+    #[test]
+    fn test_sanitize_dependency_name() {
+        assert_eq!(
+            PacmanDependencyResolver::sanitize_dependency_name("glibc>=2.39"),
+            "glibc"
+        );
+        assert_eq!(
+            PacmanDependencyResolver::sanitize_dependency_name("openssl=3.2.0"),
+            "openssl"
+        );
+        assert_eq!(
+            PacmanDependencyResolver::sanitize_dependency_name("zlib"),
+            "zlib"
+        );
+    }
+
+    #[test]
+    fn test_parse_pacman_info_dependencies() {
+        let info = r#"Name            : foo
+Version         : 1.2.3-1
+Depends On      : glibc>=2.39 gcc-libs
+                  zlib>=1.3
+Description     : Test package
+"#;
+
+        let parsed = PacmanDependencyResolver::parse_pacman_info(info, true).unwrap();
+        assert_eq!(parsed.version, "1.2.3-1");
+        assert!(parsed.is_installed);
+        assert_eq!(parsed.depends_on, vec!["glibc", "gcc-libs", "zlib"]);
     }
 
     #[test]

@@ -666,13 +666,10 @@ fn render_dependency_visualization(app: &App, f: &mut Frame, theme: &crate::them
         .alignment(Alignment::Center);
         f.render_widget(title, chunks[0]);
 
-        // Generate and display dependency tree
-        let tree =
-            crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree(
-                pkg, 3,
-            );
-        let tree_text =
-            crate::dependency_visualization::DependencyVisualizationService::format_tree(&tree, 0);
+        let tree_text = app
+            .dependency_tree_text
+            .clone()
+            .unwrap_or_else(|| "No dependency information available.".to_string());
 
         let tree_para = Paragraph::new(tree_text)
             .wrap(ratatui::widgets::Wrap { trim: false })

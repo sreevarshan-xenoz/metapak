@@ -95,6 +95,7 @@ pub struct App {
     // Views
     pub show_package_details: bool,
     pub show_dependency_visualization: bool,
+    pub dependency_tree_text: Option<String>,
     pub show_help: bool,
 
     // Localization
@@ -180,6 +181,7 @@ impl App {
 
             show_package_details: false,
             show_dependency_visualization: false,
+            dependency_tree_text: None,
             show_help: false,
 
             localizer: crate::i18n::Localizer::new(),
@@ -475,13 +477,23 @@ impl App {
     }
 
     pub fn show_dependency_visualization(&mut self) {
-        if self.selected_index.is_some() {
+        if let Some(pkg) = self.get_selected_package().cloned() {
+            let tree =
+                crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree(
+                    &pkg, 3,
+                );
+            self.dependency_tree_text = Some(
+                crate::dependency_visualization::DependencyVisualizationService::format_tree(
+                    &tree, 0,
+                ),
+            );
             self.show_dependency_visualization = true;
         }
     }
 
     pub fn hide_dependency_visualization(&mut self) {
         self.show_dependency_visualization = false;
+        self.dependency_tree_text = None;
     }
 
     pub fn toggle_help(&mut self) {
