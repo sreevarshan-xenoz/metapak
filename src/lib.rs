@@ -19,19 +19,19 @@
 //! - Internationalization support
 //! - Dependency visualization
 
+pub mod action;
 pub mod app;
-pub mod ui;
-pub mod ui_utils;
+pub mod aur;
+pub mod config;
+pub mod dependency_visualization;
+pub mod errors;
+pub mod i18n;
 pub mod input;
 pub mod models;
 pub mod pacman;
-pub mod aur;
-pub mod action;
-pub mod utils;
-pub mod errors;
-pub mod config;
 pub mod services;
-pub mod i18n;
-pub mod dependency_visualization;
-pub mod traits;
 pub mod theme;
+pub mod traits;
+pub mod ui;
+pub mod ui_utils;
+pub mod utils;
