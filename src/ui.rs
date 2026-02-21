@@ -32,6 +32,10 @@ pub fn render(app: &App, f: &mut Frame) {
     // Overlays (in order of priority)
     if app.show_help {
         render_help_overlay(f, f.size(), theme);
+    } else if app.show_diagnostics {
+        render_diagnostics_overlay(app, f, f.size(), theme);
+    } else if app.show_history {
+        render_history_overlay(app, f, f.size(), theme);
     } else if app.show_package_details {
         render_package_details(app, f, theme);
     } else if app.show_dependency_visualization {
@@ -371,7 +375,7 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         )
         .border_style(Style::default().fg(theme.primary()));
 
-    let area = centered_rect(50, 25, f.size());
+    let area = centered_rect(75, 60, f.size());
 
     f.render_widget(Clear, area);
     f.render_widget(block.clone(), area);
@@ -381,7 +385,8 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         .constraints(
             [
                 Constraint::Length(3),
-                Constraint::Length(2),
+                Constraint::Length(3),
+                Constraint::Min(2),
                 Constraint::Length(1),
             ]
             .as_ref(),
@@ -430,10 +435,124 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         f.render_widget(list_text, layout[1]);
     }
 
+    let preview = if app.confirmation_commands.is_empty() {
+        "No command preview available".to_string()
+    } else {
+        app.confirmation_commands
+            .iter()
+            .map(crate::services::command_display)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let preview_box = Paragraph::new(preview)
+        .style(Style::default().fg(theme.muted()))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Transaction Preview"),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: false });
+    f.render_widget(preview_box, layout[2]);
+
     let p_actions = Paragraph::new(app.localizer.t("confirmation_instructions"))
         .style(Style::default().fg(theme.muted()))
         .alignment(Alignment::Center);
-    f.render_widget(p_actions, layout[2]);
+    f.render_widget(p_actions, layout[3]);
+}
+
+fn render_history_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Transaction History (latest first)",
+        Style::default()
+            .fg(theme.primary())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    if app.transaction_history.is_empty() {
+        lines.push(Line::from("No transactions recorded yet."));
+    } else {
+        for tx in app.transaction_history.iter().take(15) {
+            let status_color = match tx.status {
+                crate::transaction_history::TransactionStatus::Success => theme.success(),
+                crate::transaction_history::TransactionStatus::Failed => theme.error(),
+                crate::transaction_history::TransactionStatus::Cancelled => theme.warning(),
+                crate::transaction_history::TransactionStatus::Pending => theme.info(),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(
+                        "{} | +{} -{} | {}",
+                        tx.created_at,
+                        tx.installed_packages.len(),
+                        tx.removed_packages.len(),
+                        tx.id
+                    ),
+                    Style::default().fg(theme.foreground()),
+                ),
+                Span::raw(" "),
+                Span::styled(
+                    format!("{:?}", tx.status),
+                    Style::default()
+                        .fg(status_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "Press 'R' to rollback latest successful transaction",
+    ));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("History")
+                .border_style(Style::default().fg(theme.primary())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(80, 70, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(widget, popup);
+}
+
+fn render_diagnostics_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "System Diagnostics",
+        Style::default()
+            .fg(theme.primary())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.diagnostics.is_empty() {
+        lines.push(Line::from("No diagnostics available."));
+    } else {
+        for item in &app.diagnostics {
+            lines.push(Line::from(format!("{}: {}", item.label, item.status)));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Diagnostics")
+                .border_style(Style::default().fg(theme.primary())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 50, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
 }
 
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {

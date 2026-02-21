@@ -16,6 +16,23 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        // Global: Transaction History
+        if app.show_history {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('t') => app.show_history = false,
+                KeyCode::Char('R') => trigger_rollback(app),
+                _ => {}
+            }
+            return;
+        }
+
+        if app.show_diagnostics {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('h') {
+                app.show_diagnostics = false;
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -115,6 +132,7 @@ pub fn handle_event(app: &mut App, event: Event) {
                 KeyCode::Char('n') | KeyCode::Esc => {
                     app.show_confirm_prompt = false;
                     app.packages_pending_confirmation.clear();
+                    app.confirmation_commands.clear();
                 }
                 _ => {}
             }
@@ -136,6 +154,11 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
 
         // Help
         KeyCode::Char('?') => app.toggle_help(),
+        KeyCode::Char('t') => app.toggle_history(),
+        KeyCode::Char('h') => {
+            app.diagnostics = crate::diagnostics::run_diagnostics();
+            app.toggle_diagnostics();
+        }
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {
@@ -175,9 +198,17 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             if !app.selected_packages.is_empty() {
                 app.packages_pending_confirmation =
                     app.selected_packages.values().cloned().collect();
+                app.confirmation_commands = crate::services::plan_package_transaction(
+                    &app.packages_pending_confirmation,
+                    &app.config,
+                );
                 app.show_confirm_prompt = true;
             } else if let Some(pkg) = app.get_selected_package() {
                 app.packages_pending_confirmation = vec![pkg.clone()];
+                app.confirmation_commands = crate::services::plan_package_transaction(
+                    &app.packages_pending_confirmation,
+                    &app.config,
+                );
                 app.show_confirm_prompt = true;
             }
         }
@@ -194,6 +225,11 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             if let Some(tx) = &app.action_tx {
                 let _ = tx.send(crate::action::Action::SystemUpdate);
             }
+        }
+
+        // Rollback last successful transaction
+        KeyCode::Char('R') => {
+            trigger_rollback(app);
         }
 
         // Package Details
@@ -219,6 +255,38 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         }
 
         _ => {}
+    }
+}
+
+fn trigger_rollback(app: &mut App) {
+    if app.is_operation_running {
+        app.error_message = Some("An operation is already running.".to_string());
+        return;
+    }
+    if let Some(last) = app
+        .transaction_history
+        .iter()
+        .find(|tx| tx.status == crate::transaction_history::TransactionStatus::Success)
+    {
+        let commands = crate::services::plan_rollback_transaction(
+            &last.installed_packages,
+            &last.removed_packages,
+            &app.config,
+        );
+        if commands.is_empty() {
+            app.error_message =
+                Some("No rollback plan available for last transaction.".to_string());
+            return;
+        }
+        app.show_history = false;
+        app.show_console = true;
+        app.clear_console();
+        app.is_operation_running = true;
+        if let Some(tx) = &app.action_tx {
+            let _ = tx.send(crate::action::Action::RunCommands(commands));
+        }
+    } else {
+        app.error_message = Some("No successful transaction found to rollback.".to_string());
     }
 }
 
@@ -256,47 +324,26 @@ fn handle_editing_mode(app: &mut App, key: KeyCode) {
 }
 
 fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package]) {
-    use crate::models::PackageSource;
-    use crate::services::{AurHelperCommand, CommandSpec};
-
-    // Partition into installs and removes
-    let (removes, installs): (Vec<_>, Vec<_>) = packages.iter().partition(|p| p.is_installed);
-
-    let mut commands: Vec<CommandSpec> = Vec::new();
-
-    // Handle Removes
-    if !removes.is_empty() {
-        let names: Vec<String> = removes.iter().map(|p| p.name.clone()).collect();
-        let names_ref: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-        commands.push(AurHelperCommand::new(&app.config).remove_command(&names_ref));
-    }
-
-    // Handle Installs
-    if !installs.is_empty() {
-        let use_aur_helper = installs
-            .iter()
-            .any(|p| matches!(p.source, PackageSource::Aur));
-        let helper = AurHelperCommand::new(&app.config);
-
-        let names: Vec<String> = installs.iter().map(|p| p.name.clone()).collect();
-        let names_ref: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-
-        if use_aur_helper {
-            commands.push(helper.install_command(&names_ref));
-        } else {
-            commands.push(CommandSpec {
-                prog: "sudo".to_string(),
-                args: std::iter::once("pacman".to_string())
-                    .chain(std::iter::once("-S".to_string()))
-                    .chain(std::iter::once("--noconfirm".to_string()))
-                    .chain(names.into_iter())
-                    .collect(),
-            });
-        }
-    }
+    let commands = crate::services::plan_package_transaction(packages, &app.config);
+    app.confirmation_commands.clear();
 
     // Execute commands
     if !commands.is_empty() {
+        let installed_packages = packages
+            .iter()
+            .filter(|p| !p.is_installed)
+            .map(|p| p.name.clone())
+            .collect();
+        let removed_packages = packages
+            .iter()
+            .filter(|p| p.is_installed)
+            .map(|p| p.name.clone())
+            .collect();
+        app.current_transaction = Some(crate::transaction_history::new_record(
+            installed_packages,
+            removed_packages,
+            &commands,
+        ));
         app.selected_packages.clear();
         app.is_operation_running = true;
 

@@ -2,13 +2,16 @@ mod action;
 mod app;
 mod config;
 mod dependency_visualization;
+mod diagnostics;
 mod errors;
 mod i18n;
 mod input;
 mod models;
 mod services;
+mod telemetry;
 mod theme;
 mod traits;
+mod transaction_history;
 mod ui;
 mod ui_utils;
 mod utils;
@@ -34,6 +37,7 @@ use crate::action::{Action, ActionResult};
 use crate::app::App;
 use crate::errors::Result;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
+use crate::transaction_history::{save_history, TransactionStatus};
 
 enum CommandRunResult {
     Finished,
@@ -306,6 +310,9 @@ async fn main() -> Result<()> {
     app.max_undo_history = app.config.ui.max_undo_history;
     app.theme = app.config.get_theme();
     app.set_sender(action_tx.clone());
+    if let Ok(history) = crate::transaction_history::load_history() {
+        app.transaction_history = history.into();
+    }
 
     // Initial check for updates
     let _ = action_tx.send(Action::CheckUpdates);
@@ -446,6 +453,7 @@ async fn main() -> Result<()> {
 
     // Main application loop
     let mut last_update = std::time::Instant::now();
+    let mut last_update_check = std::time::Instant::now();
 
     loop {
         if app.should_quit {
@@ -520,8 +528,23 @@ async fn main() -> Result<()> {
                 }
                 ActionResult::Error(msg) => {
                     tracing::error!("Error received: {}", msg);
+                    crate::telemetry::append_log_line(&format!("[error] {}", msg));
                     app.error_message = Some(msg);
                     app.is_loading = false;
+                    if app.is_operation_running {
+                        if let Some(mut tx) = app.current_transaction.take() {
+                            tx.status = TransactionStatus::Failed;
+                            tx.error = app.error_message.clone();
+                            app.transaction_history.push_front(tx);
+                            while app.transaction_history.len() > 100 {
+                                app.transaction_history.pop_back();
+                            }
+                            let snapshot: Vec<_> =
+                                app.transaction_history.iter().cloned().collect();
+                            let _ = save_history(&snapshot);
+                        }
+                    }
+                    app.is_operation_running = false;
                 }
                 ActionResult::SudoResult(success) => {
                     app.is_loading = false;
@@ -534,10 +557,14 @@ async fn main() -> Result<()> {
                     }
                 }
                 ActionResult::CommandOutput(line) => {
+                    crate::telemetry::append_log_line(&line);
                     app.add_console_output(line);
                 }
                 ActionResult::CommandStarted => {
                     app.is_operation_running = true;
+                    if let Some(tx) = &app.current_transaction {
+                        crate::telemetry::append_log_line(&format!("[tx-start] {}", tx.id));
+                    }
                 }
                 ActionResult::CommandInputReady(tx) => {
                     app.command_stdin_tx = Some(tx);
@@ -550,6 +577,15 @@ async fn main() -> Result<()> {
                     app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
+                    if let Some(mut tx) = app.current_transaction.take() {
+                        tx.status = TransactionStatus::Success;
+                        app.transaction_history.push_front(tx);
+                        while app.transaction_history.len() > 100 {
+                            app.transaction_history.pop_back();
+                        }
+                        let snapshot: Vec<_> = app.transaction_history.iter().cloned().collect();
+                        let _ = save_history(&snapshot);
+                    }
                     app.add_console_output(
                         "----- Process Finished (Press 'q' or 'Esc' to close) -----".to_string(),
                     );
@@ -558,6 +594,15 @@ async fn main() -> Result<()> {
                     app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
+                    if let Some(mut tx) = app.current_transaction.take() {
+                        tx.status = TransactionStatus::Cancelled;
+                        app.transaction_history.push_front(tx);
+                        while app.transaction_history.len() > 100 {
+                            app.transaction_history.pop_back();
+                        }
+                        let snapshot: Vec<_> = app.transaction_history.iter().cloned().collect();
+                        let _ = save_history(&snapshot);
+                    }
                     app.add_console_output("----- Operation Cancelled -----".to_string());
                 }
                 ActionResult::UpdateCount(count) => {
@@ -574,6 +619,14 @@ async fn main() -> Result<()> {
         if last_update.elapsed() > Duration::from_secs(30) {
             PackageService::clear_expired_cache();
             last_update = std::time::Instant::now();
+        }
+
+        // Periodic update checks (every 15 minutes)
+        if last_update_check.elapsed() > Duration::from_secs(15 * 60) {
+            if let Some(tx) = &app.action_tx {
+                let _ = tx.send(Action::CheckUpdates);
+            }
+            last_update_check = std::time::Instant::now();
         }
     }
 

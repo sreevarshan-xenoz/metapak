@@ -12,6 +12,8 @@ use crate::action::Action;
 use crate::config::AppConfig;
 
 use crate::models::Package;
+use crate::services::CommandSpec;
+use crate::transaction_history::TransactionRecord;
 use crate::utils::PasswordInput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +84,7 @@ pub struct App {
     // Confirmation
     pub show_confirm_prompt: bool,
     pub packages_pending_confirmation: Vec<Package>,
+    pub confirmation_commands: Vec<CommandSpec>,
 
     // Console
     pub show_console: bool,
@@ -99,6 +102,9 @@ pub struct App {
     pub show_dependency_visualization: bool,
     pub dependency_tree_text: Option<String>,
     pub show_help: bool,
+    pub show_history: bool,
+    pub show_diagnostics: bool,
+    pub diagnostics: Vec<crate::diagnostics::DiagnosticItem>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -106,6 +112,10 @@ pub struct App {
     // Filter and Sort
     pub current_filter: FilterOption,
     pub current_sort: SortOption,
+
+    // Transaction history
+    pub transaction_history: VecDeque<TransactionRecord>,
+    pub current_transaction: Option<TransactionRecord>,
 }
 
 /// Represents a selection action for undo functionality
@@ -163,6 +173,7 @@ impl App {
 
             show_confirm_prompt: false,
             packages_pending_confirmation: Vec::new(),
+            confirmation_commands: Vec::new(),
 
             show_console: false,
             console_buffer: Vec::new(),
@@ -177,11 +188,17 @@ impl App {
             show_dependency_visualization: false,
             dependency_tree_text: None,
             show_help: false,
+            show_history: false,
+            show_diagnostics: false,
+            diagnostics: Vec::new(),
 
             localizer: crate::i18n::Localizer::new(),
 
             current_filter: FilterOption::All,
             current_sort: SortOption::NameAsc,
+
+            transaction_history: VecDeque::new(),
+            current_transaction: None,
         }
     }
 
@@ -508,6 +525,14 @@ impl App {
 
     pub fn hide_help(&mut self) {
         self.show_help = false;
+    }
+
+    pub fn toggle_history(&mut self) {
+        self.show_history = !self.show_history;
+    }
+
+    pub fn toggle_diagnostics(&mut self) {
+        self.show_diagnostics = !self.show_diagnostics;
     }
 
     // Console Management

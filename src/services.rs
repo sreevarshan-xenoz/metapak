@@ -349,6 +349,171 @@ pub struct PackageService {
     update_provider: Arc<dyn UpdateProvider>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum QuerySourceFilter {
+    Any,
+    Repo,
+    Aur,
+}
+
+#[derive(Debug, Clone)]
+struct QuerySpec {
+    text: String,
+    source: QuerySourceFilter,
+    installed: Option<bool>,
+    name_prefix: Option<String>,
+    name_contains: Option<String>,
+    dependency_contains: Option<String>,
+}
+
+impl QuerySpec {
+    fn parse(input: &str) -> Self {
+        let mut text_tokens = Vec::new();
+        let mut spec = Self {
+            text: String::new(),
+            source: QuerySourceFilter::Any,
+            installed: None,
+            name_prefix: None,
+            name_contains: None,
+            dependency_contains: None,
+        };
+
+        for token in input.split_whitespace() {
+            if let Some((k, v)) = token.split_once(':') {
+                match k {
+                    "source" => {
+                        spec.source = match v {
+                            "aur" => QuerySourceFilter::Aur,
+                            "repo" | "pacman" => QuerySourceFilter::Repo,
+                            _ => QuerySourceFilter::Any,
+                        };
+                    }
+                    "installed" => match v {
+                        "true" | "yes" | "1" => spec.installed = Some(true),
+                        "false" | "no" | "0" => spec.installed = Some(false),
+                        _ => {}
+                    },
+                    "name" => {
+                        if let Some(rest) = v.strip_prefix('^') {
+                            if !rest.is_empty() {
+                                spec.name_prefix = Some(rest.to_lowercase());
+                            }
+                        } else if !v.is_empty() {
+                            spec.name_contains = Some(v.to_lowercase());
+                        }
+                    }
+                    "dep" | "depends" => {
+                        if !v.is_empty() {
+                            spec.dependency_contains = Some(v.to_lowercase());
+                        }
+                    }
+                    _ => text_tokens.push(token.to_string()),
+                }
+            } else {
+                text_tokens.push(token.to_string());
+            }
+        }
+
+        spec.text = text_tokens.join(" ").trim().to_string();
+        spec
+    }
+
+    fn matches(&self, pkg: &Package) -> bool {
+        if self.source == QuerySourceFilter::Aur && !matches!(pkg.source, PackageSource::Aur) {
+            return false;
+        }
+        if self.source == QuerySourceFilter::Repo && !matches!(pkg.source, PackageSource::Pacman) {
+            return false;
+        }
+        if let Some(installed) = self.installed {
+            if pkg.is_installed != installed {
+                return false;
+            }
+        }
+        if let Some(prefix) = &self.name_prefix {
+            if !pkg.name.to_lowercase().starts_with(prefix) {
+                return false;
+            }
+        }
+        if let Some(contains) = &self.name_contains {
+            if !pkg.name.to_lowercase().contains(contains) {
+                return false;
+            }
+        }
+        if let Some(dep) = &self.dependency_contains {
+            let hit = pkg
+                .depends_on
+                .iter()
+                .any(|d| d.to_lowercase().contains(dep));
+            if !hit {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+pub fn command_display(spec: &CommandSpec) -> String {
+    format!("{} {}", spec.prog, spec.args.join(" "))
+}
+
+pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec<CommandSpec> {
+    let (removes, installs): (Vec<_>, Vec<_>) = packages.iter().partition(|p| p.is_installed);
+    let helper = AurHelperCommand::new(config);
+    let mut commands = Vec::new();
+
+    if !removes.is_empty() {
+        let names: Vec<&str> = removes.iter().map(|p| p.name.as_str()).collect();
+        commands.push(helper.remove_command(&names));
+    }
+
+    if !installs.is_empty() {
+        let names: Vec<&str> = installs.iter().map(|p| p.name.as_str()).collect();
+        let use_aur_helper = installs
+            .iter()
+            .any(|p| matches!(p.source, PackageSource::Aur));
+        if use_aur_helper {
+            commands.push(helper.install_command(&names));
+        } else {
+            let mut args = vec![
+                "pacman".to_string(),
+                "-S".to_string(),
+                "--noconfirm".to_string(),
+            ];
+            args.extend(names.into_iter().map(|n| n.to_string()));
+            commands.push(CommandSpec {
+                prog: "sudo".to_string(),
+                args,
+            });
+        }
+    }
+
+    commands
+}
+
+pub fn plan_rollback_transaction(
+    originally_installed: &[String],
+    originally_removed: &[String],
+    config: &AppConfig,
+) -> Vec<CommandSpec> {
+    let helper = AurHelperCommand::new(config);
+    let mut commands = Vec::new();
+
+    // Undo installs by removing them
+    if !originally_installed.is_empty() {
+        let names: Vec<&str> = originally_installed.iter().map(String::as_str).collect();
+        commands.push(helper.remove_command(&names));
+    }
+
+    // Undo removals by re-installing them
+    if !originally_removed.is_empty() {
+        let names: Vec<&str> = originally_removed.iter().map(String::as_str).collect();
+        commands.push(helper.install_command(&names));
+    }
+
+    commands
+}
+
 impl PackageService {
     pub fn new() -> Self {
         Self {
@@ -362,16 +527,28 @@ impl PackageService {
 
     /// Search across all providers concurrently
     pub async fn search_all(&self, query: &str) -> Result<Vec<Package>> {
-        if query.trim().is_empty() {
+        let spec = QuerySpec::parse(query);
+        if spec.text.trim().is_empty()
+            && spec.installed.is_none()
+            && spec.source == QuerySourceFilter::Any
+            && spec.name_prefix.is_none()
+            && spec.name_contains.is_none()
+            && spec.dependency_contains.is_none()
+        {
             return Ok(Vec::new());
         }
 
+        let base_query = if spec.text.is_empty() {
+            query.trim()
+        } else {
+            spec.text.as_str()
+        };
         let mut all_results = Vec::new();
         let mut tasks = Vec::new();
 
         for provider in &self.providers {
             let provider = Arc::clone(provider);
-            let query = query.to_string();
+            let query = base_query.to_string();
             let task = tokio::spawn(async move { provider.search(&query).await });
             tasks.push(task);
         }
@@ -417,8 +594,8 @@ impl PackageService {
                 .or_insert(pkg);
         }
 
-        let query_lc = query.to_lowercase();
-        let mut results: Vec<Package> = deduped.into_values().collect();
+        let query_lc = base_query.to_lowercase();
+        let mut results: Vec<Package> = deduped.into_values().filter(|p| spec.matches(p)).collect();
         results.sort_by(|a, b| {
             let a_name = a.name.to_lowercase();
             let b_name = b.name.to_lowercase();
