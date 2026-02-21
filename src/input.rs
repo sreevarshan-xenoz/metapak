@@ -48,8 +48,31 @@ pub fn handle_event(app: &mut App, event: Event) {
 
         // Global: Console handling
         if app.show_console {
-            if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
-                app.show_console = false;
+            match key.code {
+                KeyCode::Esc => {
+                    app.show_console = false;
+                }
+                KeyCode::Char('q') if app.command_stdin_tx.is_none() => {
+                    app.show_console = false;
+                }
+                KeyCode::Enter => {
+                    if let Some(tx) = &app.command_stdin_tx {
+                        let line = app.console_input.clone();
+                        if tx.send(line.clone()).is_ok() {
+                            app.add_console_output(format!("> {}", line));
+                        }
+                        app.console_input.clear();
+                    }
+                }
+                KeyCode::Backspace => {
+                    app.console_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    if app.command_stdin_tx.is_some() {
+                        app.console_input.push(c);
+                    }
+                }
+                _ => {}
             }
             return;
         }

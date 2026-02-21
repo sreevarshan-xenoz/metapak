@@ -1,6 +1,7 @@
 use crate::models::Package;
 use crate::services::CommandSpec;
 use secrecy::SecretString;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Actions that can be sent from the UI to background tasks
 #[derive(Debug, Clone)]
@@ -35,6 +36,12 @@ pub enum ActionResult {
 
     /// Command output line
     CommandOutput(String),
+
+    /// Command input channel is ready
+    CommandInputReady(UnboundedSender<String>),
+
+    /// Command input channel is closed
+    CommandInputClosed,
 
     /// Command completed
     CommandFinished,

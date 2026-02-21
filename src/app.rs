@@ -86,6 +86,7 @@ pub struct App {
     pub show_console: bool,
     pub console_buffer: Vec<String>,
     pub command_stdin_tx: Option<UnboundedSender<String>>,
+    pub console_input: String,
     pub command_progress: Option<CommandProgress>,
 
     // Configuration
@@ -174,6 +175,7 @@ impl App {
             show_console: false,
             console_buffer: Vec::new(),
             command_stdin_tx: None,
+            console_input: String::new(),
             command_progress: None,
 
             config: AppConfig::default(),
@@ -549,6 +551,7 @@ impl App {
 
     pub fn clear_console(&mut self) {
         self.console_buffer.clear();
+        self.console_input.clear();
         self.command_progress = None;
     }
 }

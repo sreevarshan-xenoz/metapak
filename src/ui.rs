@@ -434,10 +434,16 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
 }
 
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
+    let console_title = if app.command_stdin_tx.is_some() {
+        "Console Output (interactive)"
+    } else {
+        "Console Output"
+    };
+
     let console_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
-        .title("Console Output")
+        .title(console_title)
         .style(Style::default().bg(Color::Black).fg(theme.foreground()))
         .border_style(Style::default().fg(theme.info()));
 
@@ -467,11 +473,31 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     f.render_widget(Clear, chunk);
     f.render_widget(list, chunk);
 
+    if app.command_stdin_tx.is_some() {
+        let input_area = Rect {
+            x: chunk.x + 2,
+            y: chunk.y + chunk.height.saturating_sub(2),
+            width: chunk.width.saturating_sub(4),
+            height: 1,
+        };
+        let input_prompt = if app.console_input.is_empty() {
+            "Input: ".to_string()
+        } else {
+            format!("Input: {}", app.console_input)
+        };
+        let input = Paragraph::new(input_prompt).style(Style::default().fg(theme.primary()));
+        f.render_widget(input, input_area);
+    }
+
     // Render progress bar if available
     if let Some(progress) = &app.command_progress {
         let progress_area = Rect {
             x: chunk.x + 2,
-            y: chunk.y + chunk.height - 3,
+            y: if app.command_stdin_tx.is_some() {
+                chunk.y + chunk.height.saturating_sub(4)
+            } else {
+                chunk.y + chunk.height.saturating_sub(3)
+            },
             width: chunk.width - 4,
             height: 1,
         };

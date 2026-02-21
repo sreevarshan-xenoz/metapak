@@ -25,7 +25,7 @@ use std::sync::{
     Arc,
 };
 use std::{io, time::Duration};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -68,6 +68,7 @@ async fn run_single_command(
     cmd.args(&command.args);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    cmd.stdin(std::process::Stdio::piped());
 
     let mut child = cmd
         .spawn()
@@ -87,6 +88,26 @@ async fn run_single_command(
         .take()
         .map(|stderr| tokio::spawn(read_output_lines(stderr, true, tx.clone())));
 
+    let stdin_task = child.stdin.take().map(|mut stdin| {
+        let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let _ = tx.send(ActionResult::CommandInputReady(stdin_tx));
+        let tx_for_errors = tx.clone();
+
+        tokio::spawn(async move {
+            while let Some(line) = stdin_rx.recv().await {
+                let payload = format!("{}\n", line);
+                if let Err(e) = stdin.write_all(payload.as_bytes()).await {
+                    let _ = tx_for_errors.send(ActionResult::Error(format!(
+                        "Failed to send input to command: {}",
+                        e
+                    )));
+                    break;
+                }
+                let _ = stdin.flush().await;
+            }
+        })
+    });
+
     let status = child
         .wait()
         .await
@@ -98,6 +119,11 @@ async fn run_single_command(
     if let Some(task) = stderr_task {
         let _ = task.await;
     }
+    if let Some(task) = stdin_task {
+        task.abort();
+    }
+
+    let _ = tx.send(ActionResult::CommandInputClosed);
 
     {
         let mut pid_guard = active_pid.lock().await;
@@ -401,12 +427,23 @@ async fn main() -> Result<()> {
                 ActionResult::CommandOutput(line) => {
                     app.add_console_output(line);
                 }
+                ActionResult::CommandInputReady(tx) => {
+                    app.command_stdin_tx = Some(tx);
+                }
+                ActionResult::CommandInputClosed => {
+                    app.command_stdin_tx = None;
+                    app.console_input.clear();
+                }
                 ActionResult::CommandFinished => {
+                    app.command_stdin_tx = None;
+                    app.console_input.clear();
                     app.add_console_output(
                         "----- Process Finished (Press 'q' or 'Esc' to close) -----".to_string(),
                     );
                 }
                 ActionResult::CommandCancelled => {
+                    app.command_stdin_tx = None;
+                    app.console_input.clear();
                     app.add_console_output("----- Operation Cancelled -----".to_string());
                 }
                 ActionResult::UpdateCount(count) => {
