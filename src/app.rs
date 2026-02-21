@@ -90,6 +90,7 @@ pub struct App {
 
     // Configuration
     pub config: AppConfig,
+    pub theme: crate::theme::Theme,
 
     // Views
     pub show_package_details: bool,
@@ -175,6 +176,7 @@ impl App {
             command_progress: None,
 
             config: AppConfig::default(),
+            theme: crate::theme::Theme::default(),
 
             show_package_details: false,
             show_dependency_visualization: false,

@@ -225,17 +225,18 @@ fn handle_editing_mode(app: &mut App, key: KeyCode) {
 
 fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package]) {
     use crate::models::PackageSource;
-    use crate::services::AurHelperCommand;
+    use crate::services::{AurHelperCommand, CommandSpec};
 
     // Partition into installs and removes
     let (removes, installs): (Vec<_>, Vec<_>) = packages.iter().partition(|p| p.is_installed);
 
-    let mut commands = Vec::new();
+    let mut commands: Vec<CommandSpec> = Vec::new();
 
     // Handle Removes
     if !removes.is_empty() {
         let names: Vec<String> = removes.iter().map(|p| p.name.clone()).collect();
-        commands.push(format!("sudo pacman -Rns --noconfirm {}", names.join(" ")));
+        let names_ref: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        commands.push(AurHelperCommand::new(&app.config).remove_command(&names_ref));
     }
 
     // Handle Installs
@@ -251,20 +252,23 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
         if use_aur_helper {
             commands.push(helper.install_command(&names_ref));
         } else {
-            commands.push(format!("sudo pacman -S --noconfirm {}", names.join(" ")));
+            commands.push(CommandSpec {
+                prog: "sudo".to_string(),
+                args: std::iter::once("pacman".to_string())
+                    .chain(std::iter::once("-S".to_string()))
+                    .chain(std::iter::once("--noconfirm".to_string()))
+                    .chain(names.into_iter())
+                    .collect(),
+            });
         }
     }
 
     // Execute commands
     if !commands.is_empty() {
-        let full_cmd = commands.join(" && ");
         app.selected_packages.clear();
 
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::RunCommand {
-                prog: "sh".to_string(),
-                args: vec!["-c".to_string(), full_cmd],
-            });
+            let _ = tx.send(crate::action::Action::RunCommands(commands));
         }
     }
 }

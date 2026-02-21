@@ -105,7 +105,9 @@ impl AppConfig {
         let config_path = config_dir.join("arch-tui").join("config.toml");
 
         if Path::exists(&config_path) {
-            cfg = cfg.add_source(File::with_name(config_path.to_str().unwrap()).required(false));
+            if let Some(path) = config_path.to_str() {
+                cfg = cfg.add_source(File::with_name(path).required(false));
+            }
         }
 
         // Add environment variables as overrides

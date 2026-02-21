@@ -1,4 +1,5 @@
 use crate::models::Package;
+use crate::services::CommandSpec;
 use secrecy::SecretString;
 
 /// Actions that can be sent from the UI to background tasks
@@ -18,6 +19,9 @@ pub enum Action {
 
     /// Run a shell command
     RunCommand { prog: String, args: Vec<String> },
+
+    /// Run multiple commands in sequence
+    RunCommands(Vec<CommandSpec>),
 
     /// Cancel current operation
     CancelOperation,

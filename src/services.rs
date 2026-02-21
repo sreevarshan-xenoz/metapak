@@ -4,29 +4,29 @@
 //! following the provider traits pattern for better testability and organization.
 
 use async_trait::async_trait;
-use std::process::Command;
-use std::sync::Arc;
 use dashmap::DashMap;
 use regex::Regex;
+use std::process::Command;
+use std::sync::Arc;
 
-use crate::models::{Package, PackageSource};
-use crate::errors::{AppError, Result};
-use crate::traits::{PackageProvider, UpdateProvider};
 use crate::config::AppConfig;
+use crate::errors::{AppError, Result};
+use crate::models::{Package, PackageSource};
+use crate::traits::{PackageProvider, UpdateProvider};
 
 lazy_static::lazy_static! {
-    /// Cache for package information to avoid repeated queries
-    static ref PACKAGE_CACHE: DashMap<String, CachedPackage> = DashMap::new();
+    /// Cache search results to avoid repeated queries
+    static ref PACKAGE_CACHE: DashMap<String, CachedSearch> = DashMap::new();
 }
 
-/// Cached package entry with timestamp
+/// Cached search entry with timestamp
 #[derive(Clone)]
-struct CachedPackage {
-    package: Package,
+struct CachedSearch {
+    packages: Vec<Package>,
     cached_at: std::time::Instant,
 }
 
-impl CachedPackage {
+impl CachedSearch {
     fn is_expired(&self) -> bool {
         self.cached_at.elapsed() > std::time::Duration::from_secs(300) // 5 minutes
     }
@@ -49,14 +49,14 @@ impl PackageProvider for PacmanProvider {
         if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
             if !cached.is_expired() {
                 tracing::debug!("Cache hit for pacman search: {}", query);
-                return Ok(vec![cached.package.clone()]);
+                return Ok(cached.packages.clone());
             }
         }
 
         let query = query.to_string();
-        tokio::task::spawn_blocking(move || {
-            Self::search_blocking(&query)
-        }).await.map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+        tokio::task::spawn_blocking(move || Self::search_blocking(&query))
+            .await
+            .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
@@ -68,7 +68,9 @@ impl PackageProvider for PacmanProvider {
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
-        }).await.unwrap_or(false)
+        })
+        .await
+        .unwrap_or(false)
     }
 
     fn source(&self) -> PackageSource {
@@ -95,7 +97,10 @@ impl PacmanProvider {
             if stderr.contains("no results") || output.status.code() == Some(1) {
                 return Ok(Vec::new());
             }
-            return Err(AppError::Pacman(format!("pacman search failed: {}", stderr)));
+            return Err(AppError::Pacman(format!(
+                "pacman search failed: {}",
+                stderr
+            )));
         }
 
         let stdout = String::from_utf8(output.stdout)
@@ -107,16 +112,19 @@ impl PacmanProvider {
         while let Some(header) = lines.next() {
             if let Some(desc) = lines.next() {
                 if let Some(pkg) = Self::parse_entry(header, desc) {
-                    // Cache the package
-                    let cache_key = format!("pacman:{}", pkg.name);
-                    PACKAGE_CACHE.insert(cache_key, CachedPackage {
-                        package: pkg.clone(),
-                        cached_at: std::time::Instant::now(),
-                    });
                     packages.push(pkg);
                 }
             }
         }
+
+        let cache_key = format!("pacman:{}", query);
+        PACKAGE_CACHE.insert(
+            cache_key,
+            CachedSearch {
+                packages: packages.clone(),
+                cached_at: std::time::Instant::now(),
+            },
+        );
 
         Ok(packages)
     }
@@ -180,14 +188,18 @@ impl PackageProvider for AurProvider {
         if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
             if !cached.is_expired() {
                 tracing::debug!("Cache hit for AUR search: {}", query);
-                return Ok(vec![cached.package.clone()]);
+                return Ok(cached.packages.clone());
             }
         }
 
-        let url = format!("https://aur.archlinux.org/rpc/v5/search/{}", 
-            urlencoding::encode(query));
+        let url = format!(
+            "https://aur.archlinux.org/rpc/v5/search/{}",
+            urlencoding::encode(query)
+        );
 
-        let response = self.client.get(&url)
+        let response = self
+            .client
+            .get(&url)
             .header("User-Agent", "arch-tui/0.1.0")
             .send()
             .await
@@ -198,7 +210,9 @@ impl PackageProvider for AurProvider {
             .await
             .map_err(|e| AppError::Aur(format!("Failed to parse AUR response: {}", e)))?;
 
-        let packages: Vec<Package> = aur_response.results.into_iter()
+        let packages: Vec<Package> = aur_response
+            .results
+            .into_iter()
             .map(|aur_pkg| {
                 let mut all_deps = Vec::new();
                 if let Some(depends) = aur_pkg.depends {
@@ -208,7 +222,7 @@ impl PackageProvider for AurProvider {
                     all_deps.extend(make_depends);
                 }
 
-                let pkg = Package {
+                Package {
                     name: aur_pkg.name,
                     version: aur_pkg.version,
                     description: aur_pkg.description.unwrap_or_default(),
@@ -227,18 +241,17 @@ impl PackageProvider for AurProvider {
                     conflicts: aur_pkg.conflicts.unwrap_or_default(),
                     replaces: vec![],
                     provides: aur_pkg.provides.unwrap_or_default(),
-                };
-
-                // Cache the package
-                let cache_key = format!("aur:{}", pkg.name);
-                PACKAGE_CACHE.insert(cache_key, CachedPackage {
-                    package: pkg.clone(),
-                    cached_at: std::time::Instant::now(),
-                });
-
-                pkg
+                }
             })
             .collect();
+
+        PACKAGE_CACHE.insert(
+            cache_key,
+            CachedSearch {
+                packages: packages.clone(),
+                cached_at: std::time::Instant::now(),
+            },
+        );
 
         Ok(packages)
     }
@@ -253,7 +266,9 @@ impl PackageProvider for AurProvider {
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
-        }).await.unwrap_or(false)
+        })
+        .await
+        .unwrap_or(false)
     }
 
     fn source(&self) -> PackageSource {
@@ -281,8 +296,9 @@ impl UpdateProvider for SystemUpdateProvider {
             // Try checkupdates first (from pacman-contrib) - doesn't require sudo
             if let Ok(output) = Command::new("checkupdates").output() {
                 if output.status.success() {
-                    let stdout = String::from_utf8(output.stdout)
-                        .map_err(|e| AppError::Pacman(format!("Invalid UTF-8 in checkupdates output: {}", e)))?;
+                    let stdout = String::from_utf8(output.stdout).map_err(|e| {
+                        AppError::Pacman(format!("Invalid UTF-8 in checkupdates output: {}", e))
+                    })?;
                     return Ok(stdout.lines().filter(|l| !l.is_empty()).count());
                 }
             }
@@ -294,13 +310,16 @@ impl UpdateProvider for SystemUpdateProvider {
                 .map_err(|e| AppError::Pacman(format!("Failed to execute pacman -Qu: {}", e)))?;
 
             if output.status.success() {
-                let stdout = String::from_utf8(output.stdout)
-                    .map_err(|e| AppError::Pacman(format!("Invalid UTF-8 in pacman -Qu output: {}", e)))?;
+                let stdout = String::from_utf8(output.stdout).map_err(|e| {
+                    AppError::Pacman(format!("Invalid UTF-8 in pacman -Qu output: {}", e))
+                })?;
                 return Ok(stdout.lines().filter(|l| !l.is_empty()).count());
             }
 
             Ok(0)
-        }).await.map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
     async fn update_system(&self) -> Result<()> {
@@ -338,9 +357,7 @@ impl PackageService {
         for provider in &self.providers {
             let provider = Arc::clone(provider);
             let query = query.to_string();
-            let task = tokio::spawn(async move {
-                provider.search(&query).await
-            });
+            let task = tokio::spawn(async move { provider.search(&query).await });
             tasks.push(task);
         }
 
@@ -375,7 +392,8 @@ impl PackageService {
     /// Get package cache stats
     pub fn cache_stats(&self) -> (usize, usize) {
         let total = PACKAGE_CACHE.len();
-        let expired = PACKAGE_CACHE.iter()
+        let expired = PACKAGE_CACHE
+            .iter()
             .filter(|entry| entry.value().is_expired())
             .count();
         (total, expired)
@@ -480,31 +498,53 @@ impl SafeCommandBuilder {
     }
 }
 
+/// Structured command specification (program + arguments)
+#[derive(Debug, Clone)]
+pub struct CommandSpec {
+    pub prog: String,
+    pub args: Vec<String>,
+}
+
+impl CommandSpec {
+    fn new(prog: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            prog: prog.into(),
+            args,
+        }
+    }
+}
+
 /// AUR helper command builder
 pub struct AurHelperCommand {
-    helper: String,
+    helper: HelperKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum HelperKind {
+    Paru,
+    Yay,
+    Pacman,
 }
 
 impl AurHelperCommand {
-    const SUDO_PACMAN: &'static str = "sudo pacman";
     const NOCONFIRM: &'static str = "--noconfirm";
-    
+
     pub fn new(config: &AppConfig) -> Self {
         let helper = Self::detect_helper(&config.aur_helper);
         Self { helper }
     }
 
-    fn detect_helper(configured: &str) -> String {
+    fn detect_helper(configured: &str) -> HelperKind {
         match configured {
-            "paru" if Self::command_exists("paru") => "paru".to_string(),
-            "yay" if Self::command_exists("yay") => "yay".to_string(),
+            "paru" if Self::command_exists("paru") => HelperKind::Paru,
+            "yay" if Self::command_exists("yay") => HelperKind::Yay,
             "auto" | _ => {
                 if Self::command_exists("paru") {
-                    "paru".to_string()
+                    HelperKind::Paru
                 } else if Self::command_exists("yay") {
-                    "yay".to_string()
+                    HelperKind::Yay
                 } else {
-                    Self::SUDO_PACMAN.to_string()
+                    HelperKind::Pacman
                 }
             }
         }
@@ -519,28 +559,43 @@ impl AurHelperCommand {
     }
 
     /// Build install command
-    pub fn install_command(&self, packages: &[&str]) -> String {
-        let no_confirm = Self::NOCONFIRM;
-        if self.helper == Self::SUDO_PACMAN {
-            format!("sudo pacman -S {no_confirm} {}", packages.join(" "))
-        } else {
-            format!("{} -S {no_confirm} {}", self.helper, packages.join(" "))
+    pub fn install_command(&self, packages: &[&str]) -> CommandSpec {
+        let mut args = vec!["-S".to_string(), Self::NOCONFIRM.to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
+        match self.helper {
+            HelperKind::Paru => CommandSpec::new("paru", args),
+            HelperKind::Yay => CommandSpec::new("yay", args),
+            HelperKind::Pacman => {
+                let mut pacman_args = vec!["pacman".to_string()];
+                pacman_args.extend(args);
+                CommandSpec::new("sudo", pacman_args)
+            }
         }
     }
 
     /// Build remove command
-    pub fn remove_command(&self, packages: &[&str]) -> String {
-        let no_confirm = Self::NOCONFIRM;
-        format!("sudo pacman -Rns {no_confirm} {}", packages.join(" "))
+    pub fn remove_command(&self, packages: &[&str]) -> CommandSpec {
+        let mut args = vec![
+            "pacman".to_string(),
+            "-Rns".to_string(),
+            Self::NOCONFIRM.to_string(),
+        ];
+        args.extend(packages.iter().map(|p| p.to_string()));
+        CommandSpec::new("sudo", args)
     }
 
     /// Build update command
-    pub fn update_command(&self) -> String {
-        let no_confirm = Self::NOCONFIRM;
-        if self.helper == Self::SUDO_PACMAN {
-            format!("sudo pacman -Syu {no_confirm}")
-        } else {
-            format!("{} -Syu {no_confirm}", self.helper)
+    pub fn update_command(&self) -> CommandSpec {
+        let args = vec!["-Syu".to_string(), Self::NOCONFIRM.to_string()];
+        match self.helper {
+            HelperKind::Paru => CommandSpec::new("paru", args),
+            HelperKind::Yay => CommandSpec::new("yay", args),
+            HelperKind::Pacman => {
+                let mut pacman_args = vec!["pacman".to_string()];
+                pacman_args.extend(args);
+                CommandSpec::new("sudo", pacman_args)
+            }
         }
     }
 }
@@ -553,8 +608,14 @@ mod tests {
     fn test_sanitize_input() {
         assert_eq!(SafeCommandBuilder::sanitize("firefox"), "firefox");
         assert_eq!(SafeCommandBuilder::sanitize("rm -rf /"), "rm -rf /");
-        assert_eq!(SafeCommandBuilder::sanitize("test; rm -rf /"), "test rm -rf /");
-        assert_eq!(SafeCommandBuilder::sanitize("test|cat /etc/passwd"), "testcat /etc/passwd");
+        assert_eq!(
+            SafeCommandBuilder::sanitize("test; rm -rf /"),
+            "test rm -rf /"
+        );
+        assert_eq!(
+            SafeCommandBuilder::sanitize("test|cat /etc/passwd"),
+            "testcat /etc/passwd"
+        );
         assert_eq!(SafeCommandBuilder::sanitize("test`whoami`"), "testwhoami");
     }
 
@@ -562,10 +623,10 @@ mod tests {
     fn test_parse_pacman_entry() {
         let header = "core/linux 6.6.1-arch1 (base) [installed]";
         let desc = "The Linux kernel and modules";
-        
+
         let pkg = PacmanProvider::parse_entry(header, desc);
         assert!(pkg.is_some());
-        
+
         let pkg = pkg.unwrap();
         assert_eq!(pkg.name, "linux");
         assert_eq!(pkg.version, "6.6.1-arch1");
@@ -576,7 +637,7 @@ mod tests {
     fn test_parse_pacman_entry_not_installed() {
         let header = "community/firefox 120.0-1";
         let desc = "Standalone web browser";
-        
+
         let pkg = PacmanProvider::parse_entry(header, desc);
         assert!(pkg.is_some());
         assert!(!pkg.unwrap().is_installed);
@@ -587,7 +648,7 @@ mod tests {
         let cmd = SafeCommandBuilder::new("pacman")
             .arg("-S")
             .args(&["firefox", "vlc"]);
-        
+
         assert_eq!(cmd.build_display(), "pacman -S firefox vlc");
     }
 }

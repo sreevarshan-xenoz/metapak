@@ -1,5 +1,4 @@
 use crate::app::{App, FilterOption, InputMode};
-use crate::theme::ThemeManager;
 use crate::ui_utils::centered_rect;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -10,8 +9,7 @@ use ratatui::{
 };
 
 pub fn render(app: &App, f: &mut Frame) {
-    let theme_manager = ThemeManager::new();
-    let theme = theme_manager.current();
+    let theme = &app.theme;
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
