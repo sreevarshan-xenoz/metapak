@@ -2,7 +2,6 @@
 //!
 //! This module provides secure password handling and other security-related utilities.
 
-use crate::config::AppConfig;
 use secrecy::{ExposeSecret, SecretString};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -105,84 +104,6 @@ impl PasswordInput {
 impl Default for PasswordInput {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// AUR helper detection and command building
-pub struct AurHelper {
-    helper: String,
-}
-
-impl AurHelper {
-    pub fn detect(config: &AppConfig) -> Self {
-        let helper = Self::resolve_helper(&config.aur_helper);
-        Self { helper }
-    }
-
-    fn resolve_helper(configured: &str) -> String {
-        match configured {
-            "paru" => {
-                if Self::command_exists("paru") {
-                    "paru".to_string()
-                } else {
-                    tracing::warn!("paru not found, falling back to pacman");
-                    "sudo pacman".to_string()
-                }
-            }
-            "yay" => {
-                if Self::command_exists("yay") {
-                    "yay".to_string()
-                } else {
-                    tracing::warn!("yay not found, falling back to pacman");
-                    "sudo pacman".to_string()
-                }
-            }
-            "pacman" => "pacman".to_string(),
-            "auto" | _ => {
-                if Self::command_exists("paru") {
-                    tracing::debug!("Using paru as AUR helper");
-                    "paru".to_string()
-                } else if Self::command_exists("yay") {
-                    tracing::debug!("Using yay as AUR helper");
-                    "yay".to_string()
-                } else {
-                    tracing::warn!("No AUR helper found, using pacman only");
-                    "sudo pacman".to_string()
-                }
-            }
-        }
-    }
-
-    fn command_exists(cmd: &str) -> bool {
-        Command::new("which")
-            .arg(cmd)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
-    pub fn helper(&self) -> &str {
-        &self.helper
-    }
-
-    pub fn build_install_command(&self, packages: &[String]) -> String {
-        if self.helper == "sudo pacman" {
-            format!("sudo pacman -S --noconfirm {}", packages.join(" "))
-        } else {
-            format!("{} -S --noconfirm {}", self.helper, packages.join(" "))
-        }
-    }
-
-    pub fn build_remove_command(&self, packages: &[String]) -> String {
-        format!("sudo pacman -Rns --noconfirm {}", packages.join(" "))
-    }
-
-    pub fn build_update_command(&self) -> String {
-        if self.helper == "sudo pacman" {
-            "sudo pacman -Syu --noconfirm".to_string()
-        } else {
-            format!("{} -Syu --noconfirm", self.helper)
-        }
     }
 }
 

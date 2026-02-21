@@ -226,6 +226,8 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
         } else {
             "".to_string()
         };
+        let install_key = app.config.keyboard.install.as_str();
+        let toggle_key = app.config.keyboard.toggle_selection.as_str();
 
         let footer_lines = vec![
             Line::from(vec![
@@ -240,12 +242,12 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
                 ),
                 Span::raw(" Search "),
                 Span::styled(
-                    " ↵ ",
+                    format!(" {} ", install_key),
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
                 ),
                 Span::raw(" Install/Remove "),
                 Span::styled(
-                    " Tab ",
+                    format!(" {} ", toggle_key),
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
                 ),
                 Span::raw(" Select "),
@@ -612,6 +614,50 @@ fn render_package_details(app: &App, f: &mut Frame, theme: &crate::theme::Theme)
             info_spans.push(Span::raw("\n"));
         }
 
+        if !pkg.maintainers.is_empty() {
+            info_spans.push(Span::styled(
+                "👤 Maintainer(s): ",
+                Style::default()
+                    .fg(theme.info())
+                    .add_modifier(Modifier::BOLD),
+            ));
+            info_spans.push(Span::raw(pkg.maintainers.join(", ")));
+            info_spans.push(Span::raw("\n"));
+        }
+
+        if !pkg.keywords.is_empty() {
+            info_spans.push(Span::styled(
+                "🏷️  Keywords: ",
+                Style::default()
+                    .fg(theme.secondary())
+                    .add_modifier(Modifier::BOLD),
+            ));
+            info_spans.push(Span::raw(pkg.keywords.join(", ")));
+            info_spans.push(Span::raw("\n"));
+        }
+
+        if let Some(size) = pkg.installed_size {
+            info_spans.push(Span::styled(
+                "💾 Installed Size: ",
+                Style::default()
+                    .fg(theme.warning())
+                    .add_modifier(Modifier::BOLD),
+            ));
+            info_spans.push(Span::raw(format!("{} KB", size)));
+            info_spans.push(Span::raw("\n"));
+        }
+
+        if let Some(size) = pkg.download_size {
+            info_spans.push(Span::styled(
+                "⬇️  Download Size: ",
+                Style::default()
+                    .fg(theme.warning())
+                    .add_modifier(Modifier::BOLD),
+            ));
+            info_spans.push(Span::raw(format!("{} KB", size)));
+            info_spans.push(Span::raw("\n"));
+        }
+
         let info_para =
             Paragraph::new(Line::from(info_spans)).wrap(ratatui::widgets::Wrap { trim: true });
         f.render_widget(info_para, chunks[1]);
@@ -636,6 +682,24 @@ fn render_package_details(app: &App, f: &mut Frame, theme: &crate::theme::Theme)
             .iter()
             .map(|dep| ListItem::new(format!("  • {}", dep)))
             .collect();
+
+        let extra_dep_lines = [
+            ("Optional", &pkg.opt_depends),
+            ("Required By", &pkg.required_by),
+            ("Conflicts", &pkg.conflicts),
+            ("Provides", &pkg.provides),
+            ("Replaces", &pkg.replaces),
+        ];
+        let mut deps_list_items = deps_list_items;
+        for (label, items) in extra_dep_lines {
+            if !items.is_empty() {
+                deps_list_items.push(ListItem::new(format!(
+                    "  • {}: {}",
+                    label,
+                    items.join(", ")
+                )));
+            }
+        }
 
         let deps_list = List::new(deps_list_items)
             .block(Block::default().borders(Borders::NONE))

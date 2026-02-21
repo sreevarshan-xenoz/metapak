@@ -35,11 +35,6 @@ impl DependencyNode {
     pub fn add_child(&mut self, child: DependencyNode) {
         self.children.push(child);
     }
-
-    /// Checks if the node has any children
-    pub fn has_children(&self) -> bool {
-        !self.children.is_empty()
-    }
 }
 
 /// Service for building dependency trees

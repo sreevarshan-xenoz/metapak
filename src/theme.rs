@@ -277,54 +277,6 @@ impl Default for ColorDef {
     }
 }
 
-/// Theme manager for runtime theme switching
-pub struct ThemeManager {
-    current: Theme,
-    available: Vec<(String, Theme)>,
-}
-
-impl ThemeManager {
-    pub fn new() -> Self {
-        let mut available = Vec::new();
-        available.push(("dark".to_string(), Theme::default_dark()));
-        available.push(("light".to_string(), Theme::light()));
-
-        Self {
-            current: Theme::default_dark(),
-            available,
-        }
-    }
-
-    pub fn current(&self) -> &Theme {
-        &self.current
-    }
-
-    pub fn set_theme(&mut self, name: &str) -> bool {
-        if let Some((_, theme)) = self.available.iter().find(|(n, _)| n == name) {
-            self.current = theme.clone();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn available_themes(&self) -> Vec<&str> {
-        self.available.iter().map(|(n, _)| n.as_str()).collect()
-    }
-
-    pub fn add_theme(&mut self, name: String, theme: Theme) {
-        // Remove if exists
-        self.available.retain(|(n, _)| n != &name);
-        self.available.push((name, theme));
-    }
-}
-
-impl Default for ThemeManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

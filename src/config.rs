@@ -178,10 +178,17 @@ impl AppConfig {
 
     /// Get the theme based on configuration
     pub fn get_theme(&self) -> Theme {
-        match self.theme.name.as_str() {
+        let mut theme = match self.theme.name.as_str() {
             "light" => Theme::light(),
             _ => Theme::default_dark(),
-        }
+        };
+        theme.primary = self.theme.primary_color.clone();
+        theme.secondary = self.theme.secondary_color.clone();
+        theme.success = self.theme.accent_color.clone();
+        theme.highlight_bg = self.theme.primary_color.clone();
+        theme.repo_color = self.theme.primary_color.clone();
+        theme.aur_color = self.theme.secondary_color.clone();
+        theme
     }
 }
 

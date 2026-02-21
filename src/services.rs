@@ -72,14 +72,6 @@ impl PackageProvider for PacmanProvider {
         .await
         .unwrap_or(false)
     }
-
-    fn source(&self) -> PackageSource {
-        PackageSource::Pacman
-    }
-
-    fn name(&self) -> &'static str {
-        "pacman"
-    }
 }
 
 impl PacmanProvider {
@@ -270,14 +262,6 @@ impl PackageProvider for AurProvider {
         .await
         .unwrap_or(false)
     }
-
-    fn source(&self) -> PackageSource {
-        PackageSource::Aur
-    }
-
-    fn name(&self) -> &'static str {
-        "aur"
-    }
 }
 
 /// Update provider implementation
@@ -320,11 +304,6 @@ impl UpdateProvider for SystemUpdateProvider {
         })
         .await
         .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
-    }
-
-    async fn update_system(&self) -> Result<()> {
-        // This is handled by the command execution system
-        Ok(())
     }
 }
 
@@ -389,16 +368,6 @@ impl PackageService {
         self.update_provider.check_updates().await
     }
 
-    /// Get package cache stats
-    pub fn cache_stats(&self) -> (usize, usize) {
-        let total = PACKAGE_CACHE.len();
-        let expired = PACKAGE_CACHE
-            .iter()
-            .filter(|entry| entry.value().is_expired())
-            .count();
-        (total, expired)
-    }
-
     /// Clear expired cache entries
     pub fn clear_expired_cache() {
         PACKAGE_CACHE.retain(|_, v| !v.is_expired());
@@ -415,7 +384,7 @@ impl Default for PackageService {
 #[derive(serde::Deserialize, Debug)]
 struct AurResponse {
     #[serde(rename = "resultcount")]
-    result_count: u32,
+    _result_count: u32,
     results: Vec<AurPackage>,
 }
 
@@ -479,14 +448,6 @@ impl SafeCommandBuilder {
     /// Build the command string for display
     pub fn build_display(&self) -> String {
         format!("{} {}", self.program, self.args.join(" "))
-    }
-
-    /// Execute the command
-    pub fn execute(&self) -> Result<std::process::Output> {
-        Command::new(&self.program)
-            .args(&self.args)
-            .output()
-            .map_err(|e| AppError::Command(format!("Failed to execute '{}': {}", self.program, e)))
     }
 
     /// Sanitize input to prevent command injection

@@ -10,9 +10,6 @@ use std::collections::HashMap;
 pub enum Language {
     English,
     Spanish,
-    French,
-    German,
-    Chinese,
 }
 
 impl Language {
@@ -21,9 +18,6 @@ impl Language {
         match self {
             Language::English => "en",
             Language::Spanish => "es",
-            Language::French => "fr",
-            Language::German => "de",
-            Language::Chinese => "zh",
         }
     }
 }

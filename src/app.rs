@@ -120,16 +120,6 @@ pub struct CommandProgress {
     pub current: usize,
     pub total: usize,
     pub current_package: String,
-    pub status: ProgressStatus,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProgressStatus {
-    Downloading,
-    Building,
-    Installing,
-    Complete,
-    Error(String),
 }
 
 impl App {
@@ -540,7 +530,6 @@ impl App {
                                     .next()
                                     .unwrap_or("")
                                     .to_string(),
-                                status: ProgressStatus::Installing,
                             });
                         }
                     }
