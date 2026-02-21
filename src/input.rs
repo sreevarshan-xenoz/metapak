@@ -190,6 +190,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             }
             app.show_console = true;
             app.clear_console();
+            app.is_operation_running = true;
             if let Some(tx) = &app.action_tx {
                 let _ = tx.send(crate::action::Action::SystemUpdate);
             }

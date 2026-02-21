@@ -7,6 +7,8 @@ use crate::errors::AppError;
 use crate::models::Package;
 use std::collections::HashSet;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 /// Represents a dependency relationship between packages
 #[derive(Debug, Clone)]
@@ -51,6 +53,8 @@ struct PacmanPackageInfo {
 struct PacmanDependencyResolver;
 
 impl PacmanDependencyResolver {
+    const MAX_RETRIES: usize = 3;
+
     fn resolve(&self, package_name: &str) -> Result<Option<PacmanPackageInfo>, AppError> {
         let installed = self.query_installed(package_name)?;
         if installed.is_some() {
@@ -60,16 +64,7 @@ impl PacmanDependencyResolver {
     }
 
     fn query_installed(&self, package_name: &str) -> Result<Option<PacmanPackageInfo>, AppError> {
-        let output = Command::new("pacman")
-            .arg("-Qi")
-            .arg(package_name)
-            .output()
-            .map_err(|e| {
-                AppError::Dependency(format!(
-                    "Failed to query installed package '{}': {}",
-                    package_name, e
-                ))
-            })?;
+        let output = self.run_pacman_with_retry(&["-Qi", package_name], "installed package")?;
 
         if !output.status.success() {
             return Ok(None);
@@ -84,16 +79,7 @@ impl PacmanDependencyResolver {
         &self,
         package_name: &str,
     ) -> Result<Option<PacmanPackageInfo>, AppError> {
-        let output = Command::new("pacman")
-            .arg("-Si")
-            .arg(package_name)
-            .output()
-            .map_err(|e| {
-                AppError::Dependency(format!(
-                    "Failed to query sync package '{}': {}",
-                    package_name, e
-                ))
-            })?;
+        let output = self.run_pacman_with_retry(&["-Si", package_name], "sync package")?;
 
         if !output.status.success() {
             return Ok(None);
@@ -168,6 +154,32 @@ impl PacmanDependencyResolver {
             .unwrap_or(raw)
             .trim()
             .to_string()
+    }
+
+    fn run_pacman_with_retry(
+        &self,
+        args: &[&str],
+        context: &str,
+    ) -> Result<std::process::Output, AppError> {
+        let mut last_err = None;
+        for attempt in 0..Self::MAX_RETRIES {
+            match Command::new("pacman").args(args).output() {
+                Ok(output) => return Ok(output),
+                Err(e) => {
+                    last_err = Some(e.to_string());
+                    if attempt + 1 < Self::MAX_RETRIES {
+                        thread::sleep(Duration::from_millis(150 * (attempt as u64 + 1)));
+                    }
+                }
+            }
+        }
+
+        Err(AppError::Dependency(format!(
+            "Failed to query {} after {} retries: {}",
+            context,
+            Self::MAX_RETRIES,
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        )))
     }
 }
 

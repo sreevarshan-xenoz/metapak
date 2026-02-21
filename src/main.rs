@@ -44,6 +44,7 @@ async fn read_output_lines<R>(
     reader: R,
     is_stderr: bool,
     tx: tokio::sync::mpsc::UnboundedSender<ActionResult>,
+    captured: Arc<Mutex<Vec<String>>>,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -54,8 +55,29 @@ async fn read_output_lines<R>(
         } else {
             line
         };
+        {
+            let mut buf = captured.lock().await;
+            buf.push(line.clone());
+            if buf.len() > 200 {
+                let _ = buf.remove(0);
+            }
+        }
         let _ = tx.send(ActionResult::CommandOutput(line));
     }
+}
+
+fn output_contains_dependency_error(output: &[String]) -> bool {
+    let haystack = output.join("\n").to_lowercase();
+    haystack.contains("could not satisfy dependencies")
+        || haystack.contains("unable to satisfy dependency")
+        || haystack.contains("breaks dependency")
+}
+
+fn output_contains_lock_error(output: &[String]) -> bool {
+    let haystack = output.join("\n").to_lowercase();
+    haystack.contains("unable to lock database")
+        || haystack.contains("database is locked")
+        || haystack.contains("failed to init transaction")
 }
 
 async fn run_single_command(
@@ -79,14 +101,23 @@ async fn run_single_command(
         *pid_guard = child.id();
     }
 
-    let stdout_task = child
-        .stdout
-        .take()
-        .map(|stdout| tokio::spawn(read_output_lines(stdout, false, tx.clone())));
-    let stderr_task = child
-        .stderr
-        .take()
-        .map(|stderr| tokio::spawn(read_output_lines(stderr, true, tx.clone())));
+    let captured_output = Arc::new(Mutex::new(Vec::<String>::new()));
+    let stdout_task = child.stdout.take().map(|stdout| {
+        tokio::spawn(read_output_lines(
+            stdout,
+            false,
+            tx.clone(),
+            captured_output.clone(),
+        ))
+    });
+    let stderr_task = child.stderr.take().map(|stderr| {
+        tokio::spawn(read_output_lines(
+            stderr,
+            true,
+            tx.clone(),
+            captured_output.clone(),
+        ))
+    });
 
     let stdin_task = child.stdin.take().map(|mut stdin| {
         let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -137,13 +168,21 @@ async fn run_single_command(
     if status.success() {
         Ok(CommandRunResult::Finished)
     } else {
-        Err(format!(
+        let output = captured_output.lock().await.clone();
+        let mut context = format!(
             "Command exited with status: {}",
             status
                 .code()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "terminated by signal".to_string())
-        ))
+        );
+        if output_contains_dependency_error(&output) {
+            context.push_str(" [dependency-error]");
+        }
+        if output_contains_lock_error(&output) {
+            context.push_str(" [db-lock-error]");
+        }
+        Err(context)
     }
 }
 
@@ -156,19 +195,74 @@ async fn run_command_sequence(
     let _ = tx.send(ActionResult::CommandStarted);
 
     for command in &commands {
-        match run_single_command(
-            command,
-            tx.clone(),
-            active_pid.clone(),
-            cancel_requested.clone(),
-        )
-        .await
-        {
-            Ok(CommandRunResult::Finished) => {}
-            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
-            Err(err) => {
-                let _ = tx.send(ActionResult::Error(err));
-                return CommandRunResult::Finished;
+        let mut attempts = 0usize;
+        loop {
+            attempts += 1;
+            match run_single_command(
+                command,
+                tx.clone(),
+                active_pid.clone(),
+                cancel_requested.clone(),
+            )
+            .await
+            {
+                Ok(CommandRunResult::Finished) => break,
+                Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                Err(err) => {
+                    let is_dependency_error = err.contains("[dependency-error]");
+                    let is_lock_error = err.contains("[db-lock-error]");
+
+                    if is_lock_error && attempts < 3 {
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Detected pacman DB lock issue. Waiting and retrying...".to_string(),
+                        ));
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        continue;
+                    }
+
+                    if is_dependency_error {
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Dependency issue detected. Running auto-fix: sudo pacman -Syu --noconfirm".to_string(),
+                        ));
+                        let fix = CommandSpec {
+                            prog: "sudo".to_string(),
+                            args: vec![
+                                "pacman".to_string(),
+                                "-Syu".to_string(),
+                                "--noconfirm".to_string(),
+                            ],
+                        };
+
+                        match run_single_command(
+                            &fix,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await
+                        {
+                            Ok(CommandRunResult::Finished) => {
+                                let _ = tx.send(ActionResult::CommandOutput(
+                                    "Auto-fix completed. Retrying original command...".to_string(),
+                                ));
+                                if attempts < 3 {
+                                    continue;
+                                }
+                            }
+                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Err(fix_err) => {
+                                let _ = tx.send(ActionResult::Error(format!(
+                                    "Auto-fix failed: {}",
+                                    fix_err
+                                )));
+                                return CommandRunResult::Finished;
+                            }
+                        }
+                    }
+
+                    let _ = tx.send(ActionResult::Error(err));
+                    return CommandRunResult::Finished;
+                }
             }
         }
     }
