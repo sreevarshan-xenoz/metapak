@@ -32,7 +32,7 @@ You can install Arch TUI using the included automated script.
 ### Automated Install
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/arch-tui.git
+    git clone https://github.com/sreevarshan-xenoz/arch-tui.git
     cd arch-tui
     ```
 
