@@ -21,14 +21,12 @@
 
 pub mod action;
 pub mod app;
-pub mod aur;
 pub mod config;
 pub mod dependency_visualization;
 pub mod errors;
 pub mod i18n;
 pub mod input;
 pub mod models;
-pub mod pacman;
 pub mod services;
 pub mod theme;
 pub mod traits;

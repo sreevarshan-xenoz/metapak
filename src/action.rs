@@ -17,9 +17,6 @@ pub enum Action {
     /// Perform system update
     SystemUpdate,
 
-    /// Run a shell command
-    RunCommand { prog: String, args: Vec<String> },
-
     /// Run multiple commands in sequence
     RunCommands(Vec<CommandSpec>),
 

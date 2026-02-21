@@ -1,13 +1,11 @@
 mod action;
 mod app;
-mod aur;
 mod config;
 mod dependency_visualization;
 mod errors;
 mod i18n;
 mod input;
 mod models;
-mod pacman;
 mod services;
 mod theme;
 mod traits;
@@ -223,31 +221,6 @@ async fn main() -> Result<()> {
                         let pwd = secrecy::SecretString::new(password_str);
                         let success = crate::utils::check_sudo_password(&pwd);
                         let _ = result_tx_clone.send(ActionResult::SudoResult(success));
-                    });
-                }
-                Action::RunCommand { prog, args } => {
-                    let result_tx_clone = result_tx.clone();
-                    let active_pid_clone = active_pid_for_spawn.clone();
-                    let cancel_requested_clone = cancel_requested_for_spawn.clone();
-
-                    tokio::spawn(async move {
-                        let command = CommandSpec { prog, args };
-                        let sequence_result = run_command_sequence(
-                            vec![command],
-                            result_tx_clone.clone(),
-                            active_pid_clone,
-                            cancel_requested_clone,
-                        )
-                        .await;
-
-                        match sequence_result {
-                            CommandRunResult::Finished => {
-                                let _ = result_tx_clone.send(ActionResult::CommandFinished);
-                            }
-                            CommandRunResult::Cancelled => {
-                                let _ = result_tx_clone.send(ActionResult::CommandCancelled);
-                            }
-                        }
                     });
                 }
                 Action::RunCommands(commands) => {
