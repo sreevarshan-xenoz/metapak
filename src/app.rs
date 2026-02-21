@@ -68,6 +68,7 @@ pub struct App {
     pub pending_command: Option<(String, Vec<String>)>,
     pub error_message: Option<String>,
     pub available_updates: Option<usize>,
+    pub is_operation_running: bool,
 
     // Password - using secure input
     pub show_password_prompt: bool,
@@ -151,6 +152,7 @@ impl App {
             pending_command: None,
             error_message: None,
             available_updates: None,
+            is_operation_running: false,
 
             show_password_prompt: true,
             password_input: PasswordInput::new(),

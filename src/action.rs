@@ -37,6 +37,9 @@ pub enum ActionResult {
     /// Command output line
     CommandOutput(String),
 
+    /// Command execution has started
+    CommandStarted,
+
     /// Command input channel is ready
     CommandInputReady(UnboundedSender<String>),
 

@@ -153,6 +153,8 @@ async fn run_command_sequence(
     active_pid: Arc<Mutex<Option<u32>>>,
     cancel_requested: Arc<AtomicBool>,
 ) -> CommandRunResult {
+    let _ = tx.send(ActionResult::CommandStarted);
+
     for command in &commands {
         match run_single_command(
             command,
@@ -328,6 +330,19 @@ async fn main() -> Result<()> {
                             .arg("-TERM")
                             .arg(pid.to_string())
                             .status();
+                        tokio::time::sleep(Duration::from_millis(800)).await;
+                        let still_alive = std::process::Command::new("kill")
+                            .arg("-0")
+                            .arg(pid.to_string())
+                            .status()
+                            .map(|s| s.success())
+                            .unwrap_or(false);
+                        if still_alive {
+                            let _ = std::process::Command::new("kill")
+                                .arg("-KILL")
+                                .arg(pid.to_string())
+                                .status();
+                        }
                     }
                     let _ = result_tx.send(ActionResult::Cancelled);
                 }
@@ -427,6 +442,9 @@ async fn main() -> Result<()> {
                 ActionResult::CommandOutput(line) => {
                     app.add_console_output(line);
                 }
+                ActionResult::CommandStarted => {
+                    app.is_operation_running = true;
+                }
                 ActionResult::CommandInputReady(tx) => {
                     app.command_stdin_tx = Some(tx);
                 }
@@ -435,6 +453,7 @@ async fn main() -> Result<()> {
                     app.console_input.clear();
                 }
                 ActionResult::CommandFinished => {
+                    app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
                     app.add_console_output(
@@ -442,6 +461,7 @@ async fn main() -> Result<()> {
                     );
                 }
                 ActionResult::CommandCancelled => {
+                    app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
                     app.add_console_output("----- Operation Cancelled -----".to_string());
@@ -450,6 +470,7 @@ async fn main() -> Result<()> {
                     app.available_updates = Some(count);
                 }
                 ActionResult::Cancelled => {
+                    app.is_operation_running = false;
                     app.is_loading = false;
                 }
             }

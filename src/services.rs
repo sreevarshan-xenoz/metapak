@@ -6,8 +6,10 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use regex::Regex;
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
@@ -166,9 +168,12 @@ pub struct AurProvider {
 
 impl AurProvider {
     pub fn new() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-        }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .connect_timeout(Duration::from_secs(4))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self { client }
     }
 }
 
@@ -189,13 +194,44 @@ impl PackageProvider for AurProvider {
             urlencoding::encode(query)
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .header("User-Agent", "arch-tui/0.1.0")
-            .send()
-            .await
-            .map_err(|e| AppError::Aur(format!("Failed to send AUR request: {}", e)))?;
+        const MAX_RETRIES: usize = 3;
+        let mut response = None;
+        let mut last_error = None;
+        for attempt in 0..MAX_RETRIES {
+            match self
+                .client
+                .get(&url)
+                .header("User-Agent", "arch-tui/0.1.0")
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    response = Some(resp);
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                    if attempt + 1 < MAX_RETRIES {
+                        tokio::time::sleep(Duration::from_millis(250 * (attempt as u64 + 1))).await;
+                    }
+                }
+            }
+        }
+
+        let response = response.ok_or_else(|| {
+            AppError::Aur(format!(
+                "Failed to send AUR request after {} attempts: {}",
+                MAX_RETRIES,
+                last_error.unwrap_or_else(|| "unknown error".to_string())
+            ))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(AppError::Aur(format!(
+                "AUR request failed with status {}",
+                response.status()
+            )));
+        }
 
         let aur_response: AurResponse = response
             .json()
@@ -360,7 +396,45 @@ impl PackageService {
             }
         }
 
-        Ok(all_results)
+        // Deduplicate by source+name and keep richer entries if duplicates exist.
+        let mut deduped: HashMap<(String, String), Package> = HashMap::new();
+        for pkg in all_results {
+            let source = match pkg.source {
+                PackageSource::Pacman => "pacman".to_string(),
+                PackageSource::Aur => "aur".to_string(),
+            };
+            let key = (source, pkg.name.clone());
+            deduped
+                .entry(key)
+                .and_modify(|existing| {
+                    if !existing.is_installed && pkg.is_installed {
+                        existing.is_installed = true;
+                    }
+                    if existing.description.is_empty() && !pkg.description.is_empty() {
+                        existing.description = pkg.description.clone();
+                    }
+                })
+                .or_insert(pkg);
+        }
+
+        let query_lc = query.to_lowercase();
+        let mut results: Vec<Package> = deduped.into_values().collect();
+        results.sort_by(|a, b| {
+            let a_name = a.name.to_lowercase();
+            let b_name = b.name.to_lowercase();
+            let a_rank = relevance_rank(&a_name, &query_lc);
+            let b_rank = relevance_rank(&b_name, &query_lc);
+            a_rank
+                .cmp(&b_rank)
+                .then_with(|| a_name.cmp(&b_name))
+                .then_with(|| match (&a.source, &b.source) {
+                    (PackageSource::Pacman, PackageSource::Aur) => std::cmp::Ordering::Less,
+                    (PackageSource::Aur, PackageSource::Pacman) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                })
+        });
+
+        Ok(results)
     }
 
     /// Check for available updates
@@ -377,6 +451,18 @@ impl PackageService {
 impl Default for PackageService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn relevance_rank(name: &str, query: &str) -> u8 {
+    if name == query {
+        0
+    } else if name.starts_with(query) {
+        1
+    } else if name.contains(query) {
+        2
+    } else {
+        3
     }
 }
 

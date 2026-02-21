@@ -168,6 +168,10 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
 
         // Actions
         KeyCode::Enter => {
+            if app.is_operation_running {
+                app.error_message = Some("An operation is already running.".to_string());
+                return;
+            }
             if !app.selected_packages.is_empty() {
                 app.packages_pending_confirmation =
                     app.selected_packages.values().cloned().collect();
@@ -180,6 +184,10 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
 
         // System Update
         KeyCode::Char('U') => {
+            if app.is_operation_running {
+                app.error_message = Some("An operation is already running.".to_string());
+                return;
+            }
             app.show_console = true;
             app.clear_console();
             if let Some(tx) = &app.action_tx {
@@ -289,6 +297,7 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
     // Execute commands
     if !commands.is_empty() {
         app.selected_packages.clear();
+        app.is_operation_running = true;
 
         if let Some(tx) = &app.action_tx {
             let _ = tx.send(crate::action::Action::RunCommands(commands));
