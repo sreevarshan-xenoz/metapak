@@ -540,8 +540,10 @@ impl SafeCommandBuilder {
     fn sanitize(input: &str) -> String {
         // Remove dangerous characters that could be used for injection
         let pattern = r##"[;&|<>$`"\n\r\x00]"##;
-        let dangerous = Regex::new(pattern).unwrap();
-        dangerous.replace_all(input, "").to_string()
+        match Regex::new(pattern) {
+            Ok(dangerous) => dangerous.replace_all(input, "").to_string(),
+            Err(_) => input.to_string(),
+        }
     }
 }
 

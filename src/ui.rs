@@ -57,10 +57,11 @@ fn render_search_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
     };
 
     let title = if app.input_mode == InputMode::Editing && app.history_index.is_some() {
+        let history_pos = app.history_index.map_or(1, |idx| idx + 1);
         format!(
             "🔍 {} (history {})",
             app.localizer.t("search_placeholder"),
-            app.history_index.unwrap() + 1
+            history_pos
         )
     } else {
         format!("🔍 {}", app.localizer.t("search_placeholder"))

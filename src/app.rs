@@ -472,15 +472,27 @@ impl App {
 
     pub fn show_dependency_visualization(&mut self) {
         if let Some(pkg) = self.get_selected_package().cloned() {
-            let tree =
-                crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree(
+            let (tree, warnings) =
+                crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree_safe(
                     &pkg, 3,
                 );
-            self.dependency_tree_text = Some(
+            let mut text =
                 crate::dependency_visualization::DependencyVisualizationService::format_tree(
                     &tree, 0,
-                ),
-            );
+                );
+            if !warnings.is_empty() {
+                text.push_str("\nWarnings:\n");
+                for warning in warnings.iter().take(5) {
+                    text.push_str(&format!("- {}\n", warning));
+                }
+                if warnings.len() > 5 {
+                    text.push_str(&format!(
+                        "- ...and {} more warning(s)\n",
+                        warnings.len() - 5
+                    ));
+                }
+            }
+            self.dependency_tree_text = Some(text);
             self.show_dependency_visualization = true;
         }
     }

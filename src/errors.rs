@@ -23,6 +23,9 @@ pub enum AppError {
     #[error("Command execution failed: {0}")]
     Command(String),
 
+    #[error("Dependency resolution failed: {0}")]
+    Dependency(String),
+
     #[error("Configuration error: {0}")]
     Config(#[from] config::ConfigError),
 
