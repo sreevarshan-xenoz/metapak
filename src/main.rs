@@ -385,10 +385,8 @@ async fn main() -> Result<()> {
         app.transaction_history = history.into();
     }
 
-    // Initial check for updates (if enabled)
-    if app.config.ui.auto_update_on_startup {
-        let _ = action_tx.send(Action::CheckUpdates);
-    }
+    // Initial check for updates (on startup) - send after spawn is ready
+    let _ = action_tx.send(Action::CheckUpdates);
 
     // Start auto-update checker if enabled
     let auto_check_enabled = app.config.ui.auto_check_updates;
