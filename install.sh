@@ -4,60 +4,162 @@ set -e
 # Color codes
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}=== Arch TUI Installer ===${NC}"
+VERSION="0.1.0"
+INSTALL_DIR="${HOME}/.local"
+BIN_DIR="${INSTALL_DIR}/bin"
+SHARE_DIR="${INSTALL_DIR}/share"
 
-# 1. Check dependencies
-echo -e "${GREEN}[1/5] Checking dependencies...${NC}"
+usage() {
+    echo "Arch TUI Installer v${VERSION}"
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -i, --install      Install arch-tui (default)"
+    echo "  -u, --uninstall    Uninstall arch-tui"
+    echo "  -U, --update       Update and rebuild"
+    echo "  -h, --help         Show this help message"
+    echo ""
+}
 
-if ! command -v cargo &> /dev/null; then
-    echo "Rust/Cargo is not installed. Installing via rustup..."
-    sudo pacman -S --noconfirm rustup
-    rustup default stable
-fi
+install() {
+    echo -e "${BLUE}=== Arch TUI Installer ===${NC}"
 
-if ! command -v pacman &> /dev/null; then
-    echo "Error: 'pacman' not found. Is this an Arch Linux system?"
-    exit 1
-fi
+    # 1. Check dependencies
+    echo -e "${GREEN}[1/6] Checking dependencies...${NC}"
 
-# Check for AUR helper
-if command -v paru &> /dev/null; then
-    echo "Found AUR helper: paru"
-elif command -v yay &> /dev/null; then
-    echo "Found AUR helper: yay"
-else
-    echo "Warning: No AUR helper (paru/yay) found. AUR functionality might be limited."
-    read -p "Do you want to install 'paru-bin' (requires sudo)? [y/N] " install_paru
-    if [[ "$install_paru" =~ ^[Yy]$ ]]; then
-        echo "Installing paru-bin..."
-        # Basic manual build fallback if no helper
-        git clone https://aur.archlinux.org/paru-bin.git /tmp/paru-bin
-        cd /tmp/paru-bin
-        makepkg -si --noconfirm
-        cd -
+    if ! command -v cargo &> /dev/null; then
+        echo "Rust/Cargo is not installed. Installing via rustup..."
+        if command -v pacman &> /dev/null; then
+            sudo pacman -S --noconfirm rustup
+        else
+            echo "Error: Cannot install Rust - pacman not found"
+            exit 1
+        fi
+        rustup default stable
     fi
-fi
 
-# 2. Build Release
-echo -e "${GREEN}[2/5] Building release binary...${NC}"
-cargo build --release
+    if ! command -v pacman &> /dev/null; then
+        echo -e "${RED}Error: 'pacman' not found. Is this an Arch Linux system?${NC}"
+        exit 1
+    fi
 
-# 3. Install Binary
-echo -e "${GREEN}[3/5] Installing binary to ~/.local/bin/...${NC}"
-mkdir -p ~/.local/bin
-cp target/release/arch-tui ~/.local/bin/
-chmod +x ~/.local/bin/arch-tui
+    # Check for AUR helper
+    if command -v paru &> /dev/null; then
+        echo "Found AUR helper: paru"
+    elif command -v yay &> /dev/null; then
+        echo "Found AUR helper: yay"
+    else
+        echo -e "${YELLOW}Warning: No AUR helper (paru/yay) found. AUR functionality limited.${NC}"
+    fi
 
-# 4. Install Desktop Entry
-echo -e "${GREEN}[4/5] Installing desktop entry...${NC}"
-mkdir -p ~/.local/share/applications
-cp arch-tui.desktop ~/.local/share/applications/
+    # 2. Build Release
+    echo -e "${GREEN}[2/6] Building release binary...${NC}"
+    cargo build --release
 
-# 5. Finalize
-echo -e "${GREEN}[5/5] Installation Complete!${NC}"
-echo ""
-echo "Please ensure ~/.local/bin is in your PATH."
-echo "You can launch the app by typing 'arch-tui' in terminal"
-echo "or by searching 'Arch TUI' in your application menu."
+    # 3. Install Binary
+    echo -e "${GREEN}[3/6] Installing binary to ${BIN_DIR}...${NC}"
+    mkdir -p "${BIN_DIR}"
+    cp target/release/arch-tui "${BIN_DIR}/"
+    chmod +x "${BIN_DIR}/arch-tui"
+
+    # 4. Install Config
+    echo -e "${GREEN}[4/6] Installing default config...${NC}"
+    mkdir -p "${INSTALL_DIR}/config/arch-tui"
+    if [ ! -f "${INSTALL_DIR}/config/arch-tui/config.toml" ]; then
+        cp config.example.toml "${INSTALL_DIR}/config/arch-tui/config.toml"
+    fi
+
+    # 5. Install Desktop Entry
+    echo -e "${GREEN}[5/6] Installing desktop entry...${NC}"
+    mkdir -p "${SHARE_DIR}/applications"
+    cp arch-tui.desktop "${SHARE_DIR}/applications/"
+    update-desktop-database "${SHARE_DIR}/applications/" 2>/dev/null || true
+
+    # 6. Finalize
+    echo -e "${GREEN}[6/6] Installation Complete!${NC}"
+    echo ""
+    echo -e "${GREEN}To run arch-tui:${NC}"
+    echo "  ${BIN_DIR}/arch-tui"
+    echo ""
+    echo "Or add to PATH by adding to ~/.bashrc or ~/.zshrc:"
+    echo "  export PATH=\"\${HOME}/.local/bin:\$PATH\""
+    echo ""
+    echo -e "Press ${GREEN}?${NC} in the app for keyboard shortcuts"
+}
+
+uninstall() {
+    echo -e "${BLUE}=== Uninstalling Arch TUI ===${NC}"
+    
+    if [ -f "${BIN_DIR}/arch-tui" ]; then
+        rm -f "${BIN_DIR}/arch-tui"
+        echo "Removed binary"
+    fi
+    
+    if [ -d "${INSTALL_DIR}/config/arch-tui" ]; then
+        rm -rf "${INSTALL_DIR}/config/arch-tui"
+        echo "Removed config"
+    fi
+    
+    if [ -f "${SHARE_DIR}/applications/arch-tui.desktop" ]; then
+        rm -f "${SHARE_DIR}/applications/arch-tui.desktop"
+        echo "Removed desktop entry"
+    fi
+    
+    echo -e "${GREEN}Uninstallation complete!${NC}"
+}
+
+update() {
+    echo -e "${BLUE}=== Updating Arch TUI ===${NC}"
+    cargo pull 2>/dev/null || true
+    cargo build --release
+    mkdir -p "${BIN_DIR}"
+    cp target/release/arch-tui "${BIN_DIR}/"
+    chmod +x "${BIN_DIR}/arch-tui"
+    echo -e "${GREEN}Update complete!${NC}"
+}
+
+# Parse arguments
+ACTION="install"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -i|--install)
+            ACTION="install"
+            shift
+            ;;
+        -u|--uninstall)
+            ACTION="uninstall"
+            shift
+            ;;
+        -U|--update)
+            ACTION="update"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+case $ACTION in
+    install)
+        install
+        ;;
+    uninstall)
+        uninstall
+        ;;
+    update)
+        update
+        ;;
+esac
