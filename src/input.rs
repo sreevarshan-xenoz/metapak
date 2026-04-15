@@ -238,8 +238,22 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
 
-        // Sidebar Toggle
-        KeyCode::Char('\\') => app.toggle_sidebar(),
+        // Open in browser
+        KeyCode::Char('o') => {
+            if let Some(pkg) = app.get_selected_package() {
+                let url = match pkg.source {
+                    crate::models::PackageSource::Pacman => {
+                        format!("https://archlinux.org/packages/search/{}", pkg.name)
+                    }
+                    crate::models::PackageSource::Aur => {
+                        format!("https://aur.archlinux.org/packages/{}", pkg.name)
+                    }
+                };
+                if let Err(e) = open::that(&url) {
+                    app.error_message = Some(format!("Failed to open browser: {}", e));
+                }
+            }
+        }
 
         // Refresh/Clear
         KeyCode::Char('r') => {

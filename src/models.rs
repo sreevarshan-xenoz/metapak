@@ -38,3 +38,29 @@ pub enum PackageSource {
     Pacman,
     Aur,
 }
+
+impl Package {
+    pub fn format_installed_size(&self) -> String {
+        match self.installed_size {
+            Some(size) if size > 0 => Self::format_size_kb(size),
+            _ => "-".to_string(),
+        }
+    }
+
+    pub fn format_download_size(&self) -> String {
+        match self.download_size {
+            Some(size) if size > 0 => Self::format_size_kb(size),
+            _ => "-".to_string(),
+        }
+    }
+
+    fn format_size_kb(kb: u64) -> String {
+        if kb >= 1024 * 1024 {
+            format!("{:.1}M", kb as f64 / (1024.0 * 1024.0))
+        } else if kb >= 1024 {
+            format!("{:.1}K", kb as f64 / 1024.0)
+        } else {
+            format!("{}K", kb)
+        }
+    }
+}

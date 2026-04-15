@@ -222,14 +222,16 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                 crate::models::PackageSource::Aur => " ↑",
             };
 
-            let max_name_width = vis_height.saturating_sub(23).max(10);
+            let size_str = pkg.format_download_size();
+            let max_name_width = vis_height.saturating_sub(28).max(10);
             let truncated_name = truncate_with_ellipsis(&pkg.name, max_name_width);
 
             let line = format!(
-                "{} {} {:<width$} {}",
+                "{} {} {:<width$} {:>6} {}",
                 status_mark,
                 source_indicator,
                 truncated_name,
+                size_str,
                 pkg.version,
                 width = max_name_width
             );
@@ -1190,6 +1192,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  U         Update system"),
         Line::from("  d         Show package details"),
         Line::from("  v         Show dependency tree"),
+        Line::from("  o         Open package in browser"),
         Line::from("  \\         Toggle sidebar (details view)"),
         Line::from(""),
         Line::from(vec![Span::styled(

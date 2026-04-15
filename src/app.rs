@@ -127,6 +127,10 @@ pub struct App {
     pub dependency_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
+
+    // Fuzzy search
+    pub fuzzy_matcher: crate::search::FuzzySearch,
+    pub fuzzy_scores: std::collections::HashMap<String, i64>,
 }
 
 /// Represents a selection action for undo functionality
@@ -219,6 +223,9 @@ impl App {
             dependency_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
+
+            fuzzy_matcher: crate::search::FuzzySearch::new(),
+            fuzzy_scores: std::collections::HashMap::new(),
         }
     }
 
@@ -448,22 +455,48 @@ impl App {
             FilterOption::AurOnly => matches!(pkg.source, crate::models::PackageSource::Aur),
         });
 
-        // Apply sort
-        filtered.sort_by(|a, b| match self.current_sort {
-            SortOption::NameAsc => a.name.cmp(&b.name),
-            SortOption::NameDesc => b.name.cmp(&a.name),
-            SortOption::Source => {
-                let a_val = if matches!(a.source, crate::models::PackageSource::Pacman) {
-                    0
-                } else {
-                    1
-                };
-                let b_val = if matches!(b.source, crate::models::PackageSource::Pacman) {
-                    0
-                } else {
-                    1
-                };
-                a_val.cmp(&b_val).then_with(|| a.name.cmp(&b.name))
+        // Apply fuzzy scoring for search
+        self.fuzzy_scores.clear();
+        if !self.search_input.is_empty() {
+            let items: Vec<(String, String)> = filtered
+                .iter()
+                .map(|p| (p.name.clone(), p.description.clone()))
+                .collect();
+
+            let results = self
+                .fuzzy_matcher
+                .filter_and_sort(&items, &self.search_input);
+            for (name, score, _) in results {
+                self.fuzzy_scores.insert(name.to_string(), score);
+            }
+        }
+
+        // Apply sort (fuzzy score first if searching)
+        filtered.sort_by(|a, b| {
+            if !self.search_input.is_empty() {
+                let a_score = self.fuzzy_scores.get(&a.name).copied().unwrap_or(0);
+                let b_score = self.fuzzy_scores.get(&b.name).copied().unwrap_or(0);
+                if a_score != b_score {
+                    return b_score.cmp(&a_score);
+                }
+            }
+
+            match self.current_sort {
+                SortOption::NameAsc => a.name.cmp(&b.name),
+                SortOption::NameDesc => b.name.cmp(&a.name),
+                SortOption::Source => {
+                    let a_val = if matches!(a.source, crate::models::PackageSource::Pacman) {
+                        0
+                    } else {
+                        1
+                    };
+                    let b_val = if matches!(b.source, crate::models::PackageSource::Pacman) {
+                        0
+                    } else {
+                        1
+                    };
+                    a_val.cmp(&b_val).then_with(|| a.name.cmp(&b.name))
+                }
             }
         });
 
