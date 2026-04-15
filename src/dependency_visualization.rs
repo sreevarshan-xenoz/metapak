@@ -281,14 +281,57 @@ impl DependencyVisualizationService {
         node
     }
 
-    /// Formats the dependency tree as a string for display
-    pub fn format_tree(node: &DependencyNode, indent_level: usize) -> String {
-        let indent = "  ".repeat(indent_level);
-        let status = if node.is_installed { "✓" } else { "○" };
-        let mut result = format!("{}{} {} ({})\n", indent, status, node.name, node.version);
+    /// Formats the dependency tree as a string with box-drawing characters
+    pub fn format_tree(
+        node: &DependencyNode,
+        indent_level: usize,
+        is_last: bool,
+        is_root: bool,
+    ) -> String {
+        if is_root {
+            let status = if node.is_installed { "✓" } else { "○" };
+            let mut result = format!("{} {} ({})\n", status, node.name, node.version);
 
-        for child in &node.children {
-            result.push_str(&Self::format_tree(child, indent_level + 1));
+            let child_count = node.children.len();
+            for (i, child) in node.children.iter().enumerate() {
+                let child_is_last = i == child_count - 1;
+                let prefixes: Vec<bool> = vec![];
+                result.push_str(&Self::format_node(child, &prefixes, child_is_last));
+            }
+            result
+        } else {
+            let prefixes: Vec<bool> = vec![false; indent_level];
+            Self::format_node(node, &prefixes, is_last)
+        }
+    }
+
+    fn format_node(node: &DependencyNode, parent_prefixes: &[bool], is_last: bool) -> String {
+        let status = if node.is_installed { "✓" } else { "○" };
+        let mut result = String::new();
+
+        for (i, &has_sibling) in parent_prefixes.iter().enumerate() {
+            if has_sibling {
+                result.push_str("│   ");
+            } else {
+                result.push_str("    ");
+            }
+        }
+
+        if is_last {
+            result.push_str("└── ");
+        } else {
+            result.push_str("├── ");
+        }
+
+        result.push_str(&format!("{} {} ({})\n", status, node.name, node.version));
+
+        let mut child_prefixes = parent_prefixes.to_vec();
+        child_prefixes.push(!is_last);
+
+        let child_count = node.children.len();
+        for (i, child) in node.children.iter().enumerate() {
+            let child_is_last = i == child_count - 1;
+            result.push_str(&Self::format_node(child, &child_prefixes, child_is_last));
         }
 
         result
@@ -395,7 +438,7 @@ Description     : Test package
         root.add_child(child1);
         root.add_child(child2);
 
-        let formatted = DependencyVisualizationService::format_tree(&root, 0);
+        let formatted = DependencyVisualizationService::format_tree(&root, 0, true, true);
         assert!(formatted.contains("root"));
         assert!(formatted.contains("child1"));
         assert!(formatted.contains("child2"));

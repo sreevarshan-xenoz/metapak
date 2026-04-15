@@ -1,42 +1,82 @@
+use crate::animations::ToastStyle;
 use crate::app::{App, FilterOption, InputMode};
-use crate::ui_utils::centered_rect;
+use crate::ui_utils::{centered_rect, render_scrollbar, truncate_with_ellipsis, visible_height};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph},
+    widgets::{
+        Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
+use std::cmp::min;
 
-pub fn render(app: &App, f: &mut Frame) {
+pub fn render(app: &mut App, f: &mut Frame) {
+    app.tick(33);
+
     let theme = &app.theme;
+    let area = f.size();
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Search bar
-            Constraint::Min(1),    // Results list
-            Constraint::Length(4), // Status bar
-        ])
-        .split(f.size());
+    let sidebar_allowed = area.width >= 100;
+    let search_bar_height = if area.height >= 20 { 3 } else { 2 };
 
-    // Search Bar
-    render_search_bar(app, f, chunks[0], theme);
+    let main_chunks = if app.show_sidebar && sidebar_allowed && app.get_selected_package().is_some()
+    {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(search_bar_height),
+                Constraint::Min(1),
+                Constraint::Length(4),
+            ])
+            .split(area);
 
-    // Results List
-    render_results_list(app, f, chunks[1], theme);
+        let sub_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(chunks[1]);
 
-    // Status Bar
-    render_status_bar(app, f, chunks[2], theme);
+        RenderChunks {
+            search: chunks[0],
+            results: sub_chunks[0],
+            sidebar: Some(sub_chunks[1]),
+            status: chunks[2],
+        }
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(search_bar_height),
+                Constraint::Min(1),
+                Constraint::Length(4),
+            ])
+            .split(area);
 
-    // Overlays (in order of priority)
+        RenderChunks {
+            search: chunks[0],
+            results: chunks[1],
+            sidebar: None,
+            status: chunks[2],
+        }
+    };
+
+    render_search_bar(app, f, main_chunks.search, theme);
+    render_results_list(app, f, main_chunks.results, theme);
+    render_status_bar(app, f, main_chunks.status, theme);
+
+    if let (true, Some(sidebar_area)) = (app.show_sidebar, main_chunks.sidebar) {
+        render_details_sidebar(app, f, sidebar_area, theme);
+    }
+
     if app.show_help {
-        render_help_overlay(f, f.size(), theme);
+        render_help_overlay(f, area, theme);
     } else if app.show_diagnostics {
-        render_diagnostics_overlay(app, f, f.size(), theme);
+        render_diagnostics_overlay(app, f, area, theme);
     } else if app.show_history {
-        render_history_overlay(app, f, f.size(), theme);
-    } else if app.show_package_details {
+        render_history_overlay(app, f, area, theme);
+    } else if app.show_package_details && !app.show_sidebar {
         render_package_details(app, f, theme);
     } else if app.show_dependency_visualization {
         render_dependency_visualization(app, f, theme);
@@ -47,6 +87,63 @@ pub fn render(app: &App, f: &mut Frame) {
     } else if app.show_confirm_prompt {
         render_confirmation(app, f, theme);
     }
+
+    if !app.show_help
+        && !app.show_diagnostics
+        && !app.show_history
+        && !app.show_package_details
+        && !app.show_dependency_visualization
+        && !app.show_console
+        && !app.show_password_prompt
+        && !app.show_confirm_prompt
+    {
+        render_toasts(app, f, area, theme);
+    }
+}
+
+struct RenderChunks {
+    search: Rect,
+    results: Rect,
+    sidebar: Option<Rect>,
+    status: Rect,
+}
+
+fn render_toasts(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    if app.toasts.is_empty() {
+        return;
+    }
+
+    let toast_width = 60.min(area.width.saturating_sub(4));
+    let toast_height = app.toasts.len() as u16 + 2;
+
+    let toast_area = Rect {
+        x: area.x + (area.width - toast_width) / 2,
+        y: area.y + 1,
+        width: toast_width,
+        height: toast_height,
+    };
+
+    let lines: Vec<Line> = app
+        .toasts
+        .iter()
+        .map(|toast| {
+            let (_border_color, text_style) = toast.get_render_style(theme);
+            Line::from(vec![Span::styled(&toast.message, text_style)])
+        })
+        .collect();
+
+    let toast_widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Notification")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .alignment(Alignment::Center);
+
+    f.render_widget(Clear, toast_area);
+    f.render_widget(toast_widget, toast_area);
 }
 
 fn render_search_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -60,7 +157,13 @@ fn render_search_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
         InputMode::Editing => Style::default().fg(theme.primary()),
     };
 
-    let title = if app.input_mode == InputMode::Editing && app.history_index.is_some() {
+    let title = if app.is_loading {
+        format!(
+            "🔍 {} ({})",
+            app.localizer.t("search_placeholder"),
+            app.animation_state.spinner_char()
+        )
+    } else if app.input_mode == InputMode::Editing && app.history_index.is_some() {
         let history_pos = app.history_index.map_or(1, |idx| idx + 1);
         format!(
             "🔍 {} (history {})",
@@ -84,6 +187,7 @@ fn render_search_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
 
 fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
     let page_items = app.get_paginated_results();
+    let vis_height = visible_height(area, true, 1);
 
     let items: Vec<ListItem> = page_items
         .iter()
@@ -118,9 +222,16 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                 crate::models::PackageSource::Aur => " ↑",
             };
 
+            let max_name_width = vis_height.saturating_sub(23).max(10);
+            let truncated_name = truncate_with_ellipsis(&pkg.name, max_name_width);
+
             let line = format!(
-                "{} {} {:<25} {}",
-                status_mark, source_indicator, pkg.name, pkg.version
+                "{} {} {:<width$} {}",
+                status_mark,
+                source_indicator,
+                truncated_name,
+                pkg.version,
+                width = max_name_width
             );
 
             ListItem::new(line).style(Style::default().fg(color))
@@ -156,11 +267,17 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
         )
     };
 
+    let border_type = if app.is_loading {
+        BorderType::Rounded
+    } else {
+        BorderType::Rounded
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_type(border_type)
                 .title(title)
                 .border_style(Style::default().fg(theme.border())),
         )
@@ -176,12 +293,48 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
 
     f.render_stateful_widget(list, area, &mut state);
 
-    // Show filter/sort indicators
+    if page_items.len() >= vis_height {
+        let scrollbar_area = Rect {
+            x: area.x + area.width - 1,
+            y: area.y + 1,
+            width: 1,
+            height: area.height.saturating_sub(2),
+        };
+
+        let mut scroll_state = app.results_scroll_state.clone();
+        if let Some(selected) = app.selected_index {
+            scroll_state = scroll_state.position(selected);
+        }
+
+        let scrollbar = Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█")
+            .style(
+                Style::default()
+                    .fg(theme.muted())
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        f.render_stateful_widget(scrollbar, scrollbar_area, &mut scroll_state);
+    }
+
     if !app.is_loading && !page_items.is_empty() {
-        let info_text = format!(
-            "Filter: {:?} | Sort: {:?} | ? for help",
-            app.current_filter, app.current_sort
-        );
+        let info_text = match app.input_mode {
+            InputMode::Editing => "Esc Exit  Enter Search  ↑↓ History".to_string(),
+            InputMode::Normal => {
+                let help_key = app.config.keyboard.quit.as_str() == "q";
+                format!(
+                    "{} for help | ? Filter: {:?} | Sort: {:?}",
+                    if help_key { "?" } else { "h" },
+                    app.current_filter,
+                    app.current_sort
+                )
+            }
+        };
+
         let info = Paragraph::new(info_text)
             .style(
                 Style::default()
@@ -193,7 +346,7 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
         let info_area = Rect {
             x: area.x + area.width.saturating_sub(40),
             y: area.y + 1,
-            width: 38,
+            width: min(38, area.width.saturating_sub(2)),
             height: 1,
         };
         f.render_widget(info, info_area);
@@ -302,6 +455,98 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
                 .border_style(Style::default().fg(theme.border())),
         );
         f.render_widget(footer, area);
+    }
+}
+
+fn render_details_sidebar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    if let Some(pkg) = app.get_selected_package() {
+        let sidebar_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(format!("📦 {}", pkg.name))
+            .border_style(Style::default().fg(theme.primary()));
+
+        f.render_widget(sidebar_block, area);
+
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y + 2,
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(4),
+        };
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Version: ", Style::default().fg(theme.muted())),
+                Span::styled(&pkg.version, Style::default().fg(theme.foreground())),
+            ]),
+            Line::from(""),
+        ];
+
+        if !pkg.description.is_empty() {
+            let desc_text = &pkg.description;
+            let desc_lines = desc_text
+                .chars()
+                .take(inner.width as usize * 3)
+                .collect::<String>();
+            lines.push(Line::from(vec![Span::styled(
+                "Description: ",
+                Style::default().fg(theme.muted()),
+            )]));
+            for word in desc_lines.split_whitespace() {
+                lines.push(Line::from(Span::styled(
+                    word.to_string(),
+                    Style::default().fg(theme.foreground()),
+                )));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if !pkg.licenses.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("License: ", Style::default().fg(theme.muted())),
+                Span::styled(
+                    pkg.licenses.join(", "),
+                    Style::default().fg(theme.secondary()),
+                ),
+            ]));
+        }
+
+        if pkg.is_installed {
+            lines.push(Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(theme.muted())),
+                Span::styled(
+                    "Installed",
+                    Style::default()
+                        .fg(theme.success())
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        if !pkg.depends_on.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                "Dependencies: ",
+                Style::default().fg(theme.muted()),
+            )]));
+            for dep in pkg.depends_on.iter().take(5) {
+                lines.push(Line::from(vec![
+                    Span::styled("  • ", Style::default().fg(theme.muted())),
+                    Span::styled(dep, Style::default().fg(theme.foreground())),
+                ]));
+            }
+            if pkg.depends_on.len() > 5 {
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  ...and {} more", pkg.depends_on.len() - 5),
+                    Style::default().fg(theme.muted()),
+                )]));
+            }
+        }
+
+        let sidebar_content = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true });
+
+        f.render_widget(sidebar_content, inner);
     }
 }
 
@@ -945,6 +1190,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  U         Update system"),
         Line::from("  d         Show package details"),
         Line::from("  v         Show dependency tree"),
+        Line::from("  \\         Toggle sidebar (details view)"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "General",

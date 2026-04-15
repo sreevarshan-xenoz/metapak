@@ -238,6 +238,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
 
+        // Sidebar Toggle
+        KeyCode::Char('\\') => app.toggle_sidebar(),
+
         // Refresh/Clear
         KeyCode::Char('r') => {
             app.results.clear();

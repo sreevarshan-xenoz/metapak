@@ -13,10 +13,10 @@ pub struct AppConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ThemeConfig {
-    pub name: String,
-    pub primary_color: ColorDef,
-    pub secondary_color: ColorDef,
-    pub accent_color: ColorDef,
+    pub preset: String,
+    pub primary_color: Option<ColorDef>,
+    pub secondary_color: Option<ColorDef>,
+    pub accent_color: Option<ColorDef>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -40,18 +40,10 @@ impl Default for AppConfig {
         Self {
             aur_helper: "auto".to_string(),
             theme: ThemeConfig {
-                name: "dark".to_string(),
-                primary_color: ColorDef::Rgb {
-                    r: 100,
-                    g: 150,
-                    b: 255,
-                },
-                secondary_color: ColorDef::Rgb {
-                    r: 255,
-                    g: 165,
-                    b: 0,
-                },
-                accent_color: ColorDef::Named("green".to_string()),
+                preset: "mocha".to_string(),
+                primary_color: None,
+                secondary_color: None,
+                accent_color: None,
             },
             keyboard: KeyboardConfig {
                 quit: "q".to_string(),
@@ -79,9 +71,9 @@ impl AppConfig {
             aur_helper = "auto"
             
             [theme]
-            name = "dark"
-            primary_color = { r = 100, g = 150, b = 255 }
-            secondary_color = { r = 255, g = 165, b = 0 }
+            preset = "mocha"
+            primary_color = "blue"
+            secondary_color = "yellow"
             accent_color = "green"
             
             [keyboard]
@@ -178,16 +170,23 @@ impl AppConfig {
 
     /// Get the theme based on configuration
     pub fn get_theme(&self) -> Theme {
-        let mut theme = match self.theme.name.as_str() {
-            "light" => Theme::light(),
-            _ => Theme::default_dark(),
+        let mut theme = match self.theme.preset.as_str() {
+            "latte" | "light" => Theme::catppuccin_latte(),
+            "dark" | "mocha" => Theme::catppuccin_mocha(),
+            _ => Theme::default(),
         };
-        theme.primary = self.theme.primary_color.clone();
-        theme.secondary = self.theme.secondary_color.clone();
-        theme.success = self.theme.accent_color.clone();
-        theme.highlight_bg = self.theme.primary_color.clone();
-        theme.repo_color = self.theme.primary_color.clone();
-        theme.aur_color = self.theme.secondary_color.clone();
+
+        if let Some(ref color) = self.theme.primary_color {
+            theme.primary = color.clone();
+            theme.highlight_bg = color.clone();
+        }
+        if let Some(ref color) = self.theme.secondary_color {
+            theme.secondary = color.clone();
+            theme.aur_color = color.clone();
+        }
+        if let Some(ref color) = self.theme.accent_color {
+            theme.success = color.clone();
+        }
         theme
     }
 }

@@ -1,4 +1,5 @@
 mod action;
+mod animations;
 mod app;
 mod config;
 mod dependency_visualization;
@@ -503,7 +504,9 @@ async fn main() -> Result<()> {
             terminal.clear()?;
         }
 
-        terminal.draw(|f| ui::render(&app, f))?;
+        terminal.draw(|f| ui::render(&mut app, f))?;
+
+        app.tick(33);
 
         // Handle Input with shorter timeout for responsiveness
         if event::poll(Duration::from_millis(50))? {
@@ -525,12 +528,15 @@ async fn main() -> Result<()> {
                     } else {
                         Some(0)
                     };
+                    let count = app.results.len();
+                    app.add_toast(format!("Found {} packages", count), crate::animations::ToastStyle::Info);
                 }
                 ActionResult::Error(msg) => {
                     tracing::error!("Error received: {}", msg);
                     crate::telemetry::append_log_line(&format!("[error] {}", msg));
-                    app.error_message = Some(msg);
+                    app.error_message = Some(msg.clone());
                     app.is_loading = false;
+                    app.add_toast(msg, crate::animations::ToastStyle::Error);
                     if app.is_operation_running {
                         if let Some(mut tx) = app.current_transaction.take() {
                             tx.status = TransactionStatus::Failed;
@@ -577,6 +583,7 @@ async fn main() -> Result<()> {
                     app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
+                    app.add_toast("Operation completed successfully!".to_string(), crate::animations::ToastStyle::Success);
                     if let Some(mut tx) = app.current_transaction.take() {
                         tx.status = TransactionStatus::Success;
                         app.transaction_history.push_front(tx);
@@ -607,6 +614,9 @@ async fn main() -> Result<()> {
                 }
                 ActionResult::UpdateCount(count) => {
                     app.available_updates = Some(count);
+                    if count > 0 {
+                        app.add_toast(format!("{} updates available!", count), crate::animations::ToastStyle::Warning);
+                    }
                 }
                 ActionResult::Cancelled => {
                     app.is_operation_running = false;

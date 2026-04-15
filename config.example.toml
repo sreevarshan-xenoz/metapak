@@ -1,15 +1,17 @@
-# Arch-TUI Configuration File
-#
-# Copy this file to ~/.config/arch-tui/config.toml to customize your settings
-
-# Specify which AUR helper to use: "auto", "paru", "yay", or "pacman"
-aur_helper = "auto"
+# Arch TUI Configuration
 
 [theme]
-name = "dark"
-primary_color = "blue"
-secondary_color = "yellow"
-accent_color = "green"
+# Theme preset: "mocha" (dark), "latte" (light), "dark", "light", or "custom"
+preset = "mocha"
+
+# Optional color overrides (only used when preset = "custom" or to tweak presets)
+# Colors can be hex strings ("#89b4fa"), RGB ({r=100, g=150, b=255}), or named ("blue")
+# primary_color = "#89b4fa"
+# secondary_color = "#fab387"
+# accent_color = "green"
+
+[aur]
+helper = "auto"
 
 [keyboard]
 quit = "q"

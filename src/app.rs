@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::action::Action;
+use crate::animations::{Toast, ToastStyle};
 use crate::config::AppConfig;
 
 use crate::models::Package;
@@ -116,6 +117,16 @@ pub struct App {
     // Transaction history
     pub transaction_history: VecDeque<TransactionRecord>,
     pub current_transaction: Option<TransactionRecord>,
+
+    // Visual overhaul - sidebar, animations, toasts, scroll states
+    pub show_sidebar: bool,
+    pub animation_state: crate::animations::AnimationState,
+    pub toasts: Vec<Toast>,
+    pub results_scroll_state: ratatui::widgets::ScrollbarState,
+    pub history_scroll_state: Option<ratatui::widgets::ScrollbarState>,
+    pub dependency_scroll_state: Option<ratatui::widgets::ScrollbarState>,
+    pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
+    pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
 }
 
 /// Represents a selection action for undo functionality
@@ -199,6 +210,15 @@ impl App {
 
             transaction_history: VecDeque::new(),
             current_transaction: None,
+
+            show_sidebar: false,
+            animation_state: crate::animations::AnimationState::new(),
+            toasts: Vec::new(),
+            results_scroll_state: ratatui::widgets::ScrollbarState::new(0),
+            history_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
+            dependency_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
+            console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
+            diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
         }
     }
 
@@ -495,7 +515,7 @@ impl App {
                 );
             let mut text =
                 crate::dependency_visualization::DependencyVisualizationService::format_tree(
-                    &tree, 0,
+                    &tree, 0, true, true,
                 );
             if !warnings.is_empty() {
                 text.push_str("\nWarnings:\n");
@@ -709,5 +729,43 @@ mod tests {
         app.apply_filter_and_sort();
         assert_eq!(app.filtered_results.len(), 1);
         assert_eq!(app.filtered_results[0].name, "aur-pkg");
+    }
+}
+
+impl App {
+    pub fn add_toast(&mut self, message: String, style: crate::animations::ToastStyle) {
+        let truncated = if message.chars().count() > 60 {
+            let truncated: String = message.chars().take(57).collect();
+            format!("{}...", truncated)
+        } else {
+            message
+        };
+
+        self.toasts
+            .push(crate::animations::Toast::new(truncated, style));
+
+        if self.toasts.len() > 3 {
+            self.toasts.remove(0);
+        }
+    }
+
+    pub fn expire_toasts(&mut self) {
+        self.toasts.retain(|t| !t.is_expired());
+    }
+
+    pub fn toggle_sidebar(&mut self) {
+        self.show_sidebar = !self.show_sidebar;
+        if self.show_sidebar && self.selected_index.is_none() && !self.results.is_empty() {
+            self.selected_index = Some(0);
+        }
+    }
+
+    pub fn tick(&mut self, delta_ms: u64) {
+        self.animation_state.tick(delta_ms);
+        self.expire_toasts();
+
+        self.results_scroll_state = self
+            .results_scroll_state
+            .position(self.get_paginated_results().len());
     }
 }
