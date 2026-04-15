@@ -318,7 +318,7 @@ fn handle_editing_mode(app: &mut App, key: KeyCode) {
             app.input_mode = InputMode::Normal;
             let query = app.search_input.trim().to_string();
             if !query.is_empty() {
-                app.trigger_search(query);
+                app.execute_search_now(query); // Execute immediately on Enter
             }
         }
 

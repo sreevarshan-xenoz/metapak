@@ -551,9 +551,20 @@ async fn main() -> Result<()> {
             break;
         }
 
-        // Handle debounced search
+        // Handle debounced search (for live search as user types)
         if let Some(query) = app.should_execute_search() {
             app.clear_pending_search();
+            app.is_loading = true;
+            app.results.clear();
+            app.add_to_history(query.clone());
+
+            if let Some(tx) = &app.action_tx {
+                let _ = tx.send(Action::Search(query));
+            }
+        }
+
+        // Handle immediate search (when user presses Enter)
+        if let Some(query) = app.immediate_search.take() {
             app.is_loading = true;
             app.results.clear();
             app.add_to_history(query.clone());

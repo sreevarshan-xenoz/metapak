@@ -65,6 +65,7 @@ pub struct App {
     pub last_search_time: Option<Instant>,
     pub search_debounce_duration: Duration,
     pub pending_search: Option<String>,
+    pub immediate_search: Option<String>,
 
     // State
     pub should_quit: bool,
@@ -170,8 +171,9 @@ impl App {
 
             // Debouncing - 300ms delay
             last_search_time: None,
-            search_debounce_duration: Duration::from_millis(300),
+            search_debounce_duration: Duration::from_millis(50),
             pending_search: None,
+            immediate_search: None,
 
             should_quit: false,
             is_loading: false,
@@ -291,8 +293,13 @@ impl App {
 
     // Debounced Search
     pub fn trigger_search(&mut self, query: String) {
-        self.pending_search = Some(query);
+        self.pending_search = Some(query.clone());
         self.last_search_time = Some(Instant::now());
+    }
+
+    /// Execute search immediately (bypass debounce - used when user presses Enter)
+    pub fn execute_search_now(&mut self, query: String) {
+        self.immediate_search = Some(query);
     }
 
     pub fn should_execute_search(&self) -> Option<String> {
