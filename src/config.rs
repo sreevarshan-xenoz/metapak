@@ -88,7 +88,7 @@ impl Default for AppConfig {
             },
             ui: UiConfig {
                 items_per_page: 20,
-                search_debounce_ms: 50,
+                search_debounce_ms: 10,
                 max_search_history: 50,
                 max_undo_history: 20,
                 auto_check_updates: false,

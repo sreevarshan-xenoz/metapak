@@ -318,18 +318,28 @@ fn handle_editing_mode(app: &mut App, key: KeyCode) {
             app.input_mode = InputMode::Normal;
             let query = app.search_input.trim().to_string();
             if !query.is_empty() {
-                app.execute_search_now(query); // Execute immediately on Enter
+                app.execute_search_now(query);
             }
         }
 
         KeyCode::Char(c) => {
             app.search_input.push(c);
             app.history_index = None;
+            // Trigger live search as user types
+            let query = app.search_input.trim().to_string();
+            if !query.is_empty() {
+                app.trigger_search(query);
+            }
         }
 
         KeyCode::Backspace => {
             app.search_input.pop();
             app.history_index = None;
+            // Trigger live search as user types
+            let query = app.search_input.trim().to_string();
+            if !query.is_empty() {
+                app.trigger_search(query);
+            }
         }
 
         // History navigation
