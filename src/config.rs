@@ -119,12 +119,31 @@ impl AppConfig {
             search = "/"
             install = "enter"
             toggle_selection = "tab"
+            next_page = "n"
+            prev_page = "p"
+            next = "j"
+            prev = "k"
+            help = "?"
+            history = "t"
+            diagnostics = "h"
+            filter = "f"
+            sort = "s"
+            undo = "u"
+            details = "d"
+            dependencies = "v"
+            sidebar = "\\"
+            refresh = "r"
+            update = "U"
+            rollback = "R"
             
             [ui]
             items_per_page = 20
             search_debounce_ms = 300
             max_search_history = 50
             max_undo_history = 20
+            auto_check_updates = false
+            update_check_interval_minutes = 60
+            auto_update_on_startup = false
         "#,
             config::FileFormat::Toml,
         ));
