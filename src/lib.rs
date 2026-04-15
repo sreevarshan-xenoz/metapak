@@ -20,6 +20,7 @@
 //! - Dependency visualization
 
 pub mod action;
+pub mod animations;
 pub mod app;
 pub mod config;
 pub mod dependency_visualization;
