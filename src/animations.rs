@@ -58,8 +58,6 @@ pub struct Toast {
 pub struct AnimationState {
     spinner_frame: u8,
     border_phase: f32,
-    #[allow(dead_code)]
-    last_tick: Instant,
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +70,6 @@ impl AnimationState {
         Self {
             spinner_frame: 0,
             border_phase: 0.0,
-            last_tick: Instant::now(),
         }
     }
 
@@ -102,7 +99,7 @@ impl AnimationState {
             (delta_ms as f32 / BORDER_PULSE_PERIOD_MS as f32) * 2.0 * std::f32::consts::PI;
         self.border_phase += phase_increment;
         // Keep phase bounded to avoid floating-point drift over long sessions.
-        self.border_phase = self.border_phase % (2.0 * std::f32::consts::PI);
+        self.border_phase %= 2.0 * std::f32::consts::PI;
     }
 
     /// Return the current spinner character (braille dots, 8-frame cycle).
@@ -160,12 +157,6 @@ impl Toast {
     /// - 2.5 – 3.0s : dimmed / muted
     pub fn get_render_style(&self, theme: &Theme) -> (Color, Style) {
         let elapsed = self.created_at.elapsed();
-        let total = self.duration.as_secs_f32();
-        let ratio = if total > 0.0 {
-            elapsed.as_secs_f32() / total
-        } else {
-            1.0
-        };
 
         let base_color = match self.style {
             ToastStyle::Success => theme.success(),
@@ -174,10 +165,7 @@ impl Toast {
             ToastStyle::Warning => theme.warning(),
         };
 
-        if ratio <= 0.0 / 3.0 {
-            // unreachable guard (0s) — full brightness
-            (base_color, Style::default().add_modifier(Modifier::BOLD))
-        } else if elapsed.as_secs_f32() <= 0.5 {
+        if elapsed.as_secs_f32() <= 0.5 {
             // First 0.5s — full brightness, bold
             (base_color, Style::default().add_modifier(Modifier::BOLD))
         } else if elapsed.as_secs_f32() <= 2.5 {
@@ -229,13 +217,11 @@ pub fn prune_expired_toasts(toasts: &mut Vec<Toast>) {
 mod tests {
     use super::*;
 
-    // Helper: create an `AnimationState` with a known `last_tick` by manually
-    // constructing it (bypassing `Instant::now()`).
+    // Helper: create an `AnimationState` with known values.
     fn make_state(spinner_frame: u8, border_phase: f32) -> AnimationState {
         AnimationState {
             spinner_frame,
             border_phase,
-            last_tick: Instant::now(),
         }
     }
 
