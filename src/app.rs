@@ -38,7 +38,10 @@ pub enum FilterOption {
 pub enum SortOption {
     NameAsc,
     NameDesc,
-    Source, // Repo first, then AUR
+    Source,
+    SizeAsc,
+    SizeDesc,
+    Group,
 }
 
 /// Main application state
@@ -497,6 +500,13 @@ impl App {
                     };
                     a_val.cmp(&b_val).then_with(|| a.name.cmp(&b.name))
                 }
+                SortOption::SizeAsc => a.installed_size.cmp(&b.installed_size),
+                SortOption::SizeDesc => b.installed_size.cmp(&a.installed_size),
+                SortOption::Group => {
+                    let a_groups = a.groups.join("");
+                    let b_groups = b.groups.join("");
+                    a_groups.cmp(&b_groups).then_with(|| a.name.cmp(&b.name))
+                }
             }
         });
 
@@ -524,7 +534,10 @@ impl App {
         self.current_sort = match self.current_sort {
             SortOption::NameAsc => SortOption::NameDesc,
             SortOption::NameDesc => SortOption::Source,
-            SortOption::Source => SortOption::NameAsc,
+            SortOption::Source => SortOption::SizeDesc,
+            SortOption::SizeDesc => SortOption::SizeAsc,
+            SortOption::SizeAsc => SortOption::Group,
+            SortOption::Group => SortOption::NameAsc,
         };
         self.apply_filter_and_sort();
     }

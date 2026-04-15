@@ -40,3 +40,8 @@ items_per_page = 20
 search_debounce_ms = 300
 max_search_history = 50
 max_undo_history = 20
+
+# Auto-update settings
+auto_check_updates = false          # Enable periodic update checks
+update_check_interval_minutes = 60  # How often to check for updates
+auto_update_on_startup = false     # Check for updates on app start

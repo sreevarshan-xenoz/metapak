@@ -203,6 +203,8 @@ async fn run_command_sequence(
 
     for command in &commands {
         let mut attempts = 0usize;
+        let max_attempts = 3;
+        
         loop {
             attempts += 1;
             match run_single_command(
@@ -216,59 +218,125 @@ async fn run_command_sequence(
                 Ok(CommandRunResult::Finished) => break,
                 Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
                 Err(err) => {
-                    let is_dependency_error = err.contains("[dependency-error]");
-                    let is_lock_error = err.contains("[db-lock-error]");
+                    let error_lower = err.to_lowercase();
+                    let is_dependency_error = error_lower.contains("dependency") || error_lower.contains("[dependency-error]");
+                    let is_lock_error = error_lower.contains("lock") || error_lower.contains("[db-lock-error]");
+                    let is_conflict_error = error_lower.contains("conflict") || error_lower.contains("::");
+                    let is_signature_error = error_lower.contains("signature") || error_lower.contains("pgp");
+                    let is_disk_space_error = error_lower.contains("disk") || error_lower.contains("space");
+                    let is_network_error = error_lower.contains("network") || error_lower.contains("connection");
+                    let is_cache_error = error_lower.contains("cache") || error_lower.contains("invalid");
 
+                    // Handle database lock - retry with backoff
                     if is_lock_error && attempts < 3 {
                         let _ = tx.send(ActionResult::CommandOutput(
-                            "Detected pacman DB lock issue. Waiting and retrying...".to_string(),
+                            format!("Detected pacman DB lock. Attempt {}/3. Waiting 3s...", attempts),
                         ));
-                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        tokio::time::sleep(Duration::from_secs(3)).await;
                         continue;
                     }
 
+                    // Handle dependency errors - run system upgrade first
                     if is_dependency_error {
                         let _ = tx.send(ActionResult::CommandOutput(
-                            "Dependency issue detected. Running auto-fix: sudo pacman -Syu --noconfirm".to_string(),
+                            "Dependency issue detected. Running: sudo pacman -Syu...".to_string(),
                         ));
                         let fix = CommandSpec {
                             prog: "sudo".to_string(),
-                            args: vec![
-                                "pacman".to_string(),
-                                "-Syu".to_string(),
-                                "--noconfirm".to_string(),
-                            ],
+                            args: vec!["pacman".to_string(), "-Syu".to_string(), "--noconfirm".to_string()],
                         };
-
-                        match run_single_command(
-                            &fix,
-                            tx.clone(),
-                            active_pid.clone(),
-                            cancel_requested.clone(),
-                        )
-                        .await
-                        {
+                        match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
                             Ok(CommandRunResult::Finished) => {
-                                let _ = tx.send(ActionResult::CommandOutput(
-                                    "Auto-fix completed. Retrying original command...".to_string(),
-                                ));
-                                if attempts < 3 {
-                                    continue;
-                                }
+                                let _ = tx.send(ActionResult::CommandOutput("System upgrade complete. Retrying...".to_string()));
+                                if attempts < max_attempts { continue; }
                             }
                             Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
                             Err(fix_err) => {
-                                let _ = tx.send(ActionResult::Error(format!(
-                                    "Auto-fix failed: {}",
-                                    fix_err
-                                )));
+                                let _ = tx.send(ActionResult::Error(format!("System upgrade failed: {}", fix_err)));
                                 return CommandRunResult::Finished;
                             }
                         }
                     }
 
-                    let _ = tx.send(ActionResult::Error(err));
-                    return CommandRunResult::Finished;
+                    // Handle conflict errors - remove conflicting packages
+                    if is_conflict_error {
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Package conflict detected. Trying to resolve...".to_string(),
+                        ));
+                        let fix = CommandSpec {
+                            prog: "sudo".to_string(),
+                            args: vec!["pacman".to_string(), "-Syu".to_string(), "--overwrite".to_string(), "*".to_string(), "--noconfirm".to_string()],
+                        };
+                        match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
+                            Ok(CommandRunResult::Finished) => {
+                                let _ = tx.send(ActionResult::CommandOutput("Conflicts resolved.".to_string()));
+                                if attempts < max_attempts { continue; }
+                            }
+                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Err(fix_err) => {
+                                let _ = tx.send(ActionResult::Error(format!("Conflict resolution failed: {}", fix_err)));
+                                return CommandRunResult::Finished;
+                            }
+                        }
+                    }
+
+                    // Handle signature errors - refresh keys
+                    if is_signature_error {
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "PGP signature issue detected. Attempting to refresh keys...".to_string(),
+                        ));
+                        let fix = CommandSpec {
+                            prog: "sudo".to_string(),
+                            args: vec!["pacman-key".to_string(), "--init".to_string()],
+                        };
+                        let _ = run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await;
+                        
+                        let fix2 = CommandSpec {
+                            prog: "sudo".to_string(),
+                            args: vec!["pacman".to_string(), "-Sy".to_string(), "--noconfirm".to_string()],
+                        };
+                        match run_single_command(&fix2, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
+                            Ok(CommandRunResult::Finished) => {
+                                let _ = tx.send(ActionResult::CommandOutput("Keys refreshed. Retrying...".to_string()));
+                                if attempts < max_attempts { continue; }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Handle disk space errors
+                    if is_disk_space_error {
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Disk space issue. Try: sudo pacman -Scc to clean cache".to_string(),
+                        ));
+                    }
+
+                    // Handle network errors - retry
+                    if is_network_error && attempts < 2 {
+                        let _ = tx.send(ActionResult::CommandOutput("Network error. Retrying in 5s...".to_string()));
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+
+                    // Handle cache errors
+                    if is_cache_error {
+                        let _ = tx.send(ActionResult::CommandOutput("Cache issue. Cleaning local cache...".to_string()));
+                        let fix = CommandSpec {
+                            prog: "rm".to_string(),
+                            args: vec!["-rf".to_string(), "/var/cache/pacman/pkg/*".to_string()],
+                        };
+                        let _ = run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await;
+                    }
+
+                    // Max attempts reached
+                    if attempts >= max_attempts {
+                        let _ = tx.send(ActionResult::Error(format!("Failed after {} attempts: {}", attempts, err)));
+                        return CommandRunResult::Finished;
+                    }
+
+                    // Retry other errors
+                    let _ = tx.send(ActionResult::CommandOutput(format!("Error (attempt {}/{}): {}. Retrying...", attempts, max_attempts, err)));
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                 }
             }
         }
@@ -317,8 +385,28 @@ async fn main() -> Result<()> {
         app.transaction_history = history.into();
     }
 
-    // Initial check for updates
-    let _ = action_tx.send(Action::CheckUpdates);
+    // Initial check for updates (if enabled)
+    if app.config.ui.auto_update_on_startup {
+        let _ = action_tx.send(Action::CheckUpdates);
+    }
+
+    // Start auto-update checker if enabled
+    let auto_check_enabled = app.config.ui.auto_check_updates;
+    let update_interval = app.config.ui.update_check_interval_minutes;
+
+    // Spawn background auto-update checker
+    if auto_check_enabled {
+        let action_tx_clone = action_tx.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(
+                Duration::from_secs(update_interval * 60)
+            );
+            loop {
+                interval.tick().await;
+                let _ = action_tx_clone.send(Action::CheckUpdates);
+            }
+        });
+    }
 
     // Spawn Background Task
     let aur_helper_for_spawn = aur_helper.clone();

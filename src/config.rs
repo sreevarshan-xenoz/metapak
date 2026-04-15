@@ -49,6 +49,9 @@ pub struct UiConfig {
     pub search_debounce_ms: u64,
     pub max_search_history: usize,
     pub max_undo_history: usize,
+    pub auto_check_updates: bool,
+    pub update_check_interval_minutes: u64,
+    pub auto_update_on_startup: bool,
 }
 
 impl Default for AppConfig {
@@ -88,6 +91,9 @@ impl Default for AppConfig {
                 search_debounce_ms: 300,
                 max_search_history: 50,
                 max_undo_history: 20,
+                auto_check_updates: false,
+                update_check_interval_minutes: 60,
+                auto_update_on_startup: false,
             },
         }
     }
@@ -291,6 +297,9 @@ mod tests {
                 search_debounce_ms: 500,
                 max_search_history: 100,
                 max_undo_history: 50,
+                auto_check_updates: false,
+                update_check_interval_minutes: 60,
+                auto_update_on_startup: false,
             },
             ..Default::default()
         };
