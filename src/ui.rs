@@ -1,13 +1,14 @@
-use crate::animations::ToastStyle;
+#![allow(dead_code)]
+#![allow(unused_imports)]
 use crate::app::{App, FilterOption, InputMode};
-use crate::ui_utils::{centered_rect, render_scrollbar, truncate_with_ellipsis, visible_height};
+use crate::ui_utils::{centered_rect, truncate_with_ellipsis, visible_height};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState,
+        Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph, Scrollbar,
+        ScrollbarOrientation,
     },
     Frame,
 };
@@ -72,6 +73,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
 
     if app.show_help {
         render_help_overlay(f, area, theme);
+    } else if app.show_updates_view {
+        render_updates_view(app, f, area, theme);
     } else if app.show_diagnostics {
         render_diagnostics_overlay(app, f, area, theme);
     } else if app.show_history {
@@ -191,8 +194,7 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
 
     let items: Vec<ListItem> = page_items
         .iter()
-        .enumerate()
-        .map(|(_idx, pkg)| {
+        .map(|pkg| {
             let color = if pkg.is_installed {
                 theme.success()
             } else {
@@ -253,6 +255,7 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             FilterOption::NotInstalled => " [Not Installed]".to_string(),
             FilterOption::RepoOnly => " [Repo]".to_string(),
             FilterOption::AurOnly => " [AUR]".to_string(),
+            FilterOption::Group(ref g) => format!(" [{}]", g),
         };
 
         let page_info = if app.total_pages() > 1 {
@@ -261,26 +264,35 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             "".to_string()
         };
 
+        let sort_indicator = match app.current_sort {
+            crate::app::SortOption::NameAsc => " ↓Name",
+            crate::app::SortOption::NameDesc => " ↑Name",
+            crate::app::SortOption::Source => " ↓Source",
+            crate::app::SortOption::SizeAsc => " ↓Size",
+            crate::app::SortOption::SizeDesc => " ↑Size",
+            crate::app::SortOption::Group => " ↓Group",
+        };
+
+        let count_info = format!(" ({})", app.results.len());
+
         format!(
-            "{}{}{}",
+            "{}{}{}{}{}",
             app.localizer.t("packages_label"),
+            count_info,
             filter_info,
-            page_info
+            page_info,
+            sort_indicator
         )
     };
 
-    let border_type = if app.is_loading {
-        BorderType::Rounded
-    } else {
-        BorderType::Rounded
-    };
+    let border_type = BorderType::Rounded;
 
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(border_type)
-                .title(title)
+                .title(title.clone())
                 .border_style(Style::default().fg(theme.border())),
         )
         .highlight_style(
@@ -303,7 +315,7 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             height: area.height.saturating_sub(2),
         };
 
-        let mut scroll_state = app.results_scroll_state.clone();
+        let mut scroll_state = app.results_scroll_state;
         if let Some(selected) = app.selected_index {
             scroll_state = scroll_state.position(selected);
         }
@@ -323,16 +335,41 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
         f.render_stateful_widget(scrollbar, scrollbar_area, &mut scroll_state);
     }
 
+    if !app.is_loading && page_items.is_empty() {
+        let empty_msg = if app.search_input.is_empty() {
+            app.localizer.t("no_results_found")
+        } else {
+            format!("{}: '{}'", app.localizer.t("no_results_found"), app.search_input)
+        };
+        let empty_block = Paragraph::new(empty_msg)
+            .style(Style::default().fg(theme.secondary()))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(border_type)
+                    .title(title.clone())
+                    .border_style(Style::default().fg(theme.border())),
+            );
+        f.render_widget(empty_block, area);
+        return;
+    }
+
     if !app.is_loading && !page_items.is_empty() {
         let info_text = match app.input_mode {
             InputMode::Editing => "Esc Exit  Enter Search  ↑↓ History".to_string(),
             InputMode::Normal => {
                 let help_key = app.config.keyboard.quit.as_str() == "q";
+                let selected_count = if app.selected_packages.is_empty() {
+                    String::new()
+                } else {
+                    format!(" | Selected: {}", app.selected_packages.len())
+                };
                 format!(
-                    "{} for help | ? Filter: {:?} | Sort: {:?}",
+                    "{} for help | ? Filter: {:?} | Sort: {:?}{}",
                     if help_key { "?" } else { "h" },
                     app.current_filter,
-                    app.current_sort
+                    app.current_sort,
+                    selected_count
                 )
             }
         };
@@ -368,6 +405,24 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
                     .border_style(Style::default().fg(theme.error())),
             );
         f.render_widget(footer, area);
+    } else if app.is_operation_running && app.install_total > 0 {
+        let progress_pct = app.get_progress_percentage() as u16;
+        let progress_label = format!(
+            " Installing: {}/{} - {} ",
+            app.install_current + 1,
+            app.install_total,
+            app.install_current_package
+        );
+        let progress_gauge = Gauge::default()
+            .gauge_style(Style::default().fg(theme.primary()))
+            .label(progress_label)
+            .percent(progress_pct);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.primary()));
+
+        f.render_widget(progress_gauge, area);
     } else {
         let update_status = match app.available_updates {
             Some(0) => app.localizer.t("up_to_date"),
@@ -526,6 +581,49 @@ fn render_details_sidebar(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
             ]));
         }
 
+        if pkg.is_outdated {
+            lines.push(Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(theme.muted())),
+                Span::styled(
+                    "Outdated",
+                    Style::default()
+                        .fg(theme.warning())
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        if matches!(pkg.source, crate::models::PackageSource::Aur) {
+            if pkg.num_votes.unwrap_or(0) > 0 || pkg.votes.unwrap_or(0) > 0 {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("Votes: ", Style::default().fg(theme.muted())),
+                    Span::styled(
+                        pkg.format_votes(),
+                        Style::default().fg(theme.primary()),
+                    ),
+                ]));
+            }
+            if pkg.popularity.is_some() {
+                lines.push(Line::from(vec![
+                    Span::styled("Popularity: ", Style::default().fg(theme.muted())),
+                    Span::styled(
+                        pkg.format_popularity(),
+                        Style::default().fg(theme.secondary()),
+                    ),
+                ]));
+            }
+            if pkg.last_updated.is_some() {
+                lines.push(Line::from(vec![
+                    Span::styled("Updated: ", Style::default().fg(theme.muted())),
+                    Span::styled(
+                        pkg.format_last_updated(),
+                        Style::default().fg(theme.foreground()),
+                    ),
+                ]));
+            }
+        }
+
         if !pkg.depends_on.is_empty() {
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
@@ -599,6 +697,7 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let is_multi = pkg_count > 1;
 
     let first = &app.packages_pending_confirmation[0];
+
     let action_str = if first.is_installed {
         app.localizer.t("remove_button")
     } else {
@@ -642,18 +741,36 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         .split(area);
 
     let text = if is_multi {
+        let total_size: u64 = app.packages_pending_confirmation
+            .iter()
+            .map(|p| p.get_size())
+            .sum();
+        let size_str = crate::models::Package::format_size(total_size);
         format!(
-            "{} {} {}?",
+            "{} {}\n{} {}\n{}: {}",
             app.localizer.t("confirm_multiple"),
             action_str.to_lowercase(),
-            pkg_count
+            pkg_count,
+            if pkg_count == 1 { "package" } else { "packages" },
+            app.localizer.t("total_size"),
+            size_str
         )
     } else {
+        let size_str = crate::models::Package::format_size(first.get_size());
+        let repo = if first.source == crate::models::PackageSource::Aur {
+            app.localizer.t("aur_label")
+        } else {
+            app.localizer.t("repo_label")
+        };
         format!(
-            "{} {} {}?",
+            "{} {} {}\n{}: {} | {}: {}",
             app.localizer.t("confirm_single"),
             action_str.to_lowercase(),
-            first.name
+            first.name,
+            app.localizer.t("size_label"),
+            size_str,
+            "Source",
+            repo
         )
     };
 
@@ -667,44 +784,166 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         .wrap(ratatui::widgets::Wrap { trim: true });
     f.render_widget(p_text, layout[0]);
 
-    // Show packages being processed
-    if is_multi {
-        let pkg_list = app
-            .packages_pending_confirmation
-            .iter()
-            .map(|p| p.name.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let list_text = Paragraph::new(pkg_list)
-            .style(Style::default().fg(theme.muted()))
-            .alignment(Alignment::Center)
-            .wrap(ratatui::widgets::Wrap { trim: true });
-        f.render_widget(list_text, layout[1]);
+    let hint_text = Paragraph::new(app.localizer.t("confirmation_instructions"))
+        .style(
+            Style::default()
+                .fg(theme.muted())
+                .add_modifier(Modifier::ITALIC),
+        )
+        .alignment(Alignment::Center);
+    f.render_widget(hint_text, layout[3]);
+}
+
+fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    use ratatui::widgets::{Borders, BorderType, List, ListItem, ListState, Scrollbar, ScrollbarState};
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+
+    if app.outdated_packages.is_empty() {
+        let block = Block::default()
+            .title("⚠️  No Updates Available")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .border_style(Style::default().fg(theme.primary()));
+
+        let center_area = centered_rect(50, 30, f.size());
+        f.render_widget(Clear, center_area);
+        f.render_widget(block, center_area);
+
+        let msg = Paragraph::new("Your system is up to date!")
+            .style(Style::default().fg(theme.success()))
+            .alignment(Alignment::Center);
+        f.render_widget(msg, center_area);
+        return;
     }
 
-    let preview = if app.confirmation_commands.is_empty() {
-        "No command preview available".to_string()
-    } else {
-        app.confirmation_commands
-            .iter()
-            .map(crate::services::command_display)
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let preview_box = Paragraph::new(preview)
-        .style(Style::default().fg(theme.muted()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Transaction Preview"),
+    let main_block = Block::default()
+        .title(format!("⚠️  Available Updates ({})", app.outdated_packages.len()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .style(
+            Style::default()
+                .bg(theme.background())
+                .fg(theme.foreground()),
         )
-        .wrap(ratatui::widgets::Wrap { trim: false });
-    f.render_widget(preview_box, layout[2]);
+        .border_style(Style::default().fg(theme.warning()));
 
-    let p_actions = Paragraph::new(app.localizer.t("confirmation_instructions"))
-        .style(Style::default().fg(theme.muted()))
-        .alignment(Alignment::Center);
-    f.render_widget(p_actions, layout[3]);
+    f.render_widget(Clear, area);
+    f.render_widget(main_block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(3),
+            Constraint::Length(3),
+        ])
+        .margin(1)
+        .split(area);
+
+    let mut items = Vec::new();
+    let filtered = app.get_filtered_outdated_packages();
+
+    if app.get_security_updates_count() > 0 {
+        items.push(ListItem::new(
+            Span::styled("🚨 SECURITY CRITICAL UPDATES", Style::default().fg(theme.error()).add_modifier(Modifier::BOLD))
+        ).style(Style::default().bg(Color::Rgb(50, 0, 0))));
+    }
+
+    for (idx, pkg) in filtered.iter().enumerate() {
+        let checkbox = if pkg.is_selected { "☑" } else { "☐" };
+        let security_flag = if pkg.is_security_update {
+            format!(" 🔴 {}", pkg.cve_info.as_deref().unwrap_or("CVE"))
+        } else {
+            String::new()
+        };
+        let aur_flag = if pkg.is_aur { " [AUR]" } else { "" };
+        let repo = format!(" [{}]", pkg.repository);
+        let dep_info = if !pkg.new_dependencies.is_empty() {
+            format!(" → requires {} deps", pkg.new_dependencies.len())
+        } else {
+            String::new()
+        };
+        let rebuild_flag = if pkg.needs_rebuild {
+            " ⚠️ rebuild needed"
+        } else {
+            ""
+        };
+
+        let line = format!(
+            "{} {:18} {:12} {:>8}{}{}{}{}{}",
+            checkbox,
+            pkg.name,
+            pkg.version_change(),
+            pkg.formatted_size(),
+            repo,
+            aur_flag,
+            dep_info,
+            rebuild_flag,
+            security_flag
+        );
+
+        let style = if pkg.is_security_update {
+            Style::default().fg(theme.error())
+        } else if pkg.is_selected {
+            Style::default().fg(theme.success())
+        } else {
+            Style::default().fg(theme.foreground())
+        };
+
+        items.push(ListItem::new(line).style(style));
+    }
+
+    let list = List::new(items)
+        .block(Block::default())
+        .highlight_style(
+            Style::default()
+                .fg(theme.highlight_fg())
+                .bg(theme.highlight_bg())
+        );
+
+    let mut state = ListState::default();
+    if let Some(cursor) = app.updates_cursor {
+        state.select(Some(cursor));
+    }
+
+    f.render_widget(list, chunks[1]);
+
+    let total_size = app.get_total_update_size();
+    let selected_count = app.selected_updates.len();
+    let selected_size = app.get_selected_update_size();
+
+    let mut status_parts = Vec::new();
+    status_parts.push(format!("Total: {} ({})", filtered.len(), crate::models::Package::format_size(total_size)));
+
+    if selected_count > 0 {
+        status_parts.push(format!("Selected: {} ({})", selected_count, crate::models::Package::format_size(selected_size)));
+    }
+
+    if app.has_aur_needing_rebuild() {
+        status_parts.push("⚠️ AUR rebuild needed".to_string());
+    }
+
+    let warn_line = if !app.partial_update_warning_shown && selected_count > 0 && selected_count < filtered.len() {
+        "⚠️ Partial updates not recommended. Consider updating all."
+    } else {
+        ""
+    };
+
+    let status_text = if warn_line.is_empty() {
+        status_parts.join(" | ")
+    } else {
+        format!("{} | {}", status_parts.join(" | "), warn_line)
+    };
+
+    let status = Paragraph::new(status_text)
+        .style(
+            Style::default()
+                .fg(theme.muted())
+                .add_modifier(Modifier::ITALIC),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(status, chunks[2]);
 }
 
 fn render_history_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -821,9 +1060,11 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let logs: Vec<ListItem> = app.console_buffer[start_index..]
         .iter()
         .map(|l| {
-            let style = if l.contains("[stderr]") {
-                Style::default().fg(theme.error())
-            } else if l.contains("error") || l.contains("Error") || l.contains("failed") {
+            let style = if l.contains("[stderr]")
+                || l.contains("error")
+                || l.contains("Error")
+                || l.contains("failed")
+            {
                 Style::default().fg(theme.error())
             } else if l.contains("warning") || l.contains("Warning") {
                 Style::default().fg(theme.warning())
@@ -1189,7 +1430,8 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  u         Undo last selection"),
         Line::from("  Enter     Install/Remove selected packages"),
         Line::from("  y/n       Confirm/Cancel operation"),
-        Line::from("  U         Update system"),
+        Line::from("  U         View/manage updates"),
+        Line::from("  shift+U   Update system"),
         Line::from("  d         Show package details"),
         Line::from("  v         Show dependency tree"),
         Line::from("  o         Open package in browser"),
@@ -1201,6 +1443,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
                 .fg(theme.info())
                 .add_modifier(Modifier::BOLD),
         )]),
+        Line::from("  U         Updates view (a=select all, n=none, space=toggle)"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),

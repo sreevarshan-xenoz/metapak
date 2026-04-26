@@ -1,7 +1,6 @@
 use crate::theme::{ColorDef, Theme};
 use config::{Config, File};
 use serde::Deserialize;
-use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
@@ -88,7 +87,7 @@ impl Default for AppConfig {
             },
             ui: UiConfig {
                 items_per_page: 20,
-                search_debounce_ms: 10,
+                search_debounce_ms: 300,
                 max_search_history: 50,
                 max_undo_history: 20,
                 auto_check_updates: false,
@@ -103,17 +102,16 @@ impl AppConfig {
     pub fn load() -> Result<Self, config::ConfigError> {
         let mut cfg = Config::builder();
 
-        // Add default configuration
         cfg = cfg.add_source(config::File::from_str(
             r#"
             aur_helper = "auto"
-            
+
             [theme]
             preset = "mocha"
             primary_color = "blue"
             secondary_color = "yellow"
             accent_color = "green"
-            
+
             [keyboard]
             quit = "q"
             search = "/"
@@ -135,7 +133,7 @@ impl AppConfig {
             refresh = "r"
             update = "U"
             rollback = "R"
-            
+
             [ui]
             items_per_page = 20
             search_debounce_ms = 300
@@ -148,18 +146,62 @@ impl AppConfig {
             config::FileFormat::Toml,
         ));
 
-        // Add user configuration file if it exists
         let config_dir = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        let config_subdir = config_dir.join("arch-tui");
+        let config_path = config_subdir.join("config.toml");
 
-        let config_path = config_dir.join("arch-tui").join("config.toml");
-
-        if Path::exists(&config_path) {
-            if let Some(path) = config_path.to_str() {
-                cfg = cfg.add_source(File::with_name(path).required(false));
-            }
+        if !config_subdir.exists() {
+            let _ = std::fs::create_dir_all(&config_subdir);
         }
 
-        // Add environment variables as overrides
+        if !config_path.exists() {
+            let default_config = r#"aur_helper = "auto"
+
+[theme]
+preset = "mocha"
+primary_color = "blue"
+secondary_color = "yellow"
+accent_color = "green"
+
+[keyboard]
+quit = "q"
+search = "/"
+install = "enter"
+toggle_selection = "tab"
+next_page = "n"
+prev_page = "p"
+next = "j"
+prev = "k"
+help = "?"
+history = "t"
+diagnostics = "h"
+filter = "f"
+sort = "s"
+undo = "u"
+details = "d"
+dependencies = "v"
+sidebar = "\"
+refresh = "r"
+update = "U"
+rollback = "R"
+
+[ui]
+items_per_page = 20
+search_debounce_ms = 300
+max_search_history = 50
+max_undo_history = 20
+auto_check_updates = false
+update_check_interval_minutes = 60
+auto_update_on_startup = false
+"#;
+            let _ = std::fs::write(&config_path, default_config);
+            eprintln!("Created default configuration at: {:?}", config_path);
+        }
+
+        if let Some(path) = config_path.to_str() {
+            cfg = cfg.add_source(File::with_name(path).required(false));
+        }
+
         cfg = cfg.add_source(config::Environment::with_prefix("ARCH_TUI"));
 
         let config: AppConfig = cfg.build()?.try_deserialize()?;

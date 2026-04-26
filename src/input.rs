@@ -2,6 +2,12 @@ use crate::app::{App, InputMode};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 
 pub fn handle_event(app: &mut App, event: Event) {
+    // Handle mouse events
+    if let Event::Mouse(mouse) = event {
+        handle_mouse_event(app, mouse);
+        return;
+    }
+
     if let Event::Key(key) = event {
         // Only handle key press events, not release or repeat
         if key.kind != KeyEventKind::Press {
@@ -12,6 +18,49 @@ pub fn handle_event(app: &mut App, event: Event) {
         if app.show_help {
             if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') {
                 app.hide_help();
+            }
+            return;
+        }
+
+        // Global: Updates View
+        if app.show_updates_view {
+            match key.code {
+                KeyCode::Esc => app.hide_updates_view(),
+                KeyCode::Char('a') => app.select_all_updates(),
+                KeyCode::Char('n') => app.deselect_all_updates(),
+                KeyCode::Char('U') => app.toggle_updates_view(),
+                KeyCode::Enter => {
+                    if app.selected_updates.is_empty() {
+                        app.error_message = Some("No packages selected".to_string());
+                    } else {
+                        // Start update process for selected packages
+                    }
+                }
+                KeyCode::Char(' ') | KeyCode::Char('s') => {
+                    if let Some(cursor) = app.updates_cursor {
+                        app.toggle_update_selection(cursor);
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.updates_cursor {
+                        if current > 0 {
+                            app.updates_cursor = Some(current - 1);
+                        }
+                    } else {
+                        app.updates_cursor = Some(0);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.outdated_packages.len().saturating_sub(1);
+                    if let Some(current) = app.updates_cursor {
+                        if current < max {
+                            app.updates_cursor = Some(current + 1);
+                        }
+                    } else {
+                        app.updates_cursor = Some(0);
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -36,18 +85,16 @@ pub fn handle_event(app: &mut App, event: Event) {
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
-                KeyCode::Enter => {
-                    if !app.password_input.is_empty() {
-                        if let Some(tx) = &app.action_tx {
-                            let password = crate::utils::PasswordInput::from_string(
-                                app.password_input.expose_secret().to_string(),
-                            );
-                            let _ = tx.send(crate::action::Action::InitSudo(
-                                password.get_secret().clone(),
-                            ));
-                        }
-                        app.is_loading = true;
+                KeyCode::Enter if !app.password_input.is_empty() => {
+                    if let Some(tx) = &app.action_tx {
+                        let password = crate::utils::PasswordInput::from_string(
+                            app.password_input.expose_secret().to_string(),
+                        );
+                        let _ = tx.send(crate::action::Action::InitSudo(
+                            password.get_secret().clone(),
+                        ));
                     }
+                    app.is_loading = true;
                 }
                 KeyCode::Char(c) => {
                     app.password_input.push(c);
@@ -84,10 +131,8 @@ pub fn handle_event(app: &mut App, event: Event) {
                 KeyCode::Backspace => {
                     app.console_input.pop();
                 }
-                KeyCode::Char(c) => {
-                    if app.command_stdin_tx.is_some() {
-                        app.console_input.push(c);
-                    }
+                KeyCode::Char(c) if app.command_stdin_tx.is_some() => {
+                    app.console_input.push(c);
                 }
                 _ => {}
             }
@@ -235,6 +280,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Package Details
         KeyCode::Char('d') => app.show_package_details(),
 
+        // Updates View
+        KeyCode::Char('U') => app.toggle_updates_view(),
+
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
 
@@ -377,5 +425,21 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
         if let Some(tx) = &app.action_tx {
             let _ = tx.send(crate::action::Action::RunCommands(commands));
         }
+    }
+}
+
+fn handle_mouse_event(app: &mut App, event: crossterm::event::MouseEvent) {
+    let results_count = app.get_paginated_results().len();
+    if results_count == 0 {
+        return;
+    }
+
+    if let InputMode::Editing = app.input_mode {
+        return;
+    }
+
+    let clicked_row = event.row.saturating_sub(1) as usize;
+    if clicked_row < results_count {
+        app.selected_index = Some(clicked_row);
     }
 }

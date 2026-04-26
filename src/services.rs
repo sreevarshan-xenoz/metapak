@@ -13,12 +13,36 @@ use std::time::Duration;
 
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
-use crate::models::{Package, PackageSource};
+use crate::models::{Package, PackageSource, OutdatedPackage};
 use crate::traits::{PackageProvider, UpdateProvider};
 
 lazy_static::lazy_static! {
     /// Cache search results to avoid repeated queries
     static ref PACKAGE_CACHE: DashMap<String, CachedSearch> = DashMap::new();
+    /// Configurable cache TTL in seconds
+    static ref CACHE_TTL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(300);
+}
+
+/// Get the current cache TTL
+pub fn get_cache_ttl() -> u64 {
+    CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Set the cache TTL (in seconds)
+pub fn set_cache_ttl(seconds: u64) {
+    CACHE_TTL_SECS.store(seconds, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Clear the search cache
+pub fn clear_cache() {
+    PACKAGE_CACHE.clear();
+}
+
+/// Get cache statistics
+pub fn get_cache_stats() -> (usize, usize) {
+    let total = PACKAGE_CACHE.len();
+    let expired = PACKAGE_CACHE.iter().filter(|r| r.is_expired()).count();
+    (total, expired)
 }
 
 /// Cached search entry with timestamp
@@ -30,7 +54,8 @@ struct CachedSearch {
 
 impl CachedSearch {
     fn is_expired(&self) -> bool {
-        self.cached_at.elapsed() > std::time::Duration::from_secs(300) // 5 minutes
+        let ttl = CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst);
+        self.cached_at.elapsed() > std::time::Duration::from_secs(ttl)
     }
 }
 
@@ -144,6 +169,7 @@ impl PacmanProvider {
             description: desc.trim().to_string(),
             source: PackageSource::Pacman,
             is_installed,
+            is_outdated: false,
             installed_size: None,
             download_size: None,
             groups: vec![],
@@ -157,6 +183,12 @@ impl PacmanProvider {
             conflicts: vec![],
             replaces: vec![],
             provides: vec![],
+            votes: None,
+            popularity: None,
+            first_submitted: None,
+            last_updated: None,
+            package_base_id: None,
+            num_votes: None,
         })
     }
 }
@@ -250,12 +282,16 @@ impl PackageProvider for AurProvider {
                     all_deps.extend(make_depends);
                 }
 
+                let is_outdated = aur_pkg.out_of_date.is_some();
+                let package_base_id = aur_pkg.package_base_id.map(|id| id.to_string());
+
                 Package {
                     name: aur_pkg.name,
                     version: aur_pkg.version,
                     description: aur_pkg.description.unwrap_or_default(),
                     source: PackageSource::Aur,
-                    is_installed: false, // Will be updated later
+                    is_installed: false,
+                    is_outdated,
                     installed_size: None,
                     download_size: None,
                     groups: vec![],
@@ -269,6 +305,12 @@ impl PackageProvider for AurProvider {
                     conflicts: aur_pkg.conflicts.unwrap_or_default(),
                     replaces: vec![],
                     provides: aur_pkg.provides.unwrap_or_default(),
+                    votes: aur_pkg.num_votes,
+                    popularity: aur_pkg.popularity,
+                    first_submitted: aur_pkg.first_submitted,
+                    last_updated: aur_pkg.last_updated,
+                    package_base_id,
+                    num_votes: aur_pkg.num_votes,
                 }
             })
             .collect();
@@ -337,6 +379,92 @@ impl UpdateProvider for SystemUpdateProvider {
             }
 
             Ok(0)
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+    }
+
+    async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
+        tokio::task::spawn_blocking(move || {
+            let mut outdated = Vec::new();
+
+            // Try pacman -Qu first (installed packages with newer versions available)
+            let output = Command::new("pacman")
+                .arg("-Qu")
+                .output()
+                .map_err(|e| AppError::Pacman(format!("Failed to execute pacman -Qu: {}", e)))?;
+
+            if output.status.success() {
+                let stdout = String::from_utf8(output.stdout).map_err(|e| {
+                    AppError::Pacman(format!("Invalid UTF-8 in pacman -Qu output: {}", e))
+                })?;
+
+                for line in stdout.lines().filter(|l| !l.is_empty()) {
+                    let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                    if parts.len() >= 2 {
+                        let name = parts[0].to_string();
+                        let version = parts[1].to_string();
+
+                        let mut pkg = OutdatedPackage::new(
+                            name.clone(),
+                            "?".to_string(),
+                            version,
+                        );
+
+                        // Get package info
+                        if let Ok(info) = Command::new("pacman")
+                            .arg("-Qi")
+                            .arg(&name)
+                            .output()
+                        {
+                            if info.status.success() {
+                                let info_str = String::from_utf8_lossy(&info.stdout);
+                                for info_line in info_str.lines() {
+                                    if info_line.starts_with("Repository") {
+                                        if let Some(repo) = info_line.split(':').nth(1) {
+                                            pkg.repository = repo.trim().to_string();
+                                            pkg.is_aur = pkg.repository.to_lowercase() == "aur";
+                                        }
+                                    } else if info_line.starts_with("Installed Size") {
+                                        if let Some(size) = info_line.split(':').nth(1) {
+                                            let size_str = size.trim();
+                                            // Parse size like "150.00 MiB"
+                                            let multiplier: u64 = if size_str.contains("GiB") {
+                                                1024 * 1024
+                                            } else if size_str.contains("MiB") {
+                                                1024
+                                            } else if size_str.contains("KiB") {
+                                                1
+                                            } else {
+                                                1
+                                            };
+                                            let num: f64 = size_str
+                                                .replace("GiB", "")
+                                                .replace("MiB", "")
+                                                .replace("KiB", "")
+                                                .trim()
+                                                .parse()
+                                                .unwrap_or(0.0);
+                                            pkg.download_size = (num * multiplier as f64) as u64;
+                                        }
+                                    } else if info_line.starts_with("Depends On") {
+                                        let deps = info_line.split(':').nth(1).unwrap_or("");
+                                        pkg.new_dependencies = deps
+                                            .trim()
+                                            .split_whitespace()
+                                            .map(|s| s.to_string())
+                                            .collect();
+                                    }
+                                }
+                            }
+                        }
+
+                        outdated.push(pkg);
+                    }
+                }
+            }
+
+            Ok(outdated)
         })
         .await
         .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
@@ -619,6 +747,11 @@ impl PackageService {
         self.update_provider.check_updates().await
     }
 
+    /// Get detailed list of outdated packages
+    pub async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
+        self.update_provider.get_outdated_packages().await
+    }
+
     /// Clear expired cache entries
     pub fn clear_expired_cache() {
         PACKAGE_CACHE.retain(|_, v| !v.is_expired());
@@ -677,6 +810,31 @@ struct AurPackage {
     keywords: Option<Vec<String>>,
     #[serde(rename = "Provides")]
     provides: Option<Vec<String>>,
+    #[serde(rename = "NumVotes")]
+    num_votes: Option<i32>,
+    #[serde(rename = "Popularity")]
+    popularity: Option<f32>,
+    #[serde(rename = "LastUpdated")]
+    last_updated: Option<i64>,
+    #[serde(rename = "FirstSubmitted")]
+    first_submitted: Option<i64>,
+    #[serde(rename = "OutOfDate")]
+    out_of_date: Option<i64>,
+    #[serde(rename = "PackageBaseID")]
+    package_base_id: Option<i32>,
+    #[serde(rename = "PackageBase")]
+    package_base: Option<String>,
+    #[serde(rename = "Download")]
+    download: Option<String>,
+    #[serde(rename = "FileSize")]
+    file_size: Option<i64>,
+}
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, Debug)]
+struct AurInfoResponse {
+    #[serde(rename = "results")]
+    results: Option<AurPackage>,
 }
 
 /// Command builder for safe command execution

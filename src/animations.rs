@@ -1,6 +1,7 @@
 //! Animation state management for spinners, border pulses, and toast notifications.
 //!
 //! This module provides frame-based animations that integrate into the main event loop.
+#![allow(dead_code)]
 
 use ratatui::style::{Color, Modifier, Style};
 use std::time::{Duration, Instant};

@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::action::Action;
-use crate::animations::{Toast, ToastStyle};
+use crate::animations::Toast;
 use crate::config::AppConfig;
 
 use crate::models::Package;
+use crate::models::OutdatedPackage;
 use crate::services::CommandSpec;
 use crate::transaction_history::TransactionRecord;
 use crate::utils::PasswordInput;
@@ -31,6 +32,13 @@ pub enum FilterOption {
     NotInstalled,
     RepoOnly,
     AurOnly,
+    Group(String),
+}
+
+impl Default for FilterOption {
+    fn default() -> Self {
+        Self::All
+    }
 }
 
 /// Sort options
@@ -42,6 +50,36 @@ pub enum SortOption {
     SizeAsc,
     SizeDesc,
     Group,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdatesSortOption {
+    NameAsc,
+    NameDesc,
+    SizeAsc,
+    SizeDesc,
+    Repository,
+    SecurityFirst,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdatesFilter {
+    All,
+    SecurityOnly,
+    Repository(String),
+    AurOnly,
+}
+
+impl Default for UpdatesSortOption {
+    fn default() -> Self {
+        Self::SecurityFirst
+    }
+}
+
+impl Default for UpdatesFilter {
+    fn default() -> Self {
+        Self::All
+    }
 }
 
 /// Main application state
@@ -77,6 +115,17 @@ pub struct App {
     pub available_updates: Option<usize>,
     pub is_operation_running: bool,
 
+    // Updates View
+    pub show_updates_view: bool,
+    pub outdated_packages: Vec<OutdatedPackage>,
+    pub updates_cursor: Option<usize>,
+    pub updates_sort: UpdatesSortOption,
+    pub updates_filter: UpdatesFilter,
+    pub updates_group_by_repo: bool,
+    pub selected_updates: Vec<String>,
+    pub updates_changelog_package: Option<String>,
+    pub partial_update_warning_shown: bool,
+
     // Password - using secure input
     pub show_password_prompt: bool,
     pub password_input: PasswordInput,
@@ -97,6 +146,11 @@ pub struct App {
     pub command_stdin_tx: Option<UnboundedSender<String>>,
     pub console_input: String,
     pub command_progress: Option<CommandProgress>,
+
+    // Install progress tracking
+    pub install_total: usize,
+    pub install_current: usize,
+    pub install_current_package: String,
 
     // Configuration
     pub config: AppConfig,
@@ -184,6 +238,17 @@ impl App {
             available_updates: None,
             is_operation_running: false,
 
+            // Updates View
+            show_updates_view: false,
+            outdated_packages: Vec::new(),
+            updates_cursor: None,
+            updates_sort: UpdatesSortOption::default(),
+            updates_filter: UpdatesFilter::default(),
+            updates_group_by_repo: true,
+            selected_updates: Vec::new(),
+            updates_changelog_package: None,
+            partial_update_warning_shown: false,
+
             show_password_prompt: true,
             password_input: PasswordInput::new(),
 
@@ -200,6 +265,10 @@ impl App {
             command_stdin_tx: None,
             console_input: String::new(),
             command_progress: None,
+
+            install_total: 0,
+            install_current: 0,
+            install_current_package: String::new(),
 
             config: AppConfig::default(),
             theme: crate::theme::Theme::default(),
@@ -276,13 +345,11 @@ impl App {
     }
 
     pub fn navigate_history_down(&mut self) {
-        match self.history_index {
-            None => return,
-            Some(0) => {
+        if let Some(idx) = self.history_index {
+            if idx == 0 {
                 self.history_index = None;
                 self.search_input.clear();
-            }
-            Some(idx) => {
+            } else {
                 self.history_index = Some(idx - 1);
                 if let Some(query) = self.search_history.get(idx - 1) {
                     self.search_input = query.clone();
@@ -309,6 +376,21 @@ impl App {
             }
         }
         None
+    }
+
+    /// Get search suggestions based on current input
+    pub fn get_search_suggestions(&self, input: &str, limit: usize) -> Vec<String> {
+        if input.is_empty() {
+            return self.search_history.iter().take(limit).cloned().collect();
+        }
+        
+        let input_lower = input.to_lowercase();
+        self.search_history
+            .iter()
+            .filter(|q| q.to_lowercase().contains(&input_lower))
+            .take(limit)
+            .cloned()
+            .collect()
     }
 
     pub fn clear_pending_search(&mut self) {
@@ -378,7 +460,7 @@ impl App {
             self.filtered_results.len()
         };
 
-        (count + self.items_per_page - 1) / self.items_per_page
+        count.div_ceil(self.items_per_page)
     }
 
     pub fn next_page(&mut self) {
@@ -463,6 +545,7 @@ impl App {
             FilterOption::NotInstalled => !pkg.is_installed,
             FilterOption::RepoOnly => matches!(pkg.source, crate::models::PackageSource::Pacman),
             FilterOption::AurOnly => matches!(pkg.source, crate::models::PackageSource::Aur),
+            FilterOption::Group(ref g) => pkg.groups.iter().any(|gr| gr == g),
         });
 
         // Apply fuzzy scoring for search
@@ -533,7 +616,24 @@ impl App {
             FilterOption::NotInstalled => FilterOption::RepoOnly,
             FilterOption::RepoOnly => FilterOption::AurOnly,
             FilterOption::AurOnly => FilterOption::All,
+            FilterOption::Group(_) => FilterOption::All,
         };
+        self.apply_filter_and_sort();
+    }
+
+    pub fn get_available_groups(&self) -> Vec<String> {
+        let mut groups: Vec<String> = self.results
+            .iter()
+            .flat_map(|p| p.groups.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        groups.sort();
+        groups
+    }
+
+    pub fn filter_by_group(&mut self, group: &str) {
+        self.current_filter = FilterOption::Group(group.to_string());
         self.apply_filter_and_sort();
     }
 
@@ -608,6 +708,117 @@ impl App {
         self.show_diagnostics = !self.show_diagnostics;
     }
 
+    pub fn toggle_updates_view(&mut self) {
+        self.show_updates_view = !self.show_updates_view;
+        if self.show_updates_view {
+            self.hide_package_details();
+            self.hide_dependency_visualization();
+            self.hide_help();
+        }
+    }
+
+    pub fn hide_updates_view(&mut self) {
+        self.show_updates_view = false;
+    }
+
+    pub fn get_filtered_outdated_packages(&self) -> Vec<&OutdatedPackage> {
+        let mut packages = self.outdated_packages.iter().collect::<Vec<_>>();
+
+        packages.sort_by(|a, b| {
+            match self.updates_sort {
+                UpdatesSortOption::NameAsc => a.name.cmp(&b.name),
+                UpdatesSortOption::NameDesc => b.name.cmp(&a.name),
+                UpdatesSortOption::SizeAsc => a.download_size.cmp(&b.download_size),
+                UpdatesSortOption::SizeDesc => b.download_size.cmp(&a.download_size),
+                UpdatesSortOption::Repository => a.repository.cmp(&b.repository),
+                UpdatesSortOption::SecurityFirst => {
+                    match (a.is_security_update, b.is_security_update) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        _ => a.name.cmp(&b.name),
+                    }
+                }
+            }
+        });
+
+        if !matches!(self.updates_filter, UpdatesFilter::All) {
+            packages.retain(|p| match &self.updates_filter {
+                UpdatesFilter::SecurityOnly => p.is_security_update,
+                UpdatesFilter::Repository(repo) => &p.repository == repo,
+                UpdatesFilter::AurOnly => p.is_aur,
+                UpdatesFilter::All => true,
+            });
+        }
+
+        packages
+    }
+
+    pub fn toggle_update_selection(&mut self, idx: usize) {
+        if idx >= self.outdated_packages.len() {
+            return;
+        }
+        let pkg = &mut self.outdated_packages[idx];
+        pkg.is_selected = !pkg.is_selected;
+
+        if pkg.is_selected {
+            if !self.selected_updates.contains(&pkg.name) {
+                self.selected_updates.push(pkg.name.clone());
+            }
+        } else {
+            self.selected_updates.retain(|n| n != &pkg.name);
+        }
+    }
+
+    pub fn select_all_updates(&mut self) {
+        for pkg in &mut self.outdated_packages {
+            pkg.is_selected = true;
+        }
+        self.selected_updates = self.outdated_packages.iter().map(|p| p.name.clone()).collect();
+    }
+
+    pub fn deselect_all_updates(&mut self) {
+        for pkg in &mut self.outdated_packages {
+            pkg.is_selected = false;
+        }
+        self.selected_updates.clear();
+    }
+
+    pub fn get_selected_outdated_packages(&self) -> Vec<&OutdatedPackage> {
+        self.outdated_packages.iter().filter(|p| p.is_selected).collect()
+    }
+
+    pub fn get_total_update_size(&self) -> u64 {
+        self.outdated_packages.iter().map(|p| p.download_size).sum()
+    }
+
+    pub fn get_selected_update_size(&self) -> u64 {
+        self.get_selected_outdated_packages().iter().map(|p| p.download_size).sum()
+    }
+
+    pub fn has_aur_needing_rebuild(&self) -> bool {
+        self.outdated_packages.iter().any(|p| p.needs_rebuild)
+    }
+
+    pub fn get_security_updates_count(&self) -> usize {
+        self.outdated_packages.iter().filter(|p| p.is_security_update).count()
+    }
+
+    pub fn get_aur_updates_count(&self) -> usize {
+        self.outdated_packages.iter().filter(|p| p.is_aur).count()
+    }
+
+    pub fn get_repo_updates_count(&self, repo: &str) -> usize {
+        self.outdated_packages.iter().filter(|p| p.repository == repo).count()
+    }
+
+    pub fn show_changelog_for_package(&mut self, name: String) {
+        self.updates_changelog_package = Some(name);
+    }
+
+    pub fn hide_changelog(&mut self) {
+        self.updates_changelog_package = None;
+    }
+
     // Console Management
     pub fn add_console_output(&mut self, line: String) {
         // Parse progress before pushing to avoid borrow issues
@@ -615,7 +826,7 @@ impl App {
         self.console_buffer.push(line);
         self.parse_progress(&line_clone);
 
-        // Keep buffer size manageable
+        // Keep buffer size manageable (use VecDeque for O(1) removal from front)
         if self.console_buffer.len() > 1000 {
             self.console_buffer.remove(0);
         }
@@ -672,26 +883,10 @@ mod tests {
         source: crate::models::PackageSource,
         installed: bool,
     ) -> Package {
-        Package {
-            name: name.to_string(),
-            version: "1.0.0".to_string(),
-            description: format!("Test package {}", name),
-            source,
-            is_installed: installed,
-            installed_size: None,
-            download_size: None,
-            groups: vec![],
-            licenses: vec![],
-            maintainers: vec![],
-            keywords: vec![],
-            url: None,
-            depends_on: vec![],
-            required_by: vec![],
-            opt_depends: vec![],
-            conflicts: vec![],
-            replaces: vec![],
-            provides: vec![],
-        }
+        let mut pkg = Package::new(name, "1.0.0");
+        pkg.source = source;
+        pkg.is_installed = installed;
+        pkg
     }
 
     #[test]
@@ -799,6 +994,31 @@ impl App {
 
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
+        }
+    }
+
+    pub fn start_install_progress(&mut self, total: usize) {
+        self.install_total = total;
+        self.install_current = 0;
+        self.install_current_package = String::new();
+    }
+
+    pub fn update_install_progress(&mut self, current: usize, package_name: &str) {
+        self.install_current = current;
+        self.install_current_package = package_name.to_string();
+    }
+
+    pub fn finish_install_progress(&mut self) {
+        self.install_total = 0;
+        self.install_current = 0;
+        self.install_current_package.clear();
+    }
+
+    pub fn get_progress_percentage(&self) -> f64 {
+        if self.install_total == 0 {
+            0.0
+        } else {
+            (self.install_current as f64 / self.install_total as f64) * 100.0
         }
     }
 

@@ -2,6 +2,8 @@
 //!
 //! This module provides functionality for visualizing package dependencies
 //! in a tree-like structure to help users understand relationships between packages.
+#![allow(dead_code)]
+#![allow(clippy::too_many_arguments)]
 
 use crate::errors::AppError;
 use crate::models::Package;
@@ -112,10 +114,8 @@ impl PacmanDependencyResolver {
                 let value = value.trim();
 
                 match key {
-                    "Version" => {
-                        if !value.is_empty() {
-                            version = value.to_string();
-                        }
+                    "Version" if !value.is_empty() => {
+                        version = value.to_string();
                     }
                     "Depends On" => {
                         collecting_depends = true;
@@ -309,7 +309,7 @@ impl DependencyVisualizationService {
         let status = if node.is_installed { "✓" } else { "○" };
         let mut result = String::new();
 
-        for (i, &has_sibling) in parent_prefixes.iter().enumerate() {
+        for &has_sibling in parent_prefixes.iter() {
             if has_sibling {
                 result.push_str("│   ");
             } else {
@@ -362,26 +362,10 @@ mod tests {
 
     #[test]
     fn test_build_simple_dependency_tree() {
-        let package = Package {
-            name: "test-package".to_string(),
-            version: "1.0.0".to_string(),
-            description: "A test package".to_string(),
-            source: PackageSource::Pacman,
-            is_installed: true,
-            installed_size: None,
-            download_size: None,
-            groups: vec![],
-            licenses: vec![],
-            maintainers: vec![],
-            keywords: vec![],
-            url: None,
-            depends_on: vec!["dependency1".to_string(), "dependency2".to_string()],
-            required_by: vec![],
-            opt_depends: vec![],
-            conflicts: vec![],
-            replaces: vec![],
-            provides: vec![],
-        };
+        let mut package = Package::new("test-package", "1.0.0");
+        package.source = PackageSource::Pacman;
+        package.is_installed = true;
+        package.depends_on = vec!["dependency1".to_string(), "dependency2".to_string()];
 
         let tree = DependencyVisualizationService::build_dependency_tree(&package, 3);
         assert_eq!(tree.name, "test-package");

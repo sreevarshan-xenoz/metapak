@@ -94,26 +94,9 @@ mod tests {
 
     #[test]
     fn test_export_installed() {
-        let pkg = crate::models::Package {
-            name: "test-pkg".to_string(),
-            version: "1.0".to_string(),
-            description: "".to_string(),
-            source: crate::models::PackageSource::Pacman,
-            is_installed: true,
-            installed_size: None,
-            download_size: None,
-            groups: vec![],
-            licenses: vec![],
-            maintainers: vec![],
-            keywords: vec![],
-            url: None,
-            depends_on: vec![],
-            required_by: vec![],
-            opt_depends: vec![],
-            conflicts: vec![],
-            replaces: vec![],
-            provides: vec![],
-        };
+        let mut pkg = crate::models::Package::new("test-pkg", "1.0");
+        pkg.source = crate::models::PackageSource::Pacman;
+        pkg.is_installed = true;
 
         let path = "/tmp/arch_tui_test_export.txt";
         export_installed(&[pkg], std::path::Path::new(path)).unwrap();

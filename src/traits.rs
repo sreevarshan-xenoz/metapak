@@ -4,7 +4,7 @@
 //! allowing for pluggable implementations and easier testing.
 
 use crate::errors::Result;
-use crate::models::Package;
+use crate::models::{Package, OutdatedPackage};
 use async_trait::async_trait;
 
 /// Trait for package search providers
@@ -22,4 +22,7 @@ pub trait PackageProvider: Send + Sync {
 pub trait UpdateProvider: Send + Sync {
     /// Check for available updates
     async fn check_updates(&self) -> Result<usize>;
+
+    /// Get detailed list of outdated packages
+    async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>>;
 }

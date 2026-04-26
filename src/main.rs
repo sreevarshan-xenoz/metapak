@@ -295,13 +295,10 @@ async fn run_command_sequence(
                             prog: "sudo".to_string(),
                             args: vec!["pacman".to_string(), "-Sy".to_string(), "--noconfirm".to_string()],
                         };
-                        match run_single_command(&fix2, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
-                            Ok(CommandRunResult::Finished) => {
+                        if let Ok(CommandRunResult::Finished) = run_single_command(&fix2, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
                                 let _ = tx.send(ActionResult::CommandOutput("Keys refreshed. Retrying...".to_string()));
                                 if attempts < max_attempts { continue; }
                             }
-                            _ => {}
-                        }
                     }
 
                     // Handle disk space errors
@@ -354,16 +351,17 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let app_config =
-        crate::config::AppConfig::load().map_err(|e| crate::errors::AppError::Config(e))?;
+        crate::config::AppConfig::load().map_err(crate::errors::AppError::Config)?;
 
     tracing::info!("Configuration loaded successfully");
 
     // Setup terminal
-    enable_raw_mode().map_err(|e| crate::errors::AppError::Io(e))?;
+    enable_raw_mode().map_err(crate::errors::AppError::Io)?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(|e| crate::errors::AppError::Io(e))?;
+    execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)
+        .map_err(crate::errors::AppError::Io)?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(|e| crate::errors::AppError::Io(e))?;
+    let mut terminal = Terminal::new(backend).map_err(crate::errors::AppError::Io)?;
 
     // Channels
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -741,12 +739,12 @@ async fn main() -> Result<()> {
 
     // Restore terminal
     tracing::info!("Shutting down Arch TUI");
-    disable_raw_mode().map_err(|e| crate::errors::AppError::Io(e))?;
+    disable_raw_mode().map_err(crate::errors::AppError::Io)?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .map_err(|e| crate::errors::AppError::Io(e))?;
+        .map_err(crate::errors::AppError::Io)?;
     terminal
         .show_cursor()
-        .map_err(|e| crate::errors::AppError::Io(e))?;
+        .map_err(crate::errors::AppError::Io)?;
 
     Ok(())
 }

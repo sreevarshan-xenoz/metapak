@@ -3,19 +3,43 @@ mod tests {
     use super::*;
     use crate::models::{Package, PackageSource};
 
+    fn create_test_package(name: &str, source: PackageSource, installed: bool) -> Package {
+        Package {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            description: format!("Test package {}", name),
+            source,
+            is_installed: installed,
+            is_outdated: false,
+            installed_size: Some(1024),
+            download_size: Some(512),
+            groups: vec![],
+            licenses: vec!["MIT".to_string()],
+            maintainers: vec![],
+            keywords: vec![],
+            url: None,
+            depends_on: vec![],
+            required_by: vec![],
+            opt_depends: vec![],
+            conflicts: vec![],
+            replaces: vec![],
+            provides: vec![],
+            votes: Some(10),
+            popularity: Some(5.5),
+            first_submitted: Some(1609459200),
+            last_updated: Some(1640995200),
+            package_base_id: None,
+            num_votes: Some(10),
+        }
+    }
+
     #[test]
     fn test_package_creation() {
-        let pkg = Package {
-            name: "test-package".to_string(),
-            version: "1.0.0".to_string(),
-            description: "A test package".to_string(),
-            source: PackageSource::Pacman,
-            is_installed: false,
-        };
+        let pkg = create_test_package("test-package", PackageSource::Pacman, false);
 
         assert_eq!(pkg.name, "test-package");
         assert_eq!(pkg.version, "1.0.0");
-        assert_eq!(pkg.description, "A test package");
+        assert_eq!(pkg.description, "Test package test-package");
         assert_eq!(pkg.source, PackageSource::Pacman);
         assert!(!pkg.is_installed);
     }
@@ -46,28 +70,18 @@ mod tests {
     #[test]
     fn test_toggle_selection() {
         let mut app = App::new();
-        
-        // Add a test package to results
-        let test_pkg = Package {
-            name: "test-package".to_string(),
-            version: "1.0.0".to_string(),
-            description: "A test package".to_string(),
-            source: PackageSource::Pacman,
-            is_installed: false,
-        };
-        
+
+        let test_pkg = create_test_package("test-package", PackageSource::Pacman, false);
+
         app.results.push(test_pkg.clone());
         app.selected_index = Some(0);
 
-        // Initially not selected
         assert_eq!(app.selected_packages.len(), 0);
 
-        // Toggle selection
         app.toggle_selection();
         assert_eq!(app.selected_packages.len(), 1);
         assert!(app.selected_packages.contains_key("test-package"));
 
-        // Toggle again to deselect
         app.toggle_selection();
         assert_eq!(app.selected_packages.len(), 0);
         assert!(!app.selected_packages.contains_key("test-package"));
@@ -76,37 +90,25 @@ mod tests {
     #[test]
     fn test_navigation() {
         let mut app = App::new();
-        
-        // Add some test packages
+
         for i in 0..3 {
-            app.results.push(Package {
-                name: format!("package-{}", i),
-                version: "1.0.0".to_string(),
-                description: format!("Test package {}", i),
-                source: PackageSource::Pacman,
-                is_installed: false,
-            });
+            app.results.push(create_test_package(&format!("package-{}", i), PackageSource::Pacman, false));
         }
 
-        // Initially no selection
         assert!(app.selected_index.is_none());
 
-        // Move to next (should wrap to 0)
         app.next();
         assert_eq!(app.selected_index, Some(0));
 
-        // Move to next
         app.next();
         assert_eq!(app.selected_index, Some(1));
 
-        // Move to next (should wrap to 0 when reaching end)
         app.next();
         assert_eq!(app.selected_index, Some(2));
 
         app.next();
-        assert_eq!(app.selected_index, Some(0)); // Wrap around
+        assert_eq!(app.selected_index, Some(0));
 
-        // Move to previous
         app.previous();
         assert_eq!(app.selected_index, Some(2));
 
@@ -117,6 +119,6 @@ mod tests {
         assert_eq!(app.selected_index, Some(0));
 
         app.previous();
-        assert_eq!(app.selected_index, Some(2)); // Wrap around
+        assert_eq!(app.selected_index, Some(2));
     }
 }
