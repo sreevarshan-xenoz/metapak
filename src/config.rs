@@ -220,6 +220,12 @@ impl AppConfig {
     }
 }
 
+/// Reload configuration from file
+pub fn reload() -> Result<Self, config::ConfigError> {
+    Self::load()
+}
+}
+
 /// Configuration validation errors
 #[derive(Debug, Clone)]
 pub enum ConfigValidationError {
