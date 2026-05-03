@@ -350,7 +350,10 @@ async fn main() -> Result<()> {
     // Initialize tracing
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-    tracing::info!("Starting Arch TUI");
+    // Display platform and package manager info
+    let platform_info = crate::platform::get_platform_info();
+    tracing::info!("Starting Universal TUI on {}", platform_info);
+    eprintln!("Platform: {}", platform_info);
 
     // Load configuration
     let app_config =
