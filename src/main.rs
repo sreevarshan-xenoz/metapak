@@ -1,6 +1,7 @@
 mod action;
 mod animations;
 mod app;
+mod backends;
 mod command;
 mod config;
 mod constants;
@@ -8,6 +9,7 @@ mod dependency_visualization;
 mod diagnostics;
 mod errors;
 mod export;
+mod hooks;
 mod i18n;
 mod input;
 mod models;
@@ -18,14 +20,17 @@ mod platform;
 mod search;
 mod security;
 mod services;
+mod simulation;
 mod state;
 mod telemetry;
 mod theme;
 mod traits;
 mod transaction_history;
+mod transaction_manager;
 mod ui;
 mod ui_utils;
 mod utils;
+mod watchdog;
 
 // CLI arguments disabled - cargo not available for testing
 // use clap::{Arg, Command as ClapCommand};

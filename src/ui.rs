@@ -99,6 +99,10 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_password_prompt(app, f, theme);
     } else if app.show_confirm_prompt {
         render_confirmation(app, f, theme);
+    } else if app.show_simulation {
+        render_simulation_modal(app, f, theme);
+    } else if app.show_rollback_confirm {
+        render_rollback_dialog(app, f, theme);
     }
 
     if !app.show_help
@@ -115,6 +119,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_console
         && !app.show_password_prompt
         && !app.show_confirm_prompt
+        && !app.show_simulation
+        && !app.show_rollback_confirm
     {
         render_toasts(app, f, area, theme);
     }
@@ -1816,4 +1822,129 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
     let help_area = centered_rect(70, 80, area);
     f.render_widget(Clear, help_area);
     f.render_widget(help_para, help_area);
+}
+
+fn render_simulation_modal(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
+    let area = centered_rect(60, 60, f.size());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title("🔍 Operation Simulation")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(theme.primary()));
+
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .margin(2)
+        .split(area);
+
+    if let Some(result) = &app.simulation_result {
+        // Summary
+        let download_size = crate::models::Package::format_size(result.total_download_bytes);
+        let disk_change = if result.disk_change_bytes >= 0 {
+            format!("+{}", crate::models::Package::format_size(result.disk_change_bytes as u64))
+        } else {
+            format!("-{}", crate::models::Package::format_size(result.disk_change_bytes.abs() as u64))
+        };
+
+        let summary = Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("Download Size: ", Style::default().fg(theme.muted())),
+                Span::styled(download_size, Style::default().fg(theme.foreground())),
+            ]),
+            Line::from(vec![
+                Span::styled("Disk Change:   ", Style::default().fg(theme.muted())),
+                Span::styled(disk_change, Style::default().fg(theme.foreground())),
+            ]),
+        ]);
+        f.render_widget(summary, chunks[0]);
+
+        // Conflicts and Config Changes
+        let mut lines = Vec::new();
+        if !result.conflicts.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Conflicts Found:",
+                Style::default().fg(theme.error()).add_modifier(Modifier::BOLD),
+            )]));
+            for conflict in &result.conflicts {
+                lines.push(Line::from(format!("  • {}", conflict)));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if !result.config_changes.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Configuration Changes:",
+                Style::default().fg(theme.warning()).add_modifier(Modifier::BOLD),
+            )]));
+            for config in &result.config_changes {
+                lines.push(Line::from(format!("  • {}", config)));
+            }
+        }
+
+        if result.conflicts.is_empty() && result.config_changes.is_empty() {
+            lines.push(Line::from("No conflicts or major config changes detected."));
+        }
+
+        let details = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(details, chunks[1]);
+    } else {
+        let loading = Paragraph::new("Simulating operation...")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme.muted()));
+        f.render_widget(loading, chunks[1]);
+    }
+
+    let footer = Paragraph::new("Press 'Enter' to Proceed | 'Esc' to Cancel")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme.muted()));
+    f.render_widget(footer, chunks[2]);
+}
+
+fn render_rollback_dialog(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
+    let area = centered_rect(50, 30, f.size());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title("🛡️  Rollback Recommended")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(theme.error()));
+
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .margin(2)
+        .split(area);
+
+    let msg = Paragraph::new(vec![
+        Line::from("The operation failed. Would you like to rollback to the snapshot created before this operation?"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Snapshot ID: ", Style::default().fg(theme.muted())),
+            Span::styled(
+                app.pending_rollback_id.as_deref().unwrap_or("Unknown"),
+                Style::default().fg(theme.foreground()),
+            ),
+        ]),
+    ]).wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(msg, chunks[0]);
+
+    let footer = Paragraph::new("Press 'y' to Rollback | 'n' to Dismiss")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme.muted()));
+    f.render_widget(footer, chunks[1]);
 }

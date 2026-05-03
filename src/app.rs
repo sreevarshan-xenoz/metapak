@@ -206,6 +206,12 @@ pub struct App {
     // Fuzzy search
     pub fuzzy_matcher: crate::search::FuzzySearch,
     pub fuzzy_scores: std::collections::HashMap<String, i64>,
+
+    // Robustness & Safety
+    pub show_simulation: bool,
+    pub simulation_result: Option<crate::traits::SimulationResult>,
+    pub show_rollback_confirm: bool,
+    pub pending_rollback_id: Option<String>,
 }
 
 /// Represents a selection action for undo functionality
@@ -333,6 +339,12 @@ impl App {
 
             fuzzy_matcher: crate::search::FuzzySearch::new(),
             fuzzy_scores: std::collections::HashMap::new(),
+
+            // Robustness & Safety
+            show_simulation: false,
+            simulation_result: None,
+            show_rollback_confirm: false,
+            pending_rollback_id: None,
         }
     }
 
