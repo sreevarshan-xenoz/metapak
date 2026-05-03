@@ -69,6 +69,8 @@ pub trait PackageSimulator: Send + Sync {
 
 /// Result of a package operation simulation
 pub struct SimulationResult {
+    /// Total download size in bytes
+    pub total_download_bytes: u64,
     /// Projected change in disk usage (positive for growth, negative for shrinkage)
     pub disk_change_bytes: i64,
     /// List of identified package conflicts

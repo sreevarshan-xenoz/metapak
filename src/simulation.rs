@@ -1,8 +1,29 @@
-use crate::errors::Result;
+use crate::errors::{AppError, Result};
 use crate::traits::{PackageSimulator, SimulationResult};
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::process::Command;
+
+static DOWNLOAD_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Total Download Size:\s+([\d.]+)\s+(\w+)").expect("Invalid download regex")
+});
+static INSTALL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Total Installed Size:\s+([\d.]+)\s+(\w+)").expect("Invalid install regex")
+});
+static NET_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"Net Upgrade Size:\s+([\d.-]+)\s+(\w+)").expect("Invalid net regex")
+});
+static CONFLICT_PKG_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"::\s+(.+)\s+and\s+(.+)\s+are\s+in\s+conflict").expect("Invalid conflict pkg regex")
+});
+static UNRESOLVABLE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"error:\s+unresolvable\s+package\s+conflicts").expect("Invalid unresolvable regex")
+});
+static TRANSACTION_FAILED_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"error: failed to (?:commit|prepare) transaction \((.+)\)")
+        .expect("Invalid transaction failed regex")
+});
 
 /// Simulation engine for package operations
 pub struct SimulationEngine {
@@ -17,44 +38,46 @@ impl SimulationEngine {
 
     /// Parse pacman dry-run output to extract simulation metrics
     pub fn parse_pacman_output(output: &str) -> SimulationResult {
+        let mut total_download_bytes = 0;
         let mut disk_change_bytes = 0;
         let mut conflicts = Vec::new();
-        let mut config_changes = Vec::new();
-
-        // Regex for sizes
-        let install_re = Regex::new(r"Total Installed Size:\s+([\d.]+)\s+(\w+)").unwrap();
-        let net_re = Regex::new(r"Net Upgrade Size:\s+([\d.-]+)\s+(\w+)").unwrap();
+        let config_changes = Vec::new();
 
         for line in output.lines() {
-            // Check for installed size
-            if let Some(caps) = install_re.captures(line) {
+            // Check for download size
+            if let Some(caps) = DOWNLOAD_RE.captures(line) {
                 if let Ok(val) = caps[1].parse::<f64>() {
-                    disk_change_bytes = convert_to_bytes(val, &caps[2]);
+                    total_download_bytes = convert_to_bytes(val, &caps[2]).max(0) as u64;
+                }
+            }
+            // Check for installed size (fallback for disk change if net_re not found)
+            else if let Some(caps) = INSTALL_RE.captures(line) {
+                if let Ok(val) = caps[1].parse::<f64>() {
+                    let bytes = convert_to_bytes(val, &caps[2]);
+                    if disk_change_bytes == 0 {
+                        disk_change_bytes = bytes;
+                    }
                 }
             }
             // Net upgrade size is often more accurate for "change"
-            else if let Some(caps) = net_re.captures(line) {
+            else if let Some(caps) = NET_RE.captures(line) {
                 if let Ok(val) = caps[1].parse::<f64>() {
                     disk_change_bytes = convert_to_bytes(val, &caps[2]);
                 }
             }
 
             // Detect conflicts
-            if line.contains("error: failed to commit transaction") {
-                if let Some(reason) = line.split('(').nth(1) {
-                    conflicts.push(reason.trim_matches(')').to_string());
-                }
+            if let Some(caps) = TRANSACTION_FAILED_RE.captures(line) {
+                conflicts.push(caps[1].trim().to_string());
             } else if line.contains("conflicting files") || line.contains("exists in filesystem") {
                 conflicts.push(line.trim().to_string());
-            }
-
-            // Detect potential config changes (pacnew)
-            if line.contains(".pacnew") {
-                config_changes.push(line.trim().to_string());
+            } else if CONFLICT_PKG_RE.is_match(line) || UNRESOLVABLE_RE.is_match(line) {
+                conflicts.push(line.trim().to_string());
             }
         }
 
         SimulationResult {
+            total_download_bytes,
             disk_change_bytes,
             conflicts,
             config_changes,
@@ -79,9 +102,11 @@ impl PackageSimulator for SimulationEngine {
     async fn simulate_install(&self, packages: &[&str]) -> Result<SimulationResult> {
         match self.backend.as_str() {
             "pacman" => {
-                // -Sp: print targets and sizes without installing
+                // -Sw: download only, shows summary block without installing
+                // Using LC_ALL=C to ensure predictable output for parsing
                 let output = Command::new("pacman")
-                    .args(["-Sp", "--noconfirm"])
+                    .env("LC_ALL", "C")
+                    .args(["-Sw", "--noconfirm"])
                     .args(packages)
                     .output()
                     .await?;
@@ -90,18 +115,31 @@ impl PackageSimulator for SimulationEngine {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let combined = format!("{}\n{}", stdout, stderr);
 
-                Ok(Self::parse_pacman_output(&combined))
+                let result = Self::parse_pacman_output(&combined);
+
+                if !output.status.success() && result.conflicts.is_empty() {
+                    return Err(AppError::Pacman(stderr.trim().to_string()));
+                }
+
+                Ok(result)
             }
             "apt" => {
                 // Stub for apt simulation
-                let _output = Command::new("apt-get")
+                let output = Command::new("apt-get")
+                    .env("LC_ALL", "C")
                     .args(["install", "-s"])
                     .args(packages)
                     .output()
                     .await?;
-                
+
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(AppError::Command(format!("apt-get failed: {}", stderr.trim())));
+                }
+
                 // For now return empty result for apt
                 Ok(SimulationResult {
+                    total_download_bytes: 0,
                     disk_change_bytes: 0,
                     conflicts: Vec::new(),
                     config_changes: Vec::new(),
@@ -110,6 +148,7 @@ impl PackageSimulator for SimulationEngine {
             _ => {
                 // Default fallback for unimplemented backends
                 Ok(SimulationResult {
+                    total_download_bytes: 0,
                     disk_change_bytes: 0,
                     conflicts: Vec::new(),
                     config_changes: Vec::new(),
@@ -121,9 +160,10 @@ impl PackageSimulator for SimulationEngine {
     async fn simulate_upgrade(&self) -> Result<SimulationResult> {
         match self.backend.as_str() {
             "pacman" => {
-                // -Syu -p: simulate full system upgrade
+                // -Syuw: simulate full system upgrade (download only)
                 let output = Command::new("pacman")
-                    .args(["-Syu", "-p", "--noconfirm"])
+                    .env("LC_ALL", "C")
+                    .args(["-Syuw", "--noconfirm"])
                     .output()
                     .await?;
 
@@ -131,10 +171,17 @@ impl PackageSimulator for SimulationEngine {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let combined = format!("{}\n{}", stdout, stderr);
 
-                Ok(Self::parse_pacman_output(&combined))
+                let result = Self::parse_pacman_output(&combined);
+
+                if !output.status.success() && result.conflicts.is_empty() {
+                    return Err(AppError::Pacman(stderr.trim().to_string()));
+                }
+
+                Ok(result)
             }
             _ => {
                 Ok(SimulationResult {
+                    total_download_bytes: 0,
                     disk_change_bytes: 0,
                     conflicts: Vec::new(),
                     config_changes: Vec::new(),

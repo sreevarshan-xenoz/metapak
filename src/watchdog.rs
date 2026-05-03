@@ -1,8 +1,9 @@
 use crate::errors::Result;
 use std::time::{Duration, Instant};
-use futures::future::join_all;
+use futures::StreamExt;
 use std::path::Path;
 use tokio::process::Command;
+use tracing;
 
 #[derive(Debug, Clone)]
 pub struct MirrorHealth {
@@ -25,32 +26,41 @@ impl HealthWatchdog {
             .timeout(self.ping_timeout)
             .build()?;
 
-        let mut tasks = Vec::new();
-        for url in mirrors {
-            let client = client.clone();
-            let url = url.clone();
-            tasks.push(tokio::spawn(async move {
-                let start = Instant::now();
-                let result = client.head(&url).send().await;
-                let latency = start.elapsed();
-                
-                MirrorHealth {
-                    url,
-                    latency,
-                    reachable: result.is_ok(),
+        let stream = futures::stream::iter(mirrors.iter().cloned())
+            .map(|url| {
+                let client = client.clone();
+                async move {
+                    let start = Instant::now();
+                    let result = client.head(&url).send().await;
+                    let latency = start.elapsed();
+
+                    match result {
+                        Ok(resp) => {
+                            let is_success = resp.status().is_success();
+                            if !is_success {
+                                tracing::warn!(url = %url, status = %resp.status(), "Mirror returned non-success status");
+                            }
+                            MirrorHealth {
+                                url,
+                                latency,
+                                reachable: is_success,
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(url = %url, error = %e, "Mirror check failed");
+                            MirrorHealth {
+                                url,
+                                latency,
+                                reachable: false,
+                            }
+                        }
+                    }
                 }
-            }));
-        }
+            })
+            .buffer_unordered(5);
 
-        let results = join_all(tasks).await;
-        let mut mirror_healths = Vec::new();
-        for res in results {
-            if let Ok(health) = res {
-                mirror_healths.push(health);
-            }
-        }
-
-        Ok(mirror_healths)
+        let results = stream.collect::<Vec<_>>().await;
+        Ok(results)
     }
 
     pub async fn check_gpg_keys(&self) -> Result<bool> {
@@ -58,7 +68,16 @@ impl HealthWatchdog {
             .arg("--list-keys")
             .output()
             .await
-            .map_err(|e| crate::errors::AppError::Command(format!("Failed to run pacman-key: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to execute pacman-key");
+                crate::errors::AppError::Command(format!("Failed to run pacman-key: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!(status = ?output.status, stderr = %stderr, "pacman-key command failed");
+            return Ok(false);
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(!stdout.contains("[expired]"))
