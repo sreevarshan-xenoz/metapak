@@ -226,6 +226,44 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        // Robustness: Simulation Modal
+        if app.show_simulation {
+            match key.code {
+                KeyCode::Enter => {
+                    app.show_simulation = false;
+                    // Proceed with original confirmation logic if needed
+                }
+                KeyCode::Esc => {
+                    app.show_simulation = false;
+                    app.simulation_result = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Robustness: Rollback Dialog
+        if app.show_rollback_confirm {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    if let Some(rollback_id) = app.pending_rollback_id.take() {
+                        if let Some(tx) = &app.action_tx {
+                            let _ = tx.send(crate::action::Action::new(
+                                crate::action::ActionInner::Rollback(rollback_id),
+                            ));
+                        }
+                    }
+                    app.show_rollback_confirm = false;
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    app.show_rollback_confirm = false;
+                    app.pending_rollback_id = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Main input handling based on mode
         match app.input_mode {
             InputMode::Normal => handle_normal_mode(app, key.code),

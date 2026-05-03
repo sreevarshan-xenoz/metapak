@@ -544,6 +544,28 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
+                ActionInner::Rollback(id) => {
+                    tracing::info!(action_id, "Processing Rollback action for id: {}", id);
+                    let result_tx_clone = result_tx.clone();
+                    let id = id.clone();
+                    
+                    tokio::spawn(async move {
+                        // In a real app, these paths would come from config
+                        let root_path = "/";
+                        let snapshots_dir = "/.snapshots";
+                        
+                        let provider = crate::backends::snapshots::btrfs::BtrfsProvider::new(root_path, snapshots_dir);
+                        match crate::traits::SnapshotProvider::rollback(&provider, &id).await {
+                            Ok(_) => {
+                                let _ = result_tx_clone.send(ActionResult::CommandOutput(format!("Rollback to {} successful. Please reboot.", id)));
+                                let _ = result_tx_clone.send(ActionResult::CommandFinished);
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone.send(ActionResult::Error(format!("Rollback failed: {}", e)));
+                            }
+                        }
+                    });
+                }
                 ActionInner::CancelOperation => {
                     tracing::info!(action_id, "Processing CancelOperation action");
                     cancel_requested_for_spawn.store(true, Ordering::SeqCst);

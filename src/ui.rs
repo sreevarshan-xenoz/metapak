@@ -71,6 +71,10 @@ pub fn render(app: &mut App, f: &mut Frame) {
 
     if app.show_help {
         render_help_overlay(f, area, theme);
+    } else if app.show_rollback_confirm {
+        render_rollback_dialog(app, f, theme);
+    } else if app.show_simulation {
+        render_simulation_modal(app, f, theme);
     } else if app.show_updates_view {
         render_updates_view(app, f, area, theme);
     } else if app.show_diagnostics {
@@ -99,10 +103,6 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_password_prompt(app, f, theme);
     } else if app.show_confirm_prompt {
         render_confirmation(app, f, theme);
-    } else if app.show_simulation {
-        render_simulation_modal(app, f, theme);
-    } else if app.show_rollback_confirm {
-        render_rollback_dialog(app, f, theme);
     }
 
     if !app.show_help
@@ -1848,11 +1848,11 @@ fn render_simulation_modal(app: &App, f: &mut Frame, theme: &crate::theme::Theme
 
     if let Some(result) = &app.simulation_result {
         // Summary
-        let download_size = crate::models::Package::format_size(result.total_download_bytes);
+        let download_size = crate::models::Package::format_size(result.total_download_bytes / 1024);
         let disk_change = if result.disk_change_bytes >= 0 {
-            format!("+{}", crate::models::Package::format_size(result.disk_change_bytes as u64))
+            format!("+{}", crate::models::Package::format_size(result.disk_change_bytes as u64 / 1024))
         } else {
-            format!("-{}", crate::models::Package::format_size(result.disk_change_bytes.abs() as u64))
+            format!("-{}", crate::models::Package::format_size(result.disk_change_bytes.abs() as u64 / 1024))
         };
 
         let summary = Paragraph::new(vec![

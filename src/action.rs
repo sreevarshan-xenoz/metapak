@@ -28,6 +28,9 @@ pub enum ActionInner {
     /// Perform system update
     SystemUpdate,
 
+    /// Rollback to a specific snapshot ID
+    Rollback(String),
+
     /// Run multiple commands in sequence
     RunCommands(Vec<CommandSpec>),
 

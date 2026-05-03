@@ -168,9 +168,9 @@ impl Package {
 
     fn format_size_kb(kb: u64) -> String {
         if kb >= 1024 * 1024 {
-            format!("{:.1}M", kb as f64 / (1024.0 * 1024.0))
+            format!("{:.1}G", kb as f64 / (1024.0 * 1024.0))
         } else if kb >= 1024 {
-            format!("{:.1}K", kb as f64 / 1024.0)
+            format!("{:.1}M", kb as f64 / 1024.0)
         } else {
             format!("{}K", kb)
         }
