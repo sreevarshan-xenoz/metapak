@@ -148,3 +148,66 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 }
+
+use std::process::Command;
+
+/// Export all explicitly installed packages for system backup
+pub fn export_system_backup(path: &Path) -> std::io::Result<()> {
+    if !crate::utils::validate_path(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid path: potential path traversal detected"
+        ));
+    }
+
+    let output = Command::new("pacman")
+        .args(["-Qet", "--color", "never"])
+        .output()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
+
+    if !output.status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Failed to get package list"
+        ));
+    }
+
+    let packages = String::from_utf8_lossy(&output.stdout);
+
+    let mut file = File::create(path)?;
+
+    writeln!(file, "# Arch Linux System Backup")?;
+    writeln!(file, "# Generated on: {}", chrono_lite())?;
+    writeln!(file, "# This file contains all explicitly installed packages")?;
+    writeln!(file, "# To restore: pacman -S --needed < package_list.txt")?;
+    writeln!(file, "#")?;
+    writeln!(file)?;
+
+    for line in packages.lines() {
+        let name = line.split_whitespace().next().unwrap_or("");
+        if !name.is_empty() {
+            writeln!(file, "{}", name)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Get backup file info
+pub fn get_backup_info(path: &Path) -> std::io::Result<(String, usize)> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut count = 0;
+    let mut date = String::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.starts_with("# Generated on:") {
+            date = line.replace("# Generated on:", "").trim().to_string();
+        } else if !line.starts_with('#') && !line.trim().is_empty() {
+            count += 1;
+        }
+    }
+
+    Ok((date, count))
+}

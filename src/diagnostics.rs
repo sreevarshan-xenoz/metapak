@@ -543,21 +543,29 @@ pub fn get_recently_installed(days: u32) -> Vec<RecentlyInstalled> {
 }
 
 fn parse_install_date(date_str: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
-    // Try various date formats
-    // Format: "Tue 03 May 2026 02:34:56 PM UTC" or similar
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    // For now, return Ok if we can't parse (simplified)
-    // In production, you'd use chrono to properly parse
     let _ = date_str;
     let _ = days;
-
-    // Get current timestamp
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    // For simplicity, just accept all dates
     Ok(())
+}
+
+/// Create a system backup file in the user's home directory
+pub fn create_system_backup() -> Result<String, String> {
+    use std::env;
+
+    let home = env::var("HOME").map_err(|_| "Cannot find home directory".to_string())?;
+    let backup_dir = format!("{}/.config/arch-tui/backups", home);
+
+    // Create backup directory if it doesn't exist
+    std::fs::create_dir_all(&backup_dir)
+        .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+
+    let timestamp = chrono_lite().replace(':', "-").replace(' ', "_");
+    let backup_path = format!("{}/packages_{}.txt", backup_dir, timestamp);
+
+    let path = std::path::Path::new(&backup_path);
+
+    crate::export::export_system_backup(path)
+        .map_err(|e| format!("Failed to create backup: {}", e))?;
+
+    Ok(backup_path)
 }
