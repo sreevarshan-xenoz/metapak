@@ -85,6 +85,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_package_sizes_overlay(app, f, area, theme);
     } else if app.show_cache {
         render_cache_overlay(app, f, area, theme);
+    } else if app.show_foreign {
+        render_foreign_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -105,6 +107,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_orphans
         && !app.show_package_sizes
         && !app.show_cache
+        && !app.show_foreign
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1256,6 +1259,72 @@ fn format_cache_size(bytes: u64) -> String {
     }
 }
 
+fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let repo_count = crate::diagnostics::get_repository_packages_count();
+    let foreign_count = app.foreign_packages.len();
+    let total_count = repo_count + foreign_count;
+
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Foreign Packages (AUR/Other)",
+        Style::default()
+            .fg(theme.aur())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(format!(
+        "Repository: {} packages | Foreign: {} packages | Total: {}",
+        repo_count, foreign_count, total_count
+    )));
+    lines.push(Line::from(""));
+
+    if app.foreign_packages.is_empty() {
+        lines.push(Line::from("No foreign packages found. All packages are from official repositories."));
+    } else {
+        lines.push(Line::from(format!("{} foreign package(s):", foreign_count)));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Package", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("            "),
+            Span::styled("Version", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("  "),
+            Span::styled("Source", Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from("-".repeat(50)));
+
+        for pkg in &app.foreign_packages {
+            let name = if pkg.name.len() > 20 {
+                format!("{}...", &pkg.name[..17])
+            } else {
+                pkg.name.clone()
+            };
+            lines.push(Line::from(format!(
+                "{:<22} {:<15} {}",
+                name,
+                pkg.version,
+                pkg.source
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Foreign Packages")
+                .border_style(Style::default().fg(theme.aur())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1664,6 +1733,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  O         Orphan packages"),
         Line::from("  P         Package sizes (top 30)"),
         Line::from("  C         Cache information"),
+        Line::from("  F         Foreign packages (AUR)"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),

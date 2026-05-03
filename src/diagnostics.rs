@@ -569,3 +569,84 @@ pub fn create_system_backup() -> Result<String, String> {
 
     Ok(backup_path)
 }
+
+#[derive(Debug, Clone)]
+pub struct ForeignPackage {
+    pub name: String,
+    pub version: String,
+    pub source: String,
+}
+
+pub fn get_foreign_packages() -> Vec<ForeignPackage> {
+    let mut packages = Vec::new();
+
+    // Get foreign (AUR/explicit) packages using pacman -Qmq
+    let output = Command::new("pacman")
+        .args(["-Qmq", "--color", "never"])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let content = String::from_utf8_lossy(&output.stdout);
+
+            for line in content.lines() {
+                let pkg_name = line.trim();
+                if !pkg_name.is_empty() {
+                    // Get version info
+                    if let Ok(info) = get_package_info(pkg_name) {
+                        packages.push(ForeignPackage {
+                            name: pkg_name.to_string(),
+                            version: info.0,
+                            source: info.1,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    packages
+}
+
+fn get_package_info(pkg_name: &str) -> Result<(String, String), std::io::Error> {
+    let output = Command::new("pacman")
+        .args(["-Qi", pkg_name])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Package not found"));
+    }
+
+    let content = String::from_utf8_lossy(&output.stdout);
+    let mut version = String::new();
+    let mut source = String::from("AUR");
+
+    for line in content.lines() {
+        if line.starts_with("Version        :") {
+            version = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        } else if line.starts_with("Repository    :") {
+            source = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        }
+    }
+
+    Ok((version, source))
+}
+
+pub fn get_foreign_packages_count() -> usize {
+    get_foreign_packages().len()
+}
+
+pub fn get_repository_packages_count() -> usize {
+    let output = Command::new("pacman")
+        .args(["-Qq", "--color", "never"])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let total = String::from_utf8_lossy(&output.stdout).lines().count();
+            let foreign = get_foreign_packages_count();
+            return total.saturating_sub(foreign);
+        }
+    }
+    0
+}

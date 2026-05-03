@@ -173,6 +173,8 @@ pub struct App {
     pub package_sizes: Vec<crate::diagnostics::PackageSize>,
     pub show_cache: bool,
     pub cache_info: Vec<crate::diagnostics::CacheInfo>,
+    pub show_foreign: bool,
+    pub foreign_packages: Vec<crate::diagnostics::ForeignPackage>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -297,6 +299,8 @@ impl App {
             package_sizes: Vec::new(),
             show_cache: false,
             cache_info: Vec::new(),
+            show_foreign: false,
+            foreign_packages: Vec::new(),
 
             localizer: crate::i18n::Localizer::new(),
 
@@ -752,6 +756,13 @@ impl App {
             self.cache_info = crate::diagnostics::get_cache_info();
         }
         self.show_cache = !self.show_cache;
+    }
+
+    pub fn toggle_foreign(&mut self) {
+        if !self.show_foreign {
+            self.foreign_packages = crate::diagnostics::get_foreign_packages();
+        }
+        self.show_foreign = !self.show_foreign;
     }
 
     pub fn toggle_updates_view(&mut self) {

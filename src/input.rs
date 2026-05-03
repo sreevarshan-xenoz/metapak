@@ -110,6 +110,13 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_foreign {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('F') {
+                app.show_foreign = false;
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -236,6 +243,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         KeyCode::Char('O') => app.toggle_orphans(),
         KeyCode::Char('P') => app.toggle_package_sizes(),
         KeyCode::Char('C') => app.toggle_cache(),
+        KeyCode::Char('F') => app.toggle_foreign(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {
