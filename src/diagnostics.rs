@@ -332,3 +332,60 @@ fn is_required_by_other_package(pkg_name: &str) -> bool {
 
     false
 }
+
+#[derive(Debug, Clone)]
+pub struct PackageSize {
+    pub name: String,
+    pub size_kb: u64,
+    pub size_formatted: String,
+}
+
+pub fn get_package_sizes() -> Vec<PackageSize> {
+    let mut packages = Vec::new();
+
+    let output = Command::new("pacman")
+        .args(["-Qi", "--color", "never"])
+        .output();
+
+    if let Ok(output) = output {
+        let content = String::from_utf8_lossy(&output.stdout);
+        let mut current_pkg = String::new();
+
+        for line in content.lines() {
+            if line.starts_with("Name            :") {
+                if let Some(name) = line.split(':').nth(1) {
+                    current_pkg = name.trim().to_string();
+                }
+            } else if line.starts_with("Installed Size  :") {
+                if let Some(size_str) = line.split(':').nth(1) {
+                    let size_str = size_str.trim();
+                    let size_val: f64 = size_str
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("0")
+                        .parse()
+                        .unwrap_or(0.0);
+                    let unit = size_str.split_whitespace().nth(1).unwrap_or("");
+
+                    let size_kb = match unit {
+                        "KiB" => size_val as u64,
+                        "MiB" => (size_val * 1024.0) as u64,
+                        "GiB" => (size_val * 1024.0 * 1024.0) as u64,
+                        _ => size_val as u64,
+                    };
+
+                    if !current_pkg.is_empty() {
+                        packages.push(PackageSize {
+                            name: current_pkg.clone(),
+                            size_kb,
+                            size_formatted: size_str.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    packages.sort_by(|a, b| b.size_kb.cmp(&a.size_kb));
+    packages
+}

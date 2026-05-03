@@ -81,6 +81,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_system_info_overlay(app, f, area, theme);
     } else if app.show_orphans {
         render_orphans_overlay(app, f, area, theme);
+    } else if app.show_package_sizes {
+        render_package_sizes_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -99,6 +101,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_diagnostics
         && !app.show_system_info
         && !app.show_orphans
+        && !app.show_package_sizes
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1121,6 +1124,56 @@ fn render_orphans_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     f.render_widget(para, popup);
 }
 
+fn render_package_sizes_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Package Size Analysis",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.package_sizes.is_empty() {
+        lines.push(Line::from("No package size data available."));
+    } else {
+        // Calculate total size
+        let total_kb: u64 = app.package_sizes.iter().map(|p| p.size_kb).sum();
+        let total_mb = total_kb as f64 / 1024.0;
+        lines.push(Line::from(format!("Top 30 largest packages (Total: {:.1} MB):", total_mb)));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Package", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("                    "),
+            Span::styled("Size", Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from("-".repeat(50)));
+
+        for pkg in &app.package_sizes {
+            let name = if pkg.name.len() > 25 {
+                format!("{}...", &pkg.name[..22])
+            } else {
+                pkg.name.clone()
+            };
+            lines.push(Line::from(format!("{:<28} {}", name, pkg.size_formatted)));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Package Sizes")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(65, 70, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1527,6 +1580,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  h         System diagnostics"),
         Line::from("  I         System information"),
         Line::from("  O         Orphan packages"),
+        Line::from("  P         Package sizes (top 30)"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),

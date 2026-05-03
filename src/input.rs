@@ -96,6 +96,13 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_package_sizes {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('P') {
+                app.show_package_sizes = false;
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -220,6 +227,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         }
         KeyCode::Char('I') => app.toggle_system_info(),
         KeyCode::Char('O') => app.toggle_orphans(),
+        KeyCode::Char('P') => app.toggle_package_sizes(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {
