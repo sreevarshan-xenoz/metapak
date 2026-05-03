@@ -29,13 +29,13 @@ impl SimulationEngine {
             // Check for installed size
             if let Some(caps) = install_re.captures(line) {
                 if let Ok(val) = caps[1].parse::<f64>() {
-                    disk_change_bytes = convert_to_bytes(val, &caps[2]) as i64;
+                    disk_change_bytes = convert_to_bytes(val, &caps[2]);
                 }
             }
             // Net upgrade size is often more accurate for "change"
             else if let Some(caps) = net_re.captures(line) {
                 if let Ok(val) = caps[1].parse::<f64>() {
-                    disk_change_bytes = convert_to_bytes(val, &caps[2]) as i64;
+                    disk_change_bytes = convert_to_bytes(val, &caps[2]);
                 }
             }
 
@@ -62,8 +62,8 @@ impl SimulationEngine {
     }
 }
 
-/// Helper to convert size with unit to bytes
-fn convert_to_bytes(val: f64, unit: &str) -> u64 {
+/// Helper to convert size with unit to bytes (handles negative values)
+fn convert_to_bytes(val: f64, unit: &str) -> i64 {
     let multiplier = match unit.to_uppercase().as_str() {
         "KIB" | "KB" => 1024.0,
         "MIB" | "MB" => 1024.0 * 1024.0,
@@ -71,7 +71,7 @@ fn convert_to_bytes(val: f64, unit: &str) -> u64 {
         "TIB" | "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
         _ => 1.0,
     };
-    (val * multiplier) as u64
+    (val * multiplier) as i64
 }
 
 #[async_trait]
