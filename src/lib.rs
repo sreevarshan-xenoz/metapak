@@ -53,3 +53,4 @@ pub mod state;
 pub mod ui;
 pub mod ui_utils;
 pub mod utils;
+pub mod watchdog;
