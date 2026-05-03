@@ -83,6 +83,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_orphans_overlay(app, f, area, theme);
     } else if app.show_package_sizes {
         render_package_sizes_overlay(app, f, area, theme);
+    } else if app.show_cache {
+        render_cache_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -102,6 +104,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_system_info
         && !app.show_orphans
         && !app.show_package_sizes
+        && !app.show_cache
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1174,6 +1177,85 @@ fn render_package_sizes_overlay(app: &App, f: &mut Frame, area: Rect, theme: &cr
     f.render_widget(para, popup);
 }
 
+fn render_cache_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Package Cache Information",
+        Style::default()
+            .fg(theme.success())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    let total_size: u64 = app.cache_info.iter().map(|c| c.size_bytes).sum();
+
+    if app.cache_info.is_empty() {
+        lines.push(Line::from("No cache directories found."));
+    } else {
+        lines.push(Line::from(format!(
+            "Total cache size: {}",
+            format_cache_size(total_size)
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Cache Location", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("                    "),
+            Span::styled("Size", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("  "),
+            Span::styled("Files", Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from("-".repeat(55)));
+
+        for cache in &app.cache_info {
+            let path = if cache.path.len() > 25 {
+                format!("...{}", &cache.path[cache.path.len() - 22..])
+            } else {
+                cache.path.clone()
+            };
+            lines.push(Line::from(format!(
+                "{:<28} {:>10} {:>8} files",
+                path,
+                cache.size_formatted,
+                cache.file_count
+            )));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from("To clean cache, run:"));
+        lines.push(Line::from("  sudo pacman -Scc          # Clean all pacman cache"));
+        lines.push(Line::from("  rm -rf ~/.cache/paru     # Clean AUR helper cache"));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Cache Info")
+                .border_style(Style::default().fg(theme.success())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 50, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn format_cache_size(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    let mb = kb / 1024.0;
+    let gb = mb / 1024.0;
+
+    if gb >= 1.0 {
+        format!("{:.2} GB", gb)
+    } else if mb >= 1.0 {
+        format!("{:.2} MB", mb)
+    } else {
+        format!("{:.2} KB", kb)
+    }
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1581,6 +1663,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  I         System information"),
         Line::from("  O         Orphan packages"),
         Line::from("  P         Package sizes (top 30)"),
+        Line::from("  C         Cache information"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),

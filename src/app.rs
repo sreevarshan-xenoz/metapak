@@ -171,6 +171,8 @@ pub struct App {
     pub orphan_packages: Vec<crate::diagnostics::OrphanPackage>,
     pub show_package_sizes: bool,
     pub package_sizes: Vec<crate::diagnostics::PackageSize>,
+    pub show_cache: bool,
+    pub cache_info: Vec<crate::diagnostics::CacheInfo>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -293,6 +295,8 @@ impl App {
             orphan_packages: Vec::new(),
             show_package_sizes: false,
             package_sizes: Vec::new(),
+            show_cache: false,
+            cache_info: Vec::new(),
 
             localizer: crate::i18n::Localizer::new(),
 
@@ -738,10 +742,16 @@ impl App {
     pub fn toggle_package_sizes(&mut self) {
         if !self.show_package_sizes {
             self.package_sizes = crate::diagnostics::get_package_sizes();
-            // Limit to top 30 packages
             self.package_sizes.truncate(30);
         }
         self.show_package_sizes = !self.show_package_sizes;
+    }
+
+    pub fn toggle_cache(&mut self) {
+        if !self.show_cache {
+            self.cache_info = crate::diagnostics::get_cache_info();
+        }
+        self.show_cache = !self.show_cache;
     }
 
     pub fn toggle_updates_view(&mut self) {

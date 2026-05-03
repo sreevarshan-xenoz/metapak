@@ -389,3 +389,88 @@ pub fn get_package_sizes() -> Vec<PackageSize> {
     packages.sort_by(|a, b| b.size_kb.cmp(&a.size_kb));
     packages
 }
+
+#[derive(Debug, Clone)]
+pub struct CacheInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    pub size_formatted: String,
+    pub file_count: usize,
+}
+
+pub fn get_cache_info() -> Vec<CacheInfo> {
+    let mut caches = Vec::new();
+
+    // Pacman cache
+    let pacman_cache = "/var/cache/pacman/pkg";
+    if let Ok(info) = get_dir_size(pacman_cache) {
+        caches.push(info);
+    }
+
+    // AUR cache (usually in ~/.cache/paru or ~/.cache/yay)
+    if let Ok(home) = std::env::var("HOME") {
+        let aur_caches = [
+            format!("{}/.cache/paru", home),
+            format!("{}/.cache/yay", home),
+        ];
+        for cache_path in aur_caches {
+            if std::path::Path::new(&cache_path).exists() {
+                if let Ok(info) = get_dir_size(&cache_path) {
+                    caches.push(info);
+                }
+            }
+        }
+    }
+
+    caches
+}
+
+fn get_dir_size(path: &str) -> Result<CacheInfo, std::io::Error> {
+    let mut total_size = 0u64;
+    let mut file_count = 0usize;
+
+    let entries = std::fs::read_dir(path)?;
+    for entry in entries {
+        if let Ok(entry) = entry {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    total_size += metadata.len();
+                    file_count += 1;
+                } else if metadata.is_dir() {
+                    // Recursively count files in subdirectories
+                    if let Ok(sub_info) = get_dir_size(&entry.path().to_string_lossy()) {
+                        total_size += sub_info.size_bytes;
+                        file_count += sub_info.file_count;
+                    }
+                }
+            }
+        }
+    }
+
+    let size_formatted = format_size(total_size);
+
+    Ok(CacheInfo {
+        path: path.to_string(),
+        size_bytes: total_size,
+        size_formatted,
+        file_count,
+    })
+}
+
+fn format_size(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    let mb = kb / 1024.0;
+    let gb = mb / 1024.0;
+
+    if gb >= 1.0 {
+        format!("{:.2} GB", gb)
+    } else if mb >= 1.0 {
+        format!("{:.2} MB", mb)
+    } else {
+        format!("{:.2} KB", kb)
+    }
+}
+
+pub fn get_total_cache_size() -> u64 {
+    get_cache_info().iter().map(|c| c.size_bytes).sum()
+}
