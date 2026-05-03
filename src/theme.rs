@@ -110,6 +110,10 @@ impl<'de> Deserialize<'de> for ColorDef {
 pub enum ThemePreset {
     Mocha,
     Latte,
+    Nord,
+    Dracula,
+    Gruvbox,
+    OneDark,
 }
 
 impl Theme {
@@ -167,6 +171,102 @@ impl Theme {
         match preset {
             ThemePreset::Mocha => Self::catppuccin_mocha(),
             ThemePreset::Latte => Self::catppuccin_latte(),
+            ThemePreset::Nord => Self::nord(),
+            ThemePreset::Dracula => Self::dracula(),
+            ThemePreset::Gruvbox => Self::gruvbox(),
+            ThemePreset::OneDark => Self::one_dark(),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Nord Theme (cool blue-gray palette)
+    // ------------------------------------------------------------------
+
+    pub fn nord() -> Self {
+        Self {
+            primary: ColorDef::Hex("#88c0d0".to_string()),
+            secondary: ColorDef::Hex("#81a1c1".to_string()),
+            success: ColorDef::Hex("#a3be8c".to_string()),
+            warning: ColorDef::Hex("#ebcb8b".to_string()),
+            error: ColorDef::Hex("#bf616a".to_string()),
+            info: ColorDef::Hex("#5e81ac".to_string()),
+            background: ColorDef::Hex("#2e3440".to_string()),
+            foreground: ColorDef::Hex("#d8dee9".to_string()),
+            muted: ColorDef::Hex("#4c566a".to_string()),
+            border: ColorDef::Hex("#3b4252".to_string()),
+            highlight_bg: ColorDef::Hex("#88c0d0".to_string()),
+            highlight_fg: ColorDef::Hex("#2e3440".to_string()),
+            repo_color: ColorDef::Hex("#5e81ac".to_string()),
+            aur_color: ColorDef::Hex("#d08770".to_string()),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Dracula Theme (purple/violet palette)
+    // ------------------------------------------------------------------
+
+    pub fn dracula() -> Self {
+        Self {
+            primary: ColorDef::Hex("#bd93f9".to_string()),
+            secondary: ColorDef::Hex("#ff79c6".to_string()),
+            success: ColorDef::Hex("#50fa7b".to_string()),
+            warning: ColorDef::Hex("#f1fa8c".to_string()),
+            error: ColorDef::Hex("#ff5555".to_string()),
+            info: ColorDef::Hex("#8be9fd".to_string()),
+            background: ColorDef::Hex("#282a36".to_string()),
+            foreground: ColorDef::Hex("#f8f8f2".to_string()),
+            muted: ColorDef::Hex("#6272a4".to_string()),
+            border: ColorDef::Hex("#44475a".to_string()),
+            highlight_bg: ColorDef::Hex("#bd93f9".to_string()),
+            highlight_fg: ColorDef::Hex("#282a36".to_string()),
+            repo_color: ColorDef::Hex("#8be9fd".to_string()),
+            aur_color: ColorDef::Hex("#ff79c6".to_string()),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Gruvbox Theme (retro warm colors)
+    // ------------------------------------------------------------------
+
+    pub fn gruvbox() -> Self {
+        Self {
+            primary: ColorDef::Hex("#83a598".to_string()),
+            secondary: ColorDef::Hex("#fabd2f".to_string()),
+            success: ColorDef::Hex("#b8bb26".to_string()),
+            warning: ColorDef::Hex("#fabd2f".to_string()),
+            error: ColorDef::Hex("#fb4934".to_string()),
+            info: ColorDef::Hex("#83a598".to_string()),
+            background: ColorDef::Hex("#282828".to_string()),
+            foreground: ColorDef::Hex("#ebdbb2".to_string()),
+            muted: ColorDef::Hex("#928374".to_string()),
+            border: ColorDef::Hex("#3c3836".to_string()),
+            highlight_bg: ColorDef::Hex("#83a598".to_string()),
+            highlight_fg: ColorDef::Hex("#282828".to_string()),
+            repo_color: ColorDef::Hex("#8ec07c".to_string()),
+            aur_color: ColorDef::Hex("#fabd2f".to_string()),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // One Dark Theme (Atom-inspired)
+    // ------------------------------------------------------------------
+
+    pub fn one_dark() -> Self {
+        Self {
+            primary: ColorDef::Hex("#61afef".to_string()),
+            secondary: ColorDef::Hex("#c678dd".to_string()),
+            success: ColorDef::Hex("#98c379".to_string()),
+            warning: ColorDef::Hex("#e5c07b".to_string()),
+            error: ColorDef::Hex("#e06c75".to_string()),
+            info: ColorDef::Hex("#56b6c2".to_string()),
+            background: ColorDef::Hex("#282c34".to_string()),
+            foreground: ColorDef::Hex("#abb2bf".to_string()),
+            muted: ColorDef::Hex("#5c6370".to_string()),
+            border: ColorDef::Hex("#3e4451".to_string()),
+            highlight_bg: ColorDef::Hex("#61afef".to_string()),
+            highlight_fg: ColorDef::Hex("#282c34".to_string()),
+            repo_color: ColorDef::Hex("#56b6c2".to_string()),
+            aur_color: ColorDef::Hex("#c678dd".to_string()),
         }
     }
 

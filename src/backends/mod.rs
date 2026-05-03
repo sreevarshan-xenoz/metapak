@@ -14,6 +14,8 @@ pub mod zypper;
 pub mod brew;
 pub mod winget;
 pub mod chocolatey;
+pub mod flatpak;
+pub mod snap;
 
 use crate::errors::{AppError, Result};
 use crate::models::{Package, PackageSource, OutdatedPackage};
@@ -95,6 +97,8 @@ impl UniversalPackageService {
             Some(PackageManager::Brew) => Arc::new(brew::BrewBackend::new()),
             Some(PackageManager::Winget) => Arc::new(winget::WingetBackend::new()),
             Some(PackageManager::Chocolatey) => Arc::new(chocolatey::ChocolateyBackend::new()),
+            Some(PackageManager::Flatpak) => Arc::new(flatpak::FlatpakBackend::new()),
+            Some(PackageManager::Snap) => Arc::new(snap::SnapBackend::new()),
             _ => Arc::new(pacman::PacmanBackend::new()), // Default to pacman
         };
 

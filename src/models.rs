@@ -50,6 +50,31 @@ pub struct Package {
 pub enum PackageSource {
     Pacman,
     Aur,
+    Apt,
+    Dnf,
+    Zypper,
+    Brew,
+    Winget,
+    Chocolatey,
+    Flatpak,
+    Snap,
+}
+
+impl std::fmt::Display for PackageSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PackageSource::Pacman => write!(f, "pacman"),
+            PackageSource::Aur => write!(f, "aur"),
+            PackageSource::Apt => write!(f, "apt"),
+            PackageSource::Dnf => write!(f, "dnf"),
+            PackageSource::Zypper => write!(f, "zypper"),
+            PackageSource::Brew => write!(f, "brew"),
+            PackageSource::Winget => write!(f, "winget"),
+            PackageSource::Chocolatey => write!(f, "chocolatey"),
+            PackageSource::Flatpak => write!(f, "flatpak"),
+            PackageSource::Snap => write!(f, "snap"),
+        }
+    }
 }
 
 impl Default for PackageSource {

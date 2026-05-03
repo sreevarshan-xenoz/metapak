@@ -26,6 +26,8 @@ pub enum PackageManager {
     Winget,
     Chocolatey,
     Scoop,
+    Flatpak,
+    Snap,
     None,
 }
 
@@ -41,6 +43,8 @@ impl PackageManager {
             PackageManager::Winget => "winget",
             PackageManager::Chocolatey => "chocolatey",
             PackageManager::Scoop => "scoop",
+            PackageManager::Flatpak => "flatpak",
+            PackageManager::Snap => "snap",
             PackageManager::None => "none",
         }
     }
@@ -56,6 +60,8 @@ impl PackageManager {
             PackageManager::Winget => "Winget",
             PackageManager::Chocolatey => "Chocolatey",
             PackageManager::Scoop => "Scoop",
+            PackageManager::Flatpak => "Flatpak",
+            PackageManager::Snap => "Snap",
             PackageManager::None => "None",
         }
     }
@@ -112,6 +118,12 @@ pub fn detect_package_managers() -> Vec<PackageManager> {
             }
             if command_exists("brew") {
                 managers.push(PackageManager::Brew);
+            }
+            if command_exists("flatpak") {
+                managers.push(PackageManager::Flatpak);
+            }
+            if command_exists("snap") {
+                managers.push(PackageManager::Snap);
             }
         }
         Platform::Macos => {
