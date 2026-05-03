@@ -42,6 +42,9 @@ pub enum AppError {
     #[error("Resource exhausted: {0}")]
     ResourceExhausted(String),
 
+    #[error("Backend error: {0}")]
+    Backend(String),
+
     #[error("Other error: {0}")]
     Other(String),
 
