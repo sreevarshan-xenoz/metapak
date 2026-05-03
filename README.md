@@ -10,14 +10,38 @@
 
 ## 🚀 Key Features
 
+### Package Management
 *   **Unified Search**: Query both **Official Repositories** and the **AUR** simultaneously.
 *   **Batch Operations**: Select multiple packages using `Tab` and install/remove them in a single transaction.
-*   **Native TUI Experience**:
-    *   **Startup Sudo Cache**: Enter your password once at launch; no interruptions during installation.
-    *   **Embedded Console**: Watch build logs and installation output directly inside the UI.
-    *   **Confirmation Popups**: Safety checks before executing any system changes.
-*   **Performance**: Asynchronous searching ensures the UI never freezes, even when querying slow AUR endpoints.
-*   **Visual Clarity**: Color-coded results (Blue for Repo, Yellow for AUR, Green for Installed) with clear status indicators.
+*   **Live Search**: Search as you type with debounced queries.
+*   **Fuzzy Matching**: Find packages even with partial or typo-prone queries.
+
+### System Views
+*   **Updates View** (`U`): View and manage available system updates.
+*   **System Info** (`I`): CPU, RAM, uptime, OS details, desktop environment.
+*   **Diagnostics** (`h`): Check pacman status, AUR helper, disk space.
+*   **Foreign Packages** (`F`): View AUR/explicitly installed packages.
+*   **Package Groups** (`G`): Browse and manage package groups.
+*   **Package Sizes** (`P`): See top 30 largest installed packages.
+*   **Orphan Packages** (`O`): Find unrequired packages.
+*   **Cache Info** (`C`): View pacman and AUR cache sizes.
+
+### Native TUI Experience
+*   **Startup Sudo Cache**: Enter your password once at launch; no interruptions during installation.
+*   **Embedded Console**: Watch build logs and installation output directly inside the UI.
+*   **Confirmation Popups**: Safety checks before executing any system changes.
+*   **Dependency Visualization** (`v`): View package dependency trees.
+*   **Toasts & Animations**: Smooth UI feedback.
+
+### Backup & Recovery
+*   **System Backup**: Export explicit packages to `~/.config/arch-tui/backups/` for disaster recovery.
+*   **Restore**: Use `pacman -S --needed < backup.txt` to restore.
+
+### Robustness
+*   **Circuit Breaker**: Automatic protection against AUR service outages.
+*   **Graceful Shutdown**: Ctrl+C safely closes the application.
+*   **Input Validation**: Sanitized package names and paths.
+*   **Search Limits**: Configurable result limits to prevent memory exhaustion.
 
 ## 📦 Installation
 
@@ -65,9 +89,22 @@ arch-tui
 | **Navigation** | |
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
+| `n` / `p` | Next / Previous page |
 | **Actions** | |
 | `Tab` | **Toggle Selection** (for batch operations) |
 | `Enter` | **Install/Remove** selected package(s) |
+| **Views** | |
+| `h` | System Diagnostics |
+| `I` | System Information |
+| `O` | Orphan Packages |
+| `P` | Package Sizes (top 30) |
+| `C` | Cache Information |
+| `F` | Foreign Packages (AUR) |
+| `G` | Package Groups |
+| `U` | Updates View |
+| `d` | Package Details |
+| `v` | Dependency Tree |
+| `?` | Help |
 | `q` | Quit application |
 
 ### Workflow Example
@@ -78,6 +115,14 @@ arch-tui
 5.  **Watch**: The console overlay appears, showing the installation progress.
 6.  **Done**: Press `Esc` to return to the search list.
 
+### Filter & Sort
+*   `f` - Cycle filters (All → Installed → Not Installed → Repo → AUR)
+*   `s` - Cycle sort (Name ↑ → Name ↓ → Source → Size)
+
+### Keyboard Modifiers
+*   `Shift+U` - System update
+*   `Ctrl+C` - Graceful shutdown
+
 ## 🛠️ Architecture
 
 Built with the **Rust** ecosystem for speed and safety:
@@ -86,6 +131,8 @@ Built with the **Rust** ecosystem for speed and safety:
 *   **Tokio**: Async runtime for non-blocking I/O and background search tasks.
 *   **Crossterm**: Cross-platform terminal handling.
 *   **Reqwest**: Async HTTP client for AUR RPC v5 queries.
+*   **Dashmap**: Concurrent cache for search results.
+*   **Thiserror**: Error handling with custom error types.
 
 ## 🤝 Contributing
 
