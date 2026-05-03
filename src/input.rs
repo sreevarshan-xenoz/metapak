@@ -117,6 +117,14 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_groups {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('G') {
+                app.show_groups = false;
+                app.selected_group = None;
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -244,6 +252,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         KeyCode::Char('P') => app.toggle_package_sizes(),
         KeyCode::Char('C') => app.toggle_cache(),
         KeyCode::Char('F') => app.toggle_foreign(),
+        KeyCode::Char('G') => app.toggle_groups(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {

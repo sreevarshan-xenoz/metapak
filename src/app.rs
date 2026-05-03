@@ -175,6 +175,9 @@ pub struct App {
     pub cache_info: Vec<crate::diagnostics::CacheInfo>,
     pub show_foreign: bool,
     pub foreign_packages: Vec<crate::diagnostics::ForeignPackage>,
+    pub show_groups: bool,
+    pub package_groups: Vec<crate::diagnostics::PackageGroup>,
+    pub selected_group: Option<String>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -301,6 +304,9 @@ impl App {
             cache_info: Vec::new(),
             show_foreign: false,
             foreign_packages: Vec::new(),
+            show_groups: false,
+            package_groups: Vec::new(),
+            selected_group: None,
 
             localizer: crate::i18n::Localizer::new(),
 
@@ -763,6 +769,18 @@ impl App {
             self.foreign_packages = crate::diagnostics::get_foreign_packages();
         }
         self.show_foreign = !self.show_foreign;
+    }
+
+    pub fn toggle_groups(&mut self) {
+        if !self.show_groups {
+            self.package_groups = crate::diagnostics::get_package_groups();
+            self.selected_group = None;
+        }
+        self.show_groups = !self.show_groups;
+    }
+
+    pub fn select_group(&mut self, group_name: String) {
+        self.selected_group = Some(group_name);
     }
 
     pub fn toggle_updates_view(&mut self) {

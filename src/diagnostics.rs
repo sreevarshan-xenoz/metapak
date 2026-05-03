@@ -650,3 +650,62 @@ pub fn get_repository_packages_count() -> usize {
     }
     0
 }
+
+#[derive(Debug, Clone)]
+pub struct PackageGroup {
+    pub name: String,
+    pub member_count: usize,
+}
+
+pub fn get_package_groups() -> Vec<PackageGroup> {
+    let mut groups = Vec::new();
+
+    let output = Command::new("pacman")
+        .args(["-Sg", "--color", "never"])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let content = String::from_utf8_lossy(&output.stdout);
+
+            for line in content.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let group_name = parts[0];
+                    let members: usize = parts.len() - 1;
+                    groups.push(PackageGroup {
+                        name: group_name.to_string(),
+                        member_count: members,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by member count descending
+    groups.sort_by(|a, b| b.member_count.cmp(&a.member_count));
+    groups
+}
+
+pub fn get_group_members(group_name: &str) -> Vec<String> {
+    let output = Command::new("pacman")
+        .args(["-Sg", group_name, "--color", "never"])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let content = String::from_utf8_lossy(&output.stdout);
+            return content
+                .lines()
+                .next()
+                .map(|l| {
+                    l.split_whitespace()
+                        .skip(1)
+                        .map(String::from)
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
+    }
+    Vec::new()
+}

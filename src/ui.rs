@@ -87,6 +87,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_cache_overlay(app, f, area, theme);
     } else if app.show_foreign {
         render_foreign_overlay(app, f, area, theme);
+    } else if app.show_groups {
+        render_groups_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -108,6 +110,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_package_sizes
         && !app.show_cache
         && !app.show_foreign
+        && !app.show_groups
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1325,6 +1328,53 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     f.render_widget(para, popup);
 }
 
+fn render_groups_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Package Groups",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    if app.package_groups.is_empty() {
+        lines.push(Line::from("No package groups available."));
+    } else {
+        lines.push(Line::from(format!("Available groups: {}", app.package_groups.len())));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Group", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw("               "),
+            Span::styled("Members", Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from("-".repeat(40)));
+
+        for group in &app.package_groups {
+            lines.push(Line::from(format!(
+                "{:<20} {:>3} packages",
+                group.name, group.member_count
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Package Groups")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(60, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1734,6 +1784,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
         Line::from("  P         Package sizes (top 30)"),
         Line::from("  C         Cache information"),
         Line::from("  F         Foreign packages (AUR)"),
+        Line::from("  G         Package groups"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),
