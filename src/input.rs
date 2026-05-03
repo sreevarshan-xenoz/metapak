@@ -82,6 +82,20 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_system_info {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('I') {
+                app.show_system_info = false;
+            }
+            return;
+        }
+
+        if app.show_orphans {
+            if key.code == KeyCode::Esc || key.code == KeyCode::Char('O') {
+                app.show_orphans = false;
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -204,6 +218,8 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.diagnostics = crate::diagnostics::run_diagnostics();
             app.toggle_diagnostics();
         }
+        KeyCode::Char('I') => app.toggle_system_info(),
+        KeyCode::Char('O') => app.toggle_orphans(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {

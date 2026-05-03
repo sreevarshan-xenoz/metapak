@@ -77,6 +77,10 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_updates_view(app, f, area, theme);
     } else if app.show_diagnostics {
         render_diagnostics_overlay(app, f, area, theme);
+    } else if app.show_system_info {
+        render_system_info_overlay(app, f, area, theme);
+    } else if app.show_orphans {
+        render_orphans_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -93,6 +97,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
 
     if !app.show_help
         && !app.show_diagnostics
+        && !app.show_system_info
+        && !app.show_orphans
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1041,6 +1047,80 @@ fn render_diagnostics_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crat
     f.render_widget(para, popup);
 }
 
+fn render_system_info_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "System Information",
+        Style::default()
+            .fg(theme.primary())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.system_info.is_empty() {
+        lines.push(Line::from("No system info available."));
+    } else {
+        for item in &app.system_info {
+            lines.push(Line::from(format!("{}: {}", item.label, item.status)));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("System Info")
+                .border_style(Style::default().fg(theme.aur())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(60, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_orphans_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Orphan Packages",
+        Style::default()
+            .fg(theme.warning())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.orphan_packages.is_empty() {
+        lines.push(Line::from("No orphan packages found. All packages are required by something."));
+    } else {
+        lines.push(Line::from(format!("Found {} orphan package(s):", app.orphan_packages.len())));
+        lines.push(Line::from(""));
+        for pkg in &app.orphan_packages {
+            lines.push(Line::from(vec![
+                Span::raw("  • "),
+                Span::styled(&pkg.name, Style::default().fg(theme.warning()).add_modifier(Modifier::BOLD)),
+            ]));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from("These packages are explicitly installed but not required by any other package."));
+        lines.push(Line::from("You can remove them with: sudo pacman -Rcs <package_name>"));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'Esc' to close"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Orphan Packages")
+                .border_style(Style::default().fg(theme.warning())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 50, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1444,6 +1524,9 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from("  U         Updates view (a=select all, n=none, space=toggle)"),
+        Line::from("  h         System diagnostics"),
+        Line::from("  I         System information"),
+        Line::from("  O         Orphan packages"),
         Line::from("  ?         Toggle this help"),
         Line::from("  q         Quit application"),
         Line::from("  Esc       Cancel/Go back"),

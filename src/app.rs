@@ -165,6 +165,10 @@ pub struct App {
     pub show_history: bool,
     pub show_diagnostics: bool,
     pub diagnostics: Vec<crate::diagnostics::DiagnosticItem>,
+    pub show_system_info: bool,
+    pub system_info: Vec<crate::diagnostics::DiagnosticItem>,
+    pub show_orphans: bool,
+    pub orphan_packages: Vec<crate::diagnostics::OrphanPackage>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -281,6 +285,10 @@ impl App {
             show_history: false,
             show_diagnostics: false,
             diagnostics: Vec::new(),
+            show_system_info: false,
+            system_info: Vec::new(),
+            show_orphans: false,
+            orphan_packages: Vec::new(),
 
             localizer: crate::i18n::Localizer::new(),
 
@@ -707,6 +715,20 @@ impl App {
 
     pub fn toggle_diagnostics(&mut self) {
         self.show_diagnostics = !self.show_diagnostics;
+    }
+
+    pub fn toggle_system_info(&mut self) {
+        if !self.show_system_info {
+            self.system_info = crate::diagnostics::get_system_info();
+        }
+        self.show_system_info = !self.show_system_info;
+    }
+
+    pub fn toggle_orphans(&mut self) {
+        if !self.show_orphans {
+            self.orphan_packages = crate::diagnostics::find_orphan_packages();
+        }
+        self.show_orphans = !self.show_orphans;
     }
 
     pub fn toggle_updates_view(&mut self) {
