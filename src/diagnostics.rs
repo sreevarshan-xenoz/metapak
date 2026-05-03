@@ -709,3 +709,22 @@ pub fn get_group_members(group_name: &str) -> Vec<String> {
     }
     Vec::new()
 }
+
+pub fn get_changelog(pkg_name: &str) -> Result<String, String> {
+    let changelog_paths = [
+        format!("/var/lib/pacman/local/{}/changelog", pkg_name),
+        format!("/usr/share/doc/{}/CHANGELOG", pkg_name),
+        format!("/usr/share/doc/{}/ChangeLog", pkg_name),
+        format!("/usr/share/doc/{}/CHANGES", pkg_name),
+    ];
+
+    for path in changelog_paths {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if !content.is_empty() {
+                return Ok(content);
+            }
+        }
+    }
+
+    Err(format!("No changelog found for {}", pkg_name))
+}

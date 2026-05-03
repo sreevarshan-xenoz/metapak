@@ -178,6 +178,9 @@ pub struct App {
     pub show_groups: bool,
     pub package_groups: Vec<crate::diagnostics::PackageGroup>,
     pub selected_group: Option<String>,
+    pub show_changelog: bool,
+    pub changelog_content: Option<String>,
+    pub changelog_package: Option<String>,
 
     // Localization
     pub localizer: crate::i18n::Localizer,
@@ -307,6 +310,9 @@ impl App {
             show_groups: false,
             package_groups: Vec::new(),
             selected_group: None,
+            show_changelog: false,
+            changelog_content: None,
+            changelog_package: None,
 
             localizer: crate::i18n::Localizer::new(),
 
@@ -781,6 +787,21 @@ impl App {
 
     pub fn select_group(&mut self, group_name: String) {
         self.selected_group = Some(group_name);
+    }
+
+    pub fn load_changelog(&mut self, pkg_name: String) {
+        match crate::diagnostics::get_changelog(&pkg_name) {
+            Ok(content) => {
+                self.changelog_content = Some(content);
+                self.changelog_package = Some(pkg_name);
+                self.show_changelog = true;
+            }
+            Err(e) => {
+                self.changelog_content = Some(format!("Error: {}", e));
+                self.changelog_package = Some(pkg_name);
+                self.show_changelog = true;
+            }
+        }
     }
 
     pub fn toggle_updates_view(&mut self) {
