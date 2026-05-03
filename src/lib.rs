@@ -44,6 +44,7 @@ pub mod platform;
 pub mod search;
 pub mod security;
 pub mod services;
+pub mod simulation;
 pub mod telemetry;
 pub mod theme;
 pub mod traits;

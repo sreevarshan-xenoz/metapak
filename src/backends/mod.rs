@@ -16,6 +16,7 @@ pub mod winget;
 pub mod chocolatey;
 pub mod flatpak;
 pub mod snap;
+pub mod snapshots;
 
 use crate::errors::{AppError, Result};
 use crate::models::{Package, PackageSource, OutdatedPackage};
