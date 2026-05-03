@@ -22,7 +22,9 @@
 pub mod action;
 pub mod animations;
 pub mod app;
+pub mod command;
 pub mod config;
+pub mod constants;
 pub mod dependency_visualization;
 pub mod diagnostics;
 pub mod errors;

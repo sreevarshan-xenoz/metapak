@@ -99,50 +99,13 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    const DEFAULT_CONFIG: &'static str = include_str!("../../config/default.toml");
+
     pub fn load() -> Result<Self, config::ConfigError> {
         let mut cfg = Config::builder();
 
         cfg = cfg.add_source(config::File::from_str(
-            r#"
-            aur_helper = "auto"
-
-            [theme]
-            preset = "mocha"
-            primary_color = "blue"
-            secondary_color = "yellow"
-            accent_color = "green"
-
-            [keyboard]
-            quit = "q"
-            search = "/"
-            install = "enter"
-            toggle_selection = "tab"
-            next_page = "n"
-            prev_page = "p"
-            next = "j"
-            prev = "k"
-            help = "?"
-            history = "t"
-            diagnostics = "h"
-            filter = "f"
-            sort = "s"
-            undo = "u"
-            details = "d"
-            dependencies = "v"
-            sidebar = "\\"
-            refresh = "r"
-            update = "U"
-            rollback = "R"
-
-            [ui]
-            items_per_page = 20
-            search_debounce_ms = 300
-            max_search_history = 50
-            max_undo_history = 20
-            auto_check_updates = false
-            update_check_interval_minutes = 60
-            auto_update_on_startup = false
-        "#,
+            Self::DEFAULT_CONFIG,
             config::FileFormat::Toml,
         ));
 
@@ -155,46 +118,7 @@ impl AppConfig {
         }
 
         if !config_path.exists() {
-            let default_config = r#"aur_helper = "auto"
-
-[theme]
-preset = "mocha"
-primary_color = "blue"
-secondary_color = "yellow"
-accent_color = "green"
-
-[keyboard]
-quit = "q"
-search = "/"
-install = "enter"
-toggle_selection = "tab"
-next_page = "n"
-prev_page = "p"
-next = "j"
-prev = "k"
-help = "?"
-history = "t"
-diagnostics = "h"
-filter = "f"
-sort = "s"
-undo = "u"
-details = "d"
-dependencies = "v"
-sidebar = "\"
-refresh = "r"
-update = "U"
-rollback = "R"
-
-[ui]
-items_per_page = 20
-search_debounce_ms = 300
-max_search_history = 50
-max_undo_history = 20
-auto_check_updates = false
-update_check_interval_minutes = 60
-auto_update_on_startup = false
-"#;
-            let _ = std::fs::write(&config_path, default_config);
+            let _ = std::fs::write(&config_path, Self::DEFAULT_CONFIG);
             eprintln!("Created default configuration at: {:?}", config_path);
         }
 

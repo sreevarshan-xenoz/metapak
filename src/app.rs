@@ -5,6 +5,7 @@
 //! and UI modes.
 
 use std::collections::{HashMap, VecDeque};
+use crate::constants::ui::CONSOLE_BUFFER_MAX_LINES;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -261,7 +262,7 @@ impl App {
             confirmation_commands: Vec::new(),
 
             show_console: false,
-            console_buffer: Vec::new(),
+            console_buffer: VecDeque::new(),
             command_stdin_tx: None,
             console_input: String::new(),
             command_progress: None,
@@ -821,14 +822,12 @@ impl App {
 
     // Console Management
     pub fn add_console_output(&mut self, line: String) {
-        // Parse progress before pushing to avoid borrow issues
         let line_clone = line.clone();
-        self.console_buffer.push(line);
+        self.console_buffer.push_back(line);
         self.parse_progress(&line_clone);
 
-        // Keep buffer size manageable (use VecDeque for O(1) removal from front)
-        if self.console_buffer.len() > 1000 {
-            self.console_buffer.remove(0);
+        if self.console_buffer.len() > CONSOLE_BUFFER_MAX_LINES {
+            self.console_buffer.pop_front();
         }
     }
 

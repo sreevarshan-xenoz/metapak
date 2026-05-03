@@ -1,6 +1,7 @@
 mod action;
 mod animations;
 mod app;
+mod command;
 mod config;
 mod dependency_visualization;
 mod diagnostics;
@@ -31,19 +32,16 @@ use std::sync::{
     Arc,
 };
 use std::{io, time::Duration};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::Mutex;
 use tracing_subscriber::{fmt, EnvFilter};
+
+use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS};
 
 use crate::action::{Action, ActionResult};
 use crate::app::App;
+use crate::command::{CommandExecutor, CommandRunResult};
 use crate::errors::Result;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
 use crate::transaction_history::{save_history, TransactionStatus};
-
-enum CommandRunResult {
-    Finished,
     Cancelled,
 }
 
@@ -64,9 +62,9 @@ async fn read_output_lines<R>(
         };
         {
             let mut buf = captured.lock().await;
-            buf.push(line.clone());
-            if buf.len() > 200 {
-                let _ = buf.remove(0);
+            buf.push_back(line.clone());
+            if buf.len() > CAPTURED_OUTPUT_MAX_LINES {
+                let _ = buf.pop_front();
             }
         }
         let _ = tx.send(ActionResult::CommandOutput(line));
@@ -108,7 +106,7 @@ async fn run_single_command(
         *pid_guard = child.id();
     }
 
-    let captured_output = Arc::new(Mutex::new(Vec::<String>::new()));
+    let captured_output = Arc::new(Mutex::new(VecDeque::<String>::new()));
     let stdout_task = child.stdout.take().map(|stdout| {
         tokio::spawn(read_output_lines(
             stdout,
@@ -228,11 +226,11 @@ async fn run_command_sequence(
                     let is_cache_error = error_lower.contains("cache") || error_lower.contains("invalid");
 
                     // Handle database lock - retry with backoff
-                    if is_lock_error && attempts < 3 {
+                    if is_lock_error && attempts < MAX_ATTEMPTS {
                         let _ = tx.send(ActionResult::CommandOutput(
-                            format!("Detected pacman DB lock. Attempt {}/3. Waiting 3s...", attempts),
+                            format!("Detected pacman DB lock. Attempt {}/3. Waiting {}s...", attempts, LOCK_RETRY_DELAY_SECS),
                         ));
-                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        tokio::time::sleep(Duration::from_secs(LOCK_RETRY_DELAY_SECS)).await;
                         continue;
                     }
 
@@ -310,8 +308,8 @@ async fn run_command_sequence(
 
                     // Handle network errors - retry
                     if is_network_error && attempts < 2 {
-                        let _ = tx.send(ActionResult::CommandOutput("Network error. Retrying in 5s...".to_string()));
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        let _ = tx.send(ActionResult::CommandOutput(format!("Network error. Retrying in {}s...", NETWORK_RETRY_DELAY_SECS)));
+                        tokio::time::sleep(Duration::from_secs(NETWORK_RETRY_DELAY_SECS)).await;
                         continue;
                     }
 
@@ -332,8 +330,8 @@ async fn run_command_sequence(
                     }
 
                     // Retry other errors
-                    let _ = tx.send(ActionResult::CommandOutput(format!("Error (attempt {}/{}): {}. Retrying...", attempts, max_attempts, err)));
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    let _ = tx.send(ActionResult::CommandOutput(format!("Error (attempt {}/{}): {}. Retrying...", attempts, MAX_ATTEMPTS, err)));
+                    tokio::time::sleep(Duration::from_secs(GENERAL_RETRY_DELAY_SECS)).await;
                 }
             }
         }
@@ -603,10 +601,10 @@ async fn main() -> Result<()> {
 
         terminal.draw(|f| ui::render(&mut app, f))?;
 
-        app.tick(33);
+        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u32);
 
         // Handle Input with shorter timeout for responsiveness
-        if event::poll(Duration::from_millis(50))? {
+        if event::poll(Duration::from_millis(INPUT_POLL_TIMEOUT_MS))? {
             let event = event::read()?;
             input::handle_event(&mut app, event);
         }
@@ -722,14 +720,14 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Periodic cleanup (every 30 seconds)
-        if last_update.elapsed() > Duration::from_secs(30) {
+        // Periodic cleanup
+        if last_update.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
             PackageService::clear_expired_cache();
             last_update = std::time::Instant::now();
         }
 
-        // Periodic update checks (every 15 minutes)
-        if last_update_check.elapsed() > Duration::from_secs(15 * 60) {
+        // Periodic update checks
+        if last_update_check.elapsed() > Duration::from_secs(UPDATE_CHECK_INTERVAL_SECS) {
             if let Some(tx) = &app.action_tx {
                 let _ = tx.send(Action::CheckUpdates);
             }

@@ -88,16 +88,25 @@ impl PackageProvider for PacmanProvider {
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
-        tokio::task::spawn_blocking(move || {
+        match tokio::task::spawn_blocking(move || {
             Command::new("pacman")
                 .arg("-Qi")
                 .arg(&pkg_name)
                 .output()
                 .map(|o| o.status.success())
-                .unwrap_or(false)
         })
         .await
-        .unwrap_or(false)
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                tracing::warn!("Failed to check if package is installed: {}", e);
+                false
+            }
+            Err(e) => {
+                tracing::warn!("Failed to join is_installed task: {}", e);
+                false
+            }
+        }
     }
 }
 
@@ -327,18 +336,26 @@ impl PackageProvider for AurProvider {
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
-        // AUR packages are tracked by pacman once installed
         let pkg_name = pkg_name.to_string();
-        tokio::task::spawn_blocking(move || {
+        match tokio::task::spawn_blocking(move || {
             Command::new("pacman")
                 .arg("-Qm")
                 .arg(&pkg_name)
                 .output()
                 .map(|o| o.status.success())
-                .unwrap_or(false)
         })
         .await
-        .unwrap_or(false)
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                tracing::warn!("Failed to check AUR package installation status: {}", e);
+                false
+            }
+            Err(e) => {
+                tracing::warn!("Failed to join AUR is_installed task: {}", e);
+                false
+            }
+        }
     }
 }
 
@@ -912,10 +929,19 @@ enum HelperKind {
 
 impl AurHelperCommand {
     const NOCONFIRM: &'static str = "--noconfirm";
+    static ref PACKAGE_NAME_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9@._+-]+$").unwrap();
 
     pub fn new(config: &AppConfig) -> Self {
         let helper = Self::detect_helper(&config.aur_helper);
         Self { helper }
+    }
+
+    fn sanitize_package_name(name: &str) -> String {
+        name.chars().filter(|c| c.is_alphanumeric() || "@._+-".contains(*c)).collect()
+    }
+
+    fn is_valid_package_name(name: &str) -> bool {
+        !name.is_empty() && Self::PACKAGE_NAME_REGEX.is_match(name)
     }
 
     fn detect_helper(configured: &str) -> HelperKind {
@@ -945,7 +971,7 @@ impl AurHelperCommand {
     /// Build install command
     pub fn install_command(&self, packages: &[&str]) -> CommandSpec {
         let mut args = vec!["-S".to_string(), Self::NOCONFIRM.to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
+        args.extend(packages.iter().map(|p| Self::sanitize_package_name(p)));
 
         match self.helper {
             HelperKind::Paru => CommandSpec::new("paru", args),
@@ -965,8 +991,28 @@ impl AurHelperCommand {
             "-Rns".to_string(),
             Self::NOCONFIRM.to_string(),
         ];
-        args.extend(packages.iter().map(|p| p.to_string()));
+        args.extend(packages.iter().map(|p| Self::sanitize_package_name(p)));
         CommandSpec::new("sudo", args)
+    }
+
+    /// Build install command with validation
+    pub fn install_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+        for pkg in packages {
+            if !Self::is_valid_package_name(pkg) {
+                return Err(format!("Invalid package name: {}", pkg));
+            }
+        }
+        Ok(self.install_command(packages))
+    }
+
+    /// Build remove command with validation
+    pub fn remove_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+        for pkg in packages {
+            if !Self::is_valid_package_name(pkg) {
+                return Err(format!("Invalid package name: {}", pkg));
+            }
+        }
+        Ok(self.remove_command(packages))
     }
 
     /// Build update command
@@ -1001,6 +1047,40 @@ mod tests {
             "testcat /etc/passwd"
         );
         assert_eq!(SafeCommandBuilder::sanitize("test`whoami`"), "testwhoami");
+    }
+
+    #[test]
+    fn test_package_name_sanitization() {
+        assert_eq!(AurHelperCommand::sanitize_package_name("firefox"), "firefox");
+        assert_eq!(AurHelperCommand::sanitize_package_name("linux-headers"), "linux-headers");
+        assert_eq!(AurHelperCommand::sanitize_package_name("python-pytest"), "python-pytest");
+        assert_eq!(AurHelperCommand::sanitize_package_name("pkg+name@test"), "pkgname@test");
+        assert_eq!(AurHelperCommand::sanitize_package_name("test; rm -rf /"), "testrm-rf-");
+    }
+
+    #[test]
+    fn test_package_name_validation() {
+        assert!(AurHelperCommand::is_valid_package_name("firefox"));
+        assert!(AurHelperCommand::is_valid_package_name("linux-headers"));
+        assert!(AurHelperCommand::is_valid_package_name("python3"));
+        assert!(AurHelperCommand::is_valid_package_name("nodejs-lts-hydrogen"));
+        assert!(!AurHelperCommand::is_valid_package_name(""));
+        assert!(!AurHelperCommand::is_valid_package_name("test; rm"));
+        assert!(!AurHelperCommand::is_valid_package_name("test|grep"));
+        assert!(!AurHelperCommand::is_valid_package_name("test\n"));
+    }
+
+    #[test]
+    fn test_aur_helper_install_validated() {
+        let config = AppConfig::default();
+        let helper = AurHelperCommand::new(&config);
+
+        let result = helper.install_command_validated(&["firefox", "vlc"]);
+        assert!(result.is_ok());
+
+        let result = helper.install_command_validated(&["test; rm -rf /"]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid package name"));
     }
 
     #[test]
