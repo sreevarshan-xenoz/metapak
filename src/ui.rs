@@ -15,8 +15,6 @@ use ratatui::{
 use std::cmp::min;
 
 pub fn render(app: &mut App, f: &mut Frame) {
-    app.tick(33);
-
     let theme = &app.theme;
     let area = f.size();
 
@@ -219,6 +217,14 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                 match pkg.source {
                     crate::models::PackageSource::Pacman => theme.repo_color(),
                     crate::models::PackageSource::Aur => theme.aur_color(),
+                    crate::models::PackageSource::Apt => theme.info(),
+                    crate::models::PackageSource::Dnf => theme.warning(),
+                    crate::models::PackageSource::Zypper => theme.secondary(),
+                    crate::models::PackageSource::Brew => theme.primary(),
+                    crate::models::PackageSource::Winget => theme.info(),
+                    crate::models::PackageSource::Chocolatey => theme.warning(),
+                    crate::models::PackageSource::Flatpak => theme.secondary(),
+                    crate::models::PackageSource::Snap => theme.primary(),
                 }
             };
 
@@ -240,6 +246,14 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             let source_indicator = match pkg.source {
                 crate::models::PackageSource::Pacman => "📦",
                 crate::models::PackageSource::Aur => " ↑",
+                crate::models::PackageSource::Apt => " apt",
+                crate::models::PackageSource::Dnf => " dnf",
+                crate::models::PackageSource::Zypper => " zyp",
+                crate::models::PackageSource::Brew => " brew",
+                crate::models::PackageSource::Winget => " wing",
+                crate::models::PackageSource::Chocolatey => " choco",
+                crate::models::PackageSource::Flatpak => " flat",
+                crate::models::PackageSource::Snap => " snap",
             };
 
             let size_str = pkg.format_download_size();
@@ -1083,7 +1097,7 @@ fn render_system_info_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crat
                 .borders(Borders::ALL)
                 .border_type(BorderType::Thick)
                 .title("System Info")
-                .border_style(Style::default().fg(theme.aur())),
+                .border_style(Style::default().fg(theme.aur_color())),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
@@ -1270,7 +1284,7 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     let mut lines = vec![Line::from(vec![Span::styled(
         "Foreign Packages (AUR/Other)",
         Style::default()
-            .fg(theme.aur())
+.fg(theme.aur_color())
             .add_modifier(Modifier::BOLD),
     )])];
     lines.push(Line::from(""));
@@ -1319,7 +1333,7 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
                 .borders(Borders::ALL)
                 .border_type(BorderType::Thick)
                 .title("Foreign Packages")
-                .border_style(Style::default().fg(theme.aur())),
+                .border_style(Style::default().fg(theme.aur_color())),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
@@ -1391,8 +1405,7 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
 
     // Show last 25 lines with progress bar if available
     let start_index = app.console_buffer.len().saturating_sub(25);
-    let logs: Vec<ListItem> = app.console_buffer[start_index..]
-        .iter()
+    let logs: Vec<ListItem> = app.console_buffer.range(start_index..)
         .map(|l| {
             let style = if l.contains("[stderr]")
                 || l.contains("error")

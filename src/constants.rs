@@ -58,6 +58,8 @@ pub mod shutdown {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_search_constants() {
         assert!(search::DEBOUNCE_MS_DEFAULT >= search::DEBOUNCE_MS_MIN);

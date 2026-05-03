@@ -99,7 +99,7 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    const DEFAULT_CONFIG: &'static str = include_str!("../../config/default.toml");
+    const DEFAULT_CONFIG: &'static str = include_str!("../config/default.toml");
 
     pub fn load() -> Result<Self, config::ConfigError> {
         let mut cfg = Config::builder();
@@ -218,12 +218,11 @@ impl AppConfig {
         }
         theme
     }
-}
 
-/// Reload configuration from file
-pub fn reload() -> Result<Self, config::ConfigError> {
-    Self::load()
-}
+    /// Reload configuration from file
+    pub fn reload() -> Result<Self, config::ConfigError> {
+        Self::load()
+    }
 }
 
 /// Configuration validation errors

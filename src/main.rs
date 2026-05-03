@@ -3,6 +3,7 @@ mod animations;
 mod app;
 mod command;
 mod config;
+mod constants;
 mod dependency_visualization;
 mod diagnostics;
 mod errors;
@@ -10,8 +11,14 @@ mod export;
 mod i18n;
 mod input;
 mod models;
+mod notifications;
+mod operation_queue;
+mod parallel;
+mod platform;
 mod search;
+mod security;
 mod services;
+mod state;
 mod telemetry;
 mod theme;
 mod traits;
@@ -30,31 +37,36 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use secrecy::ExposeSecret;
+use std::collections::VecDeque;
+use std::io;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::Mutex;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::{io, time::Duration};
+use std::time::Duration;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::constants::shutdown::{FORCE_KILL_TIMEOUT_SECS, GRACEFUL_TIMEOUT_SECS};
 
-use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS};
+use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS, CAPTURED_OUTPUT_MAX_LINES};
+use crate::constants::retry::{MAX_ATTEMPTS, LOCK_RETRY_DELAY_SECS, NETWORK_RETRY_DELAY_SECS, GENERAL_RETRY_DELAY_SECS};
 
 use crate::action::{Action, ActionInner, ActionResult};
 use crate::app::App;
 use crate::command::{CommandExecutor, CommandRunResult};
 use crate::errors::Result;
+use crate::notifications::DesktopNotifier;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
 use crate::transaction_history::{save_history, TransactionStatus};
-    Cancelled,
-}
 
 async fn read_output_lines<R>(
     reader: R,
     is_stderr: bool,
     tx: tokio::sync::mpsc::UnboundedSender<ActionResult>,
-    captured: Arc<Mutex<Vec<String>>>,
+    captured: Arc<Mutex<VecDeque<String>>>,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -178,7 +190,8 @@ async fn run_single_command(
     if status.success() {
         Ok(CommandRunResult::Finished)
     } else {
-        let output = captured_output.lock().await.clone();
+        let output_deque = captured_output.lock().await;
+        let output: Vec<String> = output_deque.iter().cloned().collect();
         let mut context = format!(
             "Command exited with status: {}",
             status
@@ -619,7 +632,7 @@ async fn main() -> Result<()> {
 
         terminal.draw(|f| ui::render(&mut app, f))?;
 
-        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u32);
+        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u64);
 
         // Handle Input with shorter timeout for responsiveness
         if event::poll(Duration::from_millis(INPUT_POLL_TIMEOUT_MS))? {
@@ -669,6 +682,8 @@ async fn main() -> Result<()> {
                 }
                 ActionResult::Error(msg) => {
                     tracing::error!("Error received: {}", msg);
+                    let notifier = DesktopNotifier::new();
+                    let _ = notifier.notify_error(&msg);
                     crate::telemetry::append_log_line(&format!("[error] {}", msg));
                     app.error_message = Some(msg.clone());
                     app.is_loading = false;
@@ -720,6 +735,10 @@ async fn main() -> Result<()> {
                     app.command_stdin_tx = None;
                     app.console_input.clear();
                     app.add_toast("Operation completed successfully!".to_string(), crate::animations::ToastStyle::Success);
+                    
+                    let notifier = DesktopNotifier::new();
+                    let _ = notifier.send("Arch TUI", "Operation completed successfully!");
+
                     if let Some(mut tx) = app.current_transaction.take() {
                         tx.status = TransactionStatus::Success;
                         app.transaction_history.push_front(tx);

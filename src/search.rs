@@ -103,6 +103,9 @@ impl SearchQuery {
                     tokens.push(SearchToken::Not(value.to_string()));
                 }
             } else if part == "OR" || part == "|" {
+                if let Some(SearchToken::And(prev)) = tokens.pop() {
+                    tokens.push(SearchToken::Or(prev));
+                }
                 continue;
             } else {
                 tokens.push(SearchToken::And(part.to_string()));
@@ -335,7 +338,7 @@ impl EnhancedSearch {
                 }
             }
         }
-        self.fuzzy.fuzzy_indices(text, pattern)
+        self.fuzzy.matcher.fuzzy_indices(text, pattern)
     }
 
     pub fn match_simple(&self, text: &str, pattern: &str) -> bool {

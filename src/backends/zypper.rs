@@ -110,6 +110,8 @@ impl UniversalPackageManager for ZypperBackend {
                         return Some(OutdatedPackage::new(
                             parts.get(1)?.trim().to_string(),
                             parts.get(3).unwrap_or(&"?").trim().to_string(),
+                            parts.get(2).map(|s| s.trim()).unwrap_or("?").to_string(),
+                            "update".to_string(),
                         ));
                     }
                 }

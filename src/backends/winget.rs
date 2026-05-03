@@ -40,7 +40,7 @@ impl UniversalPackageManager for WingetBackend {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 3 {
                     let name = parts.first()?;
-                    if name == "Name" || name.is_empty() {
+                    if *name == "Name" || name.is_empty() {
                         return None;
                     }
                     // Find version column (usually second to last)
@@ -49,7 +49,7 @@ impl UniversalPackageManager for WingetBackend {
                         name.to_string(),
                         version.to_string(),
                         "Windows package".to_string(),
-                        PackageSource::Pacman,
+                        PackageSource::Winget,
                     ))
                 } else {
                     None
@@ -111,7 +111,9 @@ impl UniversalPackageManager for WingetBackend {
                 if parts.len() >= 3 {
                     return Some(OutdatedPackage::new(
                         parts[0].to_string(),
+                        parts.get(1).map(|s| s.to_string()).unwrap_or_else(|| "?".to_string()),
                         parts.get(parts.len() - 1).unwrap_or(&"?").to_string(),
+                        "winget".to_string(),
                     ));
                 }
                 None

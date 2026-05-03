@@ -22,13 +22,12 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
-        // Global: Updates View
+        // Updates View
         if app.show_updates_view {
             match key.code {
                 KeyCode::Esc => app.hide_updates_view(),
                 KeyCode::Char('a') => app.select_all_updates(),
                 KeyCode::Char('n') => app.deselect_all_updates(),
-                KeyCode::Char('U') => app.toggle_updates_view(),
                 KeyCode::Enter => {
                     if app.selected_updates.is_empty() {
                         app.error_message = Some("No packages selected".to_string());
@@ -133,9 +132,9 @@ pub fn handle_event(app: &mut App, event: Event) {
                         let password = crate::utils::PasswordInput::from_string(
                             app.password_input.expose_secret().to_string(),
                         );
-                        let _ = tx.send(crate::action::Action::InitSudo(
+                        let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::InitSudo(
                             password.get_secret().clone(),
-                        ));
+                        )));
                     }
                     app.is_loading = true;
                 }
@@ -317,7 +316,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.clear_console();
             app.is_operation_running = true;
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::SystemUpdate);
+                let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::SystemUpdate));
             }
         }
 
@@ -329,9 +328,6 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Package Details
         KeyCode::Char('d') => app.show_package_details(),
 
-        // Updates View
-        KeyCode::Char('U') => app.toggle_updates_view(),
-
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
 
@@ -340,11 +336,12 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             if let Some(pkg) = app.get_selected_package() {
                 let url = match pkg.source {
                     crate::models::PackageSource::Pacman => {
-                        format!("https://archlinux.org/packages/search/{}", pkg.name)
+                        format!("https://archlinux.org/packages/?q={}", pkg.name)
                     }
                     crate::models::PackageSource::Aur => {
-                        format!("https://aur.archlinux.org/packages/{}", pkg.name)
+                        format!("https://aur.archlinux.org/packages/{}/", pkg.name)
                     }
+                    _ => "https://archlinux.org/".to_string(),
                 };
                 if let Err(e) = open::that(&url) {
                     app.error_message = Some(format!("Failed to open browser: {}", e));
@@ -364,7 +361,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Cancel operation
         KeyCode::Char('c') if key == KeyCode::Char('c') => {
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::CancelOperation);
+                let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::CancelOperation));
             }
         }
 
@@ -397,7 +394,7 @@ fn trigger_rollback(app: &mut App) {
         app.clear_console();
         app.is_operation_running = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::RunCommands(commands));
+            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
         }
     } else {
         app.error_message = Some("No successful transaction found to rollback.".to_string());
@@ -472,7 +469,7 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
         app.is_operation_running = true;
 
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::RunCommands(commands));
+            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
         }
     }
 }

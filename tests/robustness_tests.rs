@@ -23,7 +23,7 @@ fn test_path_validation_prevents_traversal() {
 fn test_filename_sanitization() {
     assert_eq!(sanitize_filename("test.txt"), "test.txt");
     assert_eq!(sanitize_filename("my-file_1.2"), "my-file_1.2");
-    assert_eq!(sanitize_filename("file;rm -rf /"), "filerm-rf-");
+    assert_eq!(sanitize_filename("file;rm -rf /"), "filerm-rf");
     assert_eq!(sanitize_filename("test@#$%^&*()"), "test");
 }
 

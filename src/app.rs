@@ -143,7 +143,7 @@ pub struct App {
 
     // Console
     pub show_console: bool,
-    pub console_buffer: Vec<String>,
+    pub console_buffer: VecDeque<String>,
     pub command_stdin_tx: Option<UnboundedSender<String>>,
     pub console_input: String,
     pub command_progress: Option<CommandProgress>,

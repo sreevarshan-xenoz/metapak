@@ -131,11 +131,12 @@ impl UniversalPackageManager for FlatpakBackend {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
                         let name = parts.get(1)?.to_string();
-                        return Some(OutdatedPackage {
+                        return Some(OutdatedPackage::new(
                             name,
-                            current_version: "?".to_string(),
-                            new_version: "?".to_string(),
-                        });
+                            "?".to_string(),
+                            "?".to_string(),
+                            "flatpak".to_string(),
+                        ));
                     }
                 }
                 None
@@ -164,6 +165,6 @@ impl UniversalPackageManager for FlatpakBackend {
     }
 
     fn build_update_command(&self) -> CommandSpec {
-        CommandSpec::new("flatpak", vec!["update", "-y".to_string()])
+        CommandSpec::new("flatpak", vec!["update".to_string(), "-y".to_string()])
     }
 }

@@ -338,7 +338,7 @@ impl DependencyChecker {
             let mut all_deps_satisfied = true;
             for dep in &pkg.depends_on {
                 let dep_installed = installed_packages.iter().any(|p| {
-                    p.name == dep && !packages_to_remove.contains(p.name.as_str())
+                    p.name == *dep && !packages_to_remove.contains(p.name.as_str())
                 });
                 if !dep_installed {
                     all_deps_satisfied = false;

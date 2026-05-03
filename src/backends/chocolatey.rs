@@ -106,7 +106,9 @@ impl UniversalPackageManager for ChocolateyBackend {
                     if parts.len() >= 3 {
                         return Some(OutdatedPackage::new(
                             parts[0].trim().to_string(),
+                            parts[1].trim().to_string(),
                             parts[2].trim().to_string(),
+                            "chocolatey".to_string(),
                         ));
                     }
                 }

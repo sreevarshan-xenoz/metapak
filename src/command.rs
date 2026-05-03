@@ -325,7 +325,7 @@ impl CommandExecutor {
         if status.success() {
             Ok(CommandRunResult::Finished)
         } else {
-            let output = captured_output.lock().await.clone();
+            let output: Vec<String> = captured_output.lock().await.iter().cloned().collect();
             let mut context = format!(
                 "Command exited with status: {}",
                 status

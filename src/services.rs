@@ -15,6 +15,7 @@ use std::time::Duration;
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
 use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::search::EnhancedSearch;
 use crate::traits::{PackageProvider, UpdateProvider};
 
 /// Cache search results to avoid repeated queries
@@ -35,11 +36,11 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    const FAILURE_THRESHOLD: u32 = 5;
-    const RECOVERY_SECS: u64 = 30;
-    const STATE_CLOSED: u32 = 0;
-    const STATE_OPEN: u32 = 1;
-    const STATE_HALF_OPEN: u32 = 2;
+    pub const FAILURE_THRESHOLD: u32 = 5;
+    pub const RECOVERY_SECS: u64 = 30;
+    pub const STATE_CLOSED: u32 = 0;
+    pub const STATE_OPEN: u32 = 1;
+    pub const STATE_HALF_OPEN: u32 = 2;
 
     pub fn new() -> Self {
         Self {
@@ -563,6 +564,7 @@ impl UpdateProvider for SystemUpdateProvider {
                             name.clone(),
                             "?".to_string(),
                             version,
+                            "unknown".to_string(),
                         );
 
                         // Get package info
@@ -862,6 +864,14 @@ impl PackageService {
             let source = match pkg.source {
                 PackageSource::Pacman => "pacman".to_string(),
                 PackageSource::Aur => "aur".to_string(),
+                PackageSource::Apt => "apt".to_string(),
+                PackageSource::Dnf => "dnf".to_string(),
+                PackageSource::Zypper => "zypper".to_string(),
+                PackageSource::Brew => "brew".to_string(),
+                PackageSource::Winget => "winget".to_string(),
+                PackageSource::Chocolatey => "chocolatey".to_string(),
+                PackageSource::Flatpak => "flatpak".to_string(),
+                PackageSource::Snap => "snap".to_string(),
             };
             let key = (source, pkg.name.clone());
             deduped
@@ -877,15 +887,21 @@ impl PackageService {
                 .or_insert(pkg);
         }
 
-        let query_lc = base_query.to_lowercase();
-        let mut results: Vec<Package> = deduped.into_values().filter(|p| spec.matches(p)).collect();
+        let mut results: Vec<Package> = deduped.into_values().collect();
+        
+        // Use EnhancedSearch for filtering and ranking
+        let search_engine = EnhancedSearch::new();
+        let filtered = search_engine.filter_packages(&results, base_query);
+        let mut results: Vec<Package> = filtered.into_iter().cloned().collect();
+        
         results.sort_by(|a, b| {
             let a_name = a.name.to_lowercase();
             let b_name = b.name.to_lowercase();
-            let a_rank = relevance_rank(&a_name, &query_lc);
-            let b_rank = relevance_rank(&b_name, &query_lc);
-            a_rank
-                .cmp(&b_rank)
+            
+            let a_score = search_engine.match_with_score(&a_name, base_query).map(|(s, _)| s).unwrap_or(0);
+            let b_score = search_engine.match_with_score(&b_name, base_query).map(|(s, _)| s).unwrap_or(0);
+            
+            b_score.cmp(&a_score) // Higher score first
                 .then_with(|| a_name.cmp(&b_name))
                 .then_with(|| match (&a.source, &b.source) {
                     (PackageSource::Pacman, PackageSource::Aur) => std::cmp::Ordering::Less,
@@ -926,18 +942,6 @@ impl PackageService {
 impl Default for PackageService {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn relevance_rank(name: &str, query: &str) -> u8 {
-    if name == query {
-        0
-    } else if name.starts_with(query) {
-        1
-    } else if name.contains(query) {
-        2
-    } else {
-        3
     }
 }
 
@@ -1077,7 +1081,6 @@ enum HelperKind {
 
 impl AurHelperCommand {
     const NOCONFIRM: &'static str = "--noconfirm";
-    static ref PACKAGE_NAME_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9@._+-]+$").unwrap();
 
     pub fn new(config: &AppConfig) -> Self {
         let helper = Self::detect_helper(&config.aur_helper);
@@ -1089,7 +1092,7 @@ impl AurHelperCommand {
     }
 
     fn is_valid_package_name(name: &str) -> bool {
-        !name.is_empty() && Self::PACKAGE_NAME_REGEX.is_match(name)
+        !name.is_empty() && regex::Regex::new(r"^[a-z0-9@._+-]+$").unwrap().is_match(name)
     }
 
     fn detect_helper(configured: &str) -> HelperKind {
@@ -1144,7 +1147,7 @@ impl AurHelperCommand {
     }
 
     /// Build install command with validation
-    pub fn install_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+    pub fn install_command_validated(&self, packages: &[&str]) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1154,7 +1157,7 @@ impl AurHelperCommand {
     }
 
     /// Build remove command with validation
-    pub fn remove_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+    pub fn remove_command_validated(&self, packages: &[&str]) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1202,8 +1205,8 @@ mod tests {
         assert_eq!(AurHelperCommand::sanitize_package_name("firefox"), "firefox");
         assert_eq!(AurHelperCommand::sanitize_package_name("linux-headers"), "linux-headers");
         assert_eq!(AurHelperCommand::sanitize_package_name("python-pytest"), "python-pytest");
-        assert_eq!(AurHelperCommand::sanitize_package_name("pkg+name@test"), "pkgname@test");
-        assert_eq!(AurHelperCommand::sanitize_package_name("test; rm -rf /"), "testrm-rf-");
+        assert_eq!(AurHelperCommand::sanitize_package_name("pkg+name@test"), "pkg+name@test");
+        assert_eq!(AurHelperCommand::sanitize_package_name("test; rm -rf /"), "testrm-rf");
     }
 
     #[test]

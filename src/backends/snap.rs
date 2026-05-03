@@ -134,11 +134,12 @@ impl UniversalPackageManager for SnapBackend {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| {
-                        Some(OutdatedPackage {
-                            name: item.get("name")?.as_str()?.to_string(),
-                            current_version: item.get("current")?.as_str().unwrap_or("?").to_string(),
-                            new_version: item.get("version")?.as_str().unwrap_or("?").to_string(),
-                        })
+                        Some(OutdatedPackage::new(
+                            item.get("name")?.as_str()?.to_string(),
+                            item.get("current")?.as_str().unwrap_or("?").to_string(),
+                            item.get("version")?.as_str().unwrap_or("?").to_string(),
+                            "snap".to_string(),
+                        ))
                     })
                     .collect()
             })

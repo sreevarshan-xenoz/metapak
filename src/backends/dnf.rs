@@ -104,6 +104,8 @@ impl UniversalPackageManager for DnfBackend {
                     Some(OutdatedPackage::new(
                         parts[0].to_string(),
                         parts.get(1).unwrap_or(&"?").to_string(),
+                        parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "?".to_string()),
+                        "fedora".to_string(),
                     ))
                 } else {
                     None

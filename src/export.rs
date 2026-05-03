@@ -88,7 +88,7 @@ pub fn import_list(path: &Path) -> std::io::Result<Vec<String>> {
     Ok(packages)
 }
 
-fn chrono_lite() -> String {
+pub fn chrono_lite() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)

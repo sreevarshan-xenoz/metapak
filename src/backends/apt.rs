@@ -106,7 +106,7 @@ impl UniversalPackageManager for AptBackend {
                         // Format: package oldver -> newver
                         if let Some((name, rest)) = line.split_once(" ") {
                             let new_ver = rest.trim().split(" -> ").nth(1).unwrap_or("?");
-                            Some(OutdatedPackage::new(name.trim().to_string(), new_ver.to_string()))
+                            Some(OutdatedPackage::new(name.trim().to_string(), "?".to_string(), new_ver.to_string(), "main".to_string()))
                         } else {
                             None
                         }

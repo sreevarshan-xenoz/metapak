@@ -102,10 +102,12 @@ impl UniversalPackageManager for PacmanBackend {
                     .filter_map(|line| {
                         let parts: Vec<&str> = line.split_whitespace().collect();
                         if parts.len() >= 2 {
-                            Some(OutdatedPackage::new(
-                                parts[0].to_string(),
-                                parts[1].to_string(),
-                            ))
+Some(OutdatedPackage::new(
+                            parts[0].to_string(),
+                            parts[1].to_string(),
+                            parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "".to_string()),
+                            "core".to_string(),
+                        ))
                         } else {
                             None
                         }
@@ -129,6 +131,8 @@ impl UniversalPackageManager for PacmanBackend {
                     Some(OutdatedPackage::new(
                         parts[0].to_string(),
                         parts[1].to_string(),
+                        parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "".to_string()),
+                        "core".to_string(),
                     ))
                 } else {
                     None

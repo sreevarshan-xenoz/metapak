@@ -207,13 +207,13 @@ pub struct OutdatedPackage {
 }
 
 impl OutdatedPackage {
-    pub fn new(name: String, current_version: String, new_version: String) -> Self {
+    pub fn new(name: String, current_version: String, new_version: String, repository: String) -> Self {
         Self {
             name,
             current_version,
             new_version,
             download_size: 0,
-            repository: String::new(),
+            repository,
             is_security_update: false,
             cve_info: None,
             new_dependencies: Vec::new(),
