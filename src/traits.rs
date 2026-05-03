@@ -11,9 +11,11 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait PackageProvider: Send + Sync {
     /// Search for packages matching the query
+    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>>;
 
     /// Check if a specific package is installed
+    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool;
 }
 
@@ -21,8 +23,10 @@ pub trait PackageProvider: Send + Sync {
 #[async_trait]
 pub trait UpdateProvider: Send + Sync {
     /// Check for available updates
+    #[must_use = "this async method should be .await'd"]
     async fn check_updates(&self) -> Result<usize>;
 
     /// Get detailed list of outdated packages
+    #[must_use = "this async method should be .await'd"]
     async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>>;
 }

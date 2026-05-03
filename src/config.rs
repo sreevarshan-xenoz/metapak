@@ -113,6 +113,12 @@ impl AppConfig {
         let config_subdir = config_dir.join("arch-tui");
         let config_path = config_subdir.join("config.toml");
 
+        // Validate config path to prevent path traversal
+        if !crate::utils::validate_path(&config_path) {
+            eprintln!("Warning: Invalid config path, using default configuration");
+            return Ok(AppConfig::default());
+        }
+
         if !config_subdir.exists() {
             let _ = std::fs::create_dir_all(&config_subdir);
         }

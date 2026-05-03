@@ -109,7 +109,7 @@ pub struct App {
     // State
     pub should_quit: bool,
     pub is_loading: bool,
-    pub action_tx: Option<UnboundedSender<Action>>,
+    pub action_tx: Option<UnboundedSender<crate::action::Action>>,
     pub selected_index: Option<usize>,
     pub pending_command: Option<(String, Vec<String>)>,
     pub error_message: Option<String>,

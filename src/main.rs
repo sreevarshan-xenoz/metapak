@@ -38,7 +38,7 @@ use crate::constants::shutdown::{FORCE_KILL_TIMEOUT_SECS, GRACEFUL_TIMEOUT_SECS}
 
 use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS};
 
-use crate::action::{Action, ActionResult};
+use crate::action::{Action, ActionInner, ActionResult};
 use crate::app::App;
 use crate::command::{CommandExecutor, CommandRunResult};
 use crate::errors::Result;
@@ -385,7 +385,7 @@ async fn main() -> Result<()> {
     }
 
     // Initial check for updates (on startup) - send after spawn is ready
-    let _ = action_tx.send(Action::CheckUpdates);
+    let _ = action_tx.send(Action::new(ActionInner::CheckUpdates));
 
     // Start auto-update checker if enabled
     let auto_check_enabled = app.config.ui.auto_check_updates;
@@ -400,7 +400,7 @@ async fn main() -> Result<()> {
             );
             loop {
                 interval.tick().await;
-                let _ = action_tx_clone.send(Action::CheckUpdates);
+                let _ = action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
             }
         });
     }
@@ -411,9 +411,12 @@ async fn main() -> Result<()> {
     let cancel_requested_for_spawn = cancel_requested.clone();
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
-            match action {
-                Action::Search(query) => {
+            let action_id = action.id();
+            match &action.inner {
+                ActionInner::Search(query) => {
+                    tracing::info!(action_id, "Processing Search action");
                     let result_tx_clone = result_tx.clone();
+                    let query = query.clone();
 
                     tokio::spawn(async move {
                         let package_service = PackageService::new();
@@ -422,14 +425,15 @@ async fn main() -> Result<()> {
                                 let _ = result_tx_clone.send(ActionResult::SearchResults(results));
                             }
                             Err(e) => {
-                                tracing::error!("Search failed: {}", e);
+                                tracing::error!(action_id, "Search failed: {}", e);
                                 let _ = result_tx_clone
                                     .send(ActionResult::Error(format!("Search failed: {}", e)));
                             }
                         }
                     });
                 }
-                Action::InitSudo(password) => {
+                ActionInner::InitSudo(password) => {
+                    tracing::info!(action_id, "Processing InitSudo action");
                     let result_tx_clone = result_tx.clone();
                     let password_str = password.expose_secret().to_string();
 
@@ -440,10 +444,12 @@ async fn main() -> Result<()> {
                         let _ = result_tx_clone.send(ActionResult::SudoResult(success));
                     });
                 }
-                Action::RunCommands(commands) => {
+                ActionInner::RunCommands(commands) => {
+                    tracing::info!(action_id, "Processing RunCommands action");
                     let result_tx_clone = result_tx.clone();
                     let active_pid_clone = active_pid_for_spawn.clone();
                     let cancel_requested_clone = cancel_requested_for_spawn.clone();
+                    let commands = commands.clone();
 
                     tokio::spawn(async move {
                         let sequence_result = run_command_sequence(
@@ -464,7 +470,8 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
-                Action::CheckUpdates => {
+                ActionInner::CheckUpdates => {
+                    tracing::info!(action_id, "Processing CheckUpdates action");
                     let result_tx_clone = result_tx.clone();
 
                     tokio::spawn(async move {
@@ -474,13 +481,14 @@ async fn main() -> Result<()> {
                                 let _ = result_tx_clone.send(ActionResult::UpdateCount(count));
                             }
                             Err(e) => {
-                                tracing::warn!("Failed to check updates: {}", e);
+                                tracing::warn!(action_id, "Failed to check updates: {}", e);
                                 // Don't show error to user for background update check
                             }
                         }
                     });
                 }
-                Action::SystemUpdate => {
+                ActionInner::SystemUpdate => {
+                    tracing::info!(action_id, "Processing SystemUpdate action");
                     let result_tx_clone = result_tx.clone();
                     let action_tx_clone = action_tx.clone();
                     let aur_helper_value = aur_helper_for_spawn.clone();
@@ -504,7 +512,7 @@ async fn main() -> Result<()> {
                         match sequence_result {
                             CommandRunResult::Finished => {
                                 let _ = result_tx_clone.send(ActionResult::CommandFinished);
-                                let _ = action_tx_clone.send(Action::CheckUpdates);
+                                let _ = action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
                             }
                             CommandRunResult::Cancelled => {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
@@ -512,7 +520,8 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
-                Action::CancelOperation => {
+                ActionInner::CancelOperation => {
+                    tracing::info!(action_id, "Processing CancelOperation action");
                     cancel_requested_for_spawn.store(true, Ordering::SeqCst);
                     if let Some(pid) = *active_pid_for_spawn.lock().await {
                         let _ = std::process::Command::new("kill")
@@ -556,7 +565,7 @@ async fn main() -> Result<()> {
             app.add_to_history(query.clone());
 
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(Action::Search(query));
+                let _ = tx.send(Action::new(ActionInner::Search(query)));
             }
         }
 
@@ -567,7 +576,7 @@ async fn main() -> Result<()> {
             app.add_to_history(query.clone());
 
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(Action::Search(query));
+                let _ = tx.send(Action::new(ActionInner::Search(query)));
             }
         }
 
@@ -756,7 +765,7 @@ async fn main() -> Result<()> {
         // Periodic update checks
         if last_update_check.elapsed() > Duration::from_secs(UPDATE_CHECK_INTERVAL_SECS) {
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(Action::CheckUpdates);
+                let _ = tx.send(Action::new(ActionInner::CheckUpdates));
             }
             last_update_check = std::time::Instant::now();
         }

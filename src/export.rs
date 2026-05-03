@@ -8,6 +8,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 pub fn export_installed(packages: &[crate::models::Package], path: &Path) -> std::io::Result<()> {
+    // Validate path for security
+    if !crate::utils::validate_path(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid path: potential path traversal detected"
+        ));
+    }
+
     let mut file = File::create(path)?;
 
     writeln!(file, "# Arch TUI - Exported Package List")?;
@@ -22,6 +30,14 @@ pub fn export_installed(packages: &[crate::models::Package], path: &Path) -> std
 }
 
 pub fn export_all(packages: &[crate::models::Package], path: &Path) -> std::io::Result<()> {
+    // Validate path for security
+    if !crate::utils::validate_path(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid path: potential path traversal detected"
+        ));
+    }
+
     let mut file = File::create(path)?;
 
     writeln!(file, "# Arch TUI - Exported Package List")?;
@@ -43,6 +59,14 @@ pub fn export_all(packages: &[crate::models::Package], path: &Path) -> std::io::
 }
 
 pub fn import_list(path: &Path) -> std::io::Result<Vec<String>> {
+    // Validate path for security
+    if !crate::utils::validate_path(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid path: potential path traversal detected"
+        ));
+    }
+
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut packages = Vec::new();

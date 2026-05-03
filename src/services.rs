@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::Command;
@@ -16,14 +17,15 @@ use crate::errors::{AppError, Result};
 use crate::models::{Package, PackageSource, OutdatedPackage};
 use crate::traits::{PackageProvider, UpdateProvider};
 
-lazy_static::lazy_static! {
-    /// Cache search results to avoid repeated queries
-    static ref PACKAGE_CACHE: DashMap<String, CachedSearch> = DashMap::new();
-    /// Configurable cache TTL in seconds
-    static ref CACHE_TTL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(300);
-    /// Circuit breaker for AUR API
-    static ref AUR_CIRCUIT_BREAKER: CircuitBreaker = CircuitBreaker::new();
-}
+/// Cache search results to avoid repeated queries
+static PACKAGE_CACHE: Lazy<DashMap<String, CachedSearch>> = Lazy::new(|| DashMap::new());
+
+/// Configurable cache TTL in seconds
+static CACHE_TTL_SECS: Lazy<std::sync::atomic::AtomicU64> =
+    Lazy::new(|| std::sync::atomic::AtomicU64::new(300));
+
+/// Circuit breaker for AUR API
+static AUR_CIRCUIT_BREAKER: Lazy<CircuitBreaker> = Lazy::new(|| CircuitBreaker::new());
 
 /// Circuit breaker for AUR API calls to prevent flooding when service is down
 pub struct CircuitBreaker {
@@ -178,6 +180,7 @@ impl PacmanProvider {
 
 #[async_trait]
 impl PackageProvider for PacmanProvider {
+    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Check cache first
         let cache_key = format!("pacman:{}", query);
@@ -194,6 +197,7 @@ impl PackageProvider for PacmanProvider {
             .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
+    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -337,6 +341,7 @@ impl AurProvider {
 
 #[async_trait]
 impl PackageProvider for AurProvider {
+    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Check circuit breaker first
         if !AUR_CIRCUIT_BREAKER.is_available() {
@@ -465,6 +470,7 @@ impl PackageProvider for AurProvider {
         Ok(packages)
     }
 
+    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -500,6 +506,7 @@ impl SystemUpdateProvider {
 
 #[async_trait]
 impl UpdateProvider for SystemUpdateProvider {
+    #[must_use = "this async method should be .await'd"]
     async fn check_updates(&self) -> Result<usize> {
         tokio::task::spawn_blocking(move || {
             // Try checkupdates first (from pacman-contrib) - doesn't require sudo
@@ -801,6 +808,7 @@ impl PackageService {
     }
 
     /// Search across all providers concurrently
+    #[must_use = "this async method should be .await'd"]
     pub async fn search_all(&self, query: &str) -> Result<Vec<Package>> {
         let spec = QuerySpec::parse(query);
         if spec.text.trim().is_empty()
