@@ -20,6 +20,9 @@ mod ui;
 mod ui_utils;
 mod utils;
 
+// CLI arguments disabled - cargo not available for testing
+// use clap::{Arg, Command as ClapCommand};
+
 use crossterm::{
     event::{self},
     execute,
