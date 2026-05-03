@@ -49,6 +49,7 @@ pub mod telemetry;
 pub mod theme;
 pub mod traits;
 pub mod transaction_history;
+pub mod transaction_manager;
 pub mod state;
 pub mod ui;
 pub mod ui_utils;

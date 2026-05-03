@@ -4,8 +4,11 @@
 //! in a queue, including preview, dependency checking, and transaction handling.
 
 use crate::models::{Package, PackageSource};
+use crate::transaction_manager::TransactionManager;
+use crate::errors::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationType {
@@ -105,15 +108,39 @@ fn generate_id() -> u64 {
         .as_nanos() as u64
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct OperationQueue {
     operations: Vec<Operation>,
     confirmed: bool,
+    transaction_manager: Option<Arc<TransactionManager>>,
 }
 
 impl OperationQueue {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_manager(manager: Arc<TransactionManager>) -> Self {
+        Self {
+            operations: Vec::new(),
+            confirmed: false,
+            transaction_manager: Some(manager),
+        }
+    }
+
+    /// Execute a safe transaction if a manager is configured.
+    /// Falls back to direct execution if no manager is present.
+    pub async fn execute_safe<F, Fut, T>(&self, action_name: &str, action: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        if let Some(manager) = &self.transaction_manager {
+            manager.run_safe_transaction(action_name, action).await
+        } else {
+            tracing::warn!("No TransactionManager configured, running directly");
+            action().await
+        }
     }
 
     pub fn add(&mut self, operation: Operation) {
