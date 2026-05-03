@@ -139,3 +139,44 @@ mod tests {
         assert_eq!(pwd.masked(), "*******█");
     }
 }
+
+/// Validate that a path doesn't contain path traversal attempts
+pub fn validate_path(path: &std::path::Path) -> bool {
+    use std::path::Component;
+    let mut components = path.components();
+    while let Some(comp) = components.next() {
+        match comp {
+            Component::ParentDir => return false,
+            Component::Normal(s) => {
+                let s_str = s.to_string_lossy();
+                if s_str.starts_with('.') && s_str != ".config" && s_str != ".local" {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
+/// Sanitize a filename to prevent injection
+pub fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || "-_.".contains(*c))
+        .collect()
+}
+
+/// Validate a search query to prevent injection
+pub fn validate_search_query(query: &str) -> bool {
+    // Check for potentially dangerous patterns
+    let dangerous_patterns = [
+        "&&", "||", ";", "|", "`", "$(", "$(", ">",
+    ];
+    let query_lower = query.to_lowercase();
+    for pattern in dangerous_patterns {
+        if query_lower.contains(pattern) {
+            return false;
+        }
+    }
+    true
+}

@@ -1,4 +1,5 @@
 use thiserror::Error;
+use std::fmt;
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -31,6 +32,15 @@ pub enum AppError {
 
     #[error("Configuration validation error: {0}")]
     ConfigValidation(String),
+
+    #[error("Operation timed out: {0}")]
+    Timeout(String),
+
+    #[error("Input validation failed: {0}")]
+    Validation(String),
+
+    #[error("Resource exhausted: {0}")]
+    ResourceExhausted(String),
 
     #[error("Other error: {0}")]
     Other(String),

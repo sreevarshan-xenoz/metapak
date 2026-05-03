@@ -34,6 +34,8 @@ use std::sync::{
 use std::{io, time::Duration};
 use tracing_subscriber::{fmt, EnvFilter};
 
+use crate::constants::shutdown::{FORCE_KILL_TIMEOUT_SECS, GRACEFUL_TIMEOUT_SECS};
+
 use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS};
 
 use crate::action::{Action, ActionResult};
@@ -366,6 +368,7 @@ async fn main() -> Result<()> {
     let (result_tx, mut result_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_pid = Arc::new(Mutex::new(None));
     let cancel_requested = Arc::new(AtomicBool::new(false));
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
 
     // Create app
     let aur_helper = app_config.aur_helper.clone();
@@ -606,7 +609,30 @@ async fn main() -> Result<()> {
         // Handle Input with shorter timeout for responsiveness
         if event::poll(Duration::from_millis(INPUT_POLL_TIMEOUT_MS))? {
             let event = event::read()?;
+
+            // Check for Ctrl+C (Interrupt) for graceful shutdown
+            if let event::Event::Key(key) = &event {
+                if key.code == event::KeyCode::Char('c') && key.modifiers.contains(event::KeyModifiers::CONTROL) {
+                    tracing::info!("Ctrl+C detected, initiating graceful shutdown");
+                    shutdown_requested.store(true, Ordering::SeqCst);
+
+                    // Signal the background task to stop
+                    cancel_requested.store(true, Ordering::SeqCst);
+                }
+            }
+
             input::handle_event(&mut app, event);
+        }
+
+        // Check if shutdown was requested
+        if shutdown_requested.load(Ordering::SeqCst) {
+            tracing::info!("Shutdown requested, flushing telemetry...");
+
+            // Flush telemetry before exit
+            let _ = crate::telemetry::flush();
+
+            // Give time for graceful shutdown
+            break;
         }
 
         // Handle Async Results
@@ -723,6 +749,7 @@ async fn main() -> Result<()> {
         // Periodic cleanup
         if last_update.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
             PackageService::clear_expired_cache();
+            crate::services::enforce_cache_limit();
             last_update = std::time::Instant::now();
         }
 

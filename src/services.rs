@@ -21,6 +21,79 @@ lazy_static::lazy_static! {
     static ref PACKAGE_CACHE: DashMap<String, CachedSearch> = DashMap::new();
     /// Configurable cache TTL in seconds
     static ref CACHE_TTL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(300);
+    /// Circuit breaker for AUR API
+    static ref AUR_CIRCUIT_BREAKER: CircuitBreaker = CircuitBreaker::new();
+}
+
+/// Circuit breaker for AUR API calls to prevent flooding when service is down
+pub struct CircuitBreaker {
+    failure_count: std::sync::atomic::AtomicU32,
+    last_failure: std::sync::atomic::AtomicU64,
+    state: std::sync::atomic::AtomicU32,
+}
+
+impl CircuitBreaker {
+    const FAILURE_THRESHOLD: u32 = 5;
+    const RECOVERY_SECS: u64 = 30;
+    const STATE_CLOSED: u32 = 0;
+    const STATE_OPEN: u32 = 1;
+    const STATE_HALF_OPEN: u32 = 2;
+
+    pub fn new() -> Self {
+        Self {
+            failure_count: std::sync::atomic::AtomicU32::new(0),
+            last_failure: std::sync::atomic::AtomicU64::new(0),
+            state: std::sync::atomic::AtomicU32::new(Self::STATE_CLOSED),
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        let state = self.state.load(std::sync::atomic::Ordering::SeqCst);
+        match state {
+            Self::STATE_CLOSED => true,
+            Self::STATE_OPEN => {
+                let last_fail = self.last_failure.load(std::sync::atomic::Ordering::SeqCst);
+                let elapsed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    - last_fail;
+                if elapsed > Self::RECOVERY_SECS {
+                    self.state.store(Self::STATE_HALF_OPEN, std::sync::atomic::Ordering::SeqCst);
+                    true
+                } else {
+                    false
+                }
+            }
+            Self::STATE_HALF_OPEN => true,
+            _ => false,
+        }
+    }
+
+    pub fn record_success(&self) {
+        self.failure_count.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.state.store(Self::STATE_CLOSED, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn record_failure(&self) {
+        let count = self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.last_failure.store(now, std::sync::atomic::Ordering::SeqCst);
+
+        if count >= Self::FAILURE_THRESHOLD {
+            self.state.store(Self::STATE_OPEN, std::sync::atomic::Ordering::SeqCst);
+            tracing::warn!("Circuit breaker opened due to {} consecutive failures", count);
+        }
+    }
+}
+
+impl Default for CircuitBreaker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Get the current cache TTL
@@ -43,6 +116,41 @@ pub fn get_cache_stats() -> (usize, usize) {
     let total = PACKAGE_CACHE.len();
     let expired = PACKAGE_CACHE.iter().filter(|r| r.is_expired()).count();
     (total, expired)
+}
+
+/// Enforce cache size limit to prevent memory exhaustion
+pub fn enforce_cache_limit() {
+    use crate::constants::cache::{CLEANUP_BATCH_SIZE, MAX_CACHE_ENTRIES};
+
+    if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
+        tracing::warn!("Cache size {} exceeds limit {}, cleaning up", PACKAGE_CACHE.len(), MAX_CACHE_ENTRIES);
+
+        // Remove expired entries first
+        let keys_to_remove: Vec<String> = PACKAGE_CACHE
+            .iter()
+            .filter(|r| r.is_expired())
+            .take(CLEANUP_BATCH_SIZE)
+            .map(|r| r.key().to_string())
+            .collect();
+
+        for key in keys_to_remove {
+            PACKAGE_CACHE.remove(&key);
+        }
+
+        // If still over limit, remove oldest entries
+        if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
+            // Note: DashMap doesn't maintain insertion order, so we just clear expired again
+            let remaining_keys: Vec<String> = PACKAGE_CACHE
+                .iter()
+                .take(PACKAGE_CACHE.len() - MAX_CACHE_ENTRIES + CLEANUP_BATCH_SIZE)
+                .map(|r| r.key().to_string())
+                .collect();
+
+            for key in remaining_keys {
+                PACKAGE_CACHE.remove(&key);
+            }
+        }
+    }
 }
 
 /// Cached search entry with timestamp
@@ -209,11 +317,20 @@ pub struct AurProvider {
 
 impl AurProvider {
     pub fn new() -> Self {
+        use crate::constants::network::{AUR_CONNECT_TIMEOUT_SECS, AUR_REQUEST_TIMEOUT_SECS, HTTP_IDLE_TIMEOUT_SECS, HTTP_MAX_CONNECTIONS};
+
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(8))
-            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(AUR_REQUEST_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(AUR_CONNECT_TIMEOUT_SECS))
+            .pool_max_idle_per_host(HTTP_MAX_CONNECTIONS as usize)
+            .pool_idle_timeout(Duration::from_secs(HTTP_IDLE_TIMEOUT_SECS))
+            .tcp_keepalive(Duration::from_secs(60))
+            .tcp_nodelay(true)
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to create optimized HTTP client: {}, using default", e);
+                reqwest::Client::new()
+            });
         Self { client }
     }
 }
@@ -221,6 +338,12 @@ impl AurProvider {
 #[async_trait]
 impl PackageProvider for AurProvider {
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
+        // Check circuit breaker first
+        if !AUR_CIRCUIT_BREAKER.is_available() {
+            tracing::warn!("AUR circuit breaker is open, skipping request");
+            return Err(AppError::Aur("AUR service temporarily unavailable (circuit breaker open)".to_string()));
+        }
+
         // Check cache first
         let cache_key = format!("aur:{}", query);
         if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
@@ -257,6 +380,13 @@ impl PackageProvider for AurProvider {
                     }
                 }
             }
+        }
+
+        // Record result in circuit breaker
+        if response.is_none() {
+            AUR_CIRCUIT_BREAKER.record_failure();
+        } else {
+            AUR_CIRCUIT_BREAKER.record_success();
         }
 
         let response = response.ok_or_else(|| {
@@ -755,6 +885,16 @@ impl PackageService {
                     _ => std::cmp::Ordering::Equal,
                 })
         });
+
+        use crate::constants::search_limits::MAX_TOTAL_RESULTS;
+        if results.len() > MAX_TOTAL_RESULTS {
+            tracing::warn!(
+                "Search results truncated from {} to {}",
+                results.len(),
+                MAX_TOTAL_RESULTS
+            );
+            results.truncate(MAX_TOTAL_RESULTS);
+        }
 
         Ok(results)
     }

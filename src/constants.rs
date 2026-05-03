@@ -32,10 +32,28 @@ pub mod retry {
 pub mod network {
     pub const AUR_REQUEST_TIMEOUT_SECS: u64 = 8;
     pub const AUR_CONNECT_TIMEOUT_SECS: u64 = 4;
+    pub const HTTP_MAX_CONNECTIONS: u32 = 10;
+    pub const HTTP_IDLE_TIMEOUT_SECS: u64 = 30;
+    pub const HTTP_MAX_REQUEST_TIMEOUT_SECS: u64 = 30;
+}
+
+pub mod search_limits {
+    pub const MAX_RESULTS_PER_SOURCE: usize = 500;
+    pub const MAX_TOTAL_RESULTS: usize = 1000;
+}
+
+pub mod cache {
+    pub const MAX_CACHE_ENTRIES: usize = 1000;
+    pub const CLEANUP_BATCH_SIZE: usize = 50;
 }
 
 pub mod transaction {
     pub const MAX_HISTORY_SIZE: usize = 100;
+}
+
+pub mod shutdown {
+    pub const GRACEFUL_TIMEOUT_SECS: u64 = 2;
+    pub const FORCE_KILL_TIMEOUT_SECS: u64 = 1;
 }
 
 #[cfg(test)]
