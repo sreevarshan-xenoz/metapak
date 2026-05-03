@@ -31,6 +31,9 @@ pub enum ActionInner {
     /// Rollback to a specific snapshot ID
     Rollback(String),
 
+    /// Simulate a command sequence
+    Simulate(Vec<CommandSpec>),
+
     /// Run multiple commands in sequence
     RunCommands(Vec<CommandSpec>),
 
@@ -91,6 +94,9 @@ pub enum ActionResult {
 
     /// Update check completed
     UpdateCount(usize),
+
+    /// Simulation result
+    SimulationResult(crate::traits::SimulationResult),
 
     /// Operation cancelled by user
     Cancelled,

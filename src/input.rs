@@ -206,7 +206,7 @@ pub fn handle_event(app: &mut App, event: Event) {
         // Confirmation Popup
         if app.show_confirm_prompt {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                     app.show_confirm_prompt = false;
                     app.show_console = true;
                     app.clear_console();
@@ -216,7 +216,7 @@ pub fn handle_event(app: &mut App, event: Event) {
                         execute_confirmation_action(app, &packages);
                     }
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     app.show_confirm_prompt = false;
                     app.packages_pending_confirmation.clear();
                     app.confirmation_commands.clear();
@@ -231,11 +231,40 @@ pub fn handle_event(app: &mut App, event: Event) {
             match key.code {
                 KeyCode::Enter => {
                     app.show_simulation = false;
-                    // Proceed with original confirmation logic if needed
+                    app.show_console = true;
+                    app.clear_console();
+                    
+                    let commands = std::mem::take(&mut app.pending_simulation_commands);
+                    let packages = std::mem::take(&mut app.pending_simulation_packages);
+                    
+                    if !commands.is_empty() {
+                        let installed_packages = packages
+                            .iter()
+                            .filter(|p| !p.is_installed)
+                            .map(|p| p.name.clone())
+                            .collect();
+                        let removed_packages = packages
+                            .iter()
+                            .filter(|p| p.is_installed)
+                            .map(|p| p.name.clone())
+                            .collect();
+                        app.current_transaction = Some(crate::transaction_history::new_record(
+                            installed_packages,
+                            removed_packages,
+                            &commands,
+                        ));
+                        app.is_operation_running = true;
+
+                        if let Some(tx) = &app.action_tx {
+                            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
+                        }
+                    }
                 }
                 KeyCode::Esc => {
                     app.show_simulation = false;
                     app.simulation_result = None;
+                    app.pending_simulation_commands.clear();
+                    app.pending_simulation_packages.clear();
                 }
                 _ => {}
             }
@@ -245,7 +274,7 @@ pub fn handle_event(app: &mut App, event: Event) {
         // Robustness: Rollback Dialog
         if app.show_rollback_confirm {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                     if let Some(rollback_id) = app.pending_rollback_id.take() {
                         if let Some(tx) = &app.action_tx {
                             let _ = tx.send(crate::action::Action::new(
@@ -255,7 +284,7 @@ pub fn handle_event(app: &mut App, event: Event) {
                     }
                     app.show_rollback_confirm = false;
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     app.show_rollback_confirm = false;
                     app.pending_rollback_id = None;
                 }
@@ -486,28 +515,12 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
     let commands = crate::services::plan_package_transaction(packages, &app.config);
     app.confirmation_commands.clear();
 
-    // Execute commands
     if !commands.is_empty() {
-        let installed_packages = packages
-            .iter()
-            .filter(|p| !p.is_installed)
-            .map(|p| p.name.clone())
-            .collect();
-        let removed_packages = packages
-            .iter()
-            .filter(|p| p.is_installed)
-            .map(|p| p.name.clone())
-            .collect();
-        app.current_transaction = Some(crate::transaction_history::new_record(
-            installed_packages,
-            removed_packages,
-            &commands,
-        ));
-        app.selected_packages.clear();
-        app.is_operation_running = true;
-
+        app.pending_simulation_commands = commands.clone();
+        app.pending_simulation_packages = packages.to_vec();
+        app.is_loading = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
+            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::Simulate(commands)));
         }
     }
 }

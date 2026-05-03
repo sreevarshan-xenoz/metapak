@@ -59,6 +59,7 @@ use crate::constants::shutdown::{FORCE_KILL_TIMEOUT_SECS, GRACEFUL_TIMEOUT_SECS}
 use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS, CAPTURED_OUTPUT_MAX_LINES};
 use crate::constants::retry::{MAX_ATTEMPTS, LOCK_RETRY_DELAY_SECS, NETWORK_RETRY_DELAY_SECS, GENERAL_RETRY_DELAY_SECS};
 
+use crate::traits::PackageSimulator;
 use crate::action::{Action, ActionInner, ActionResult};
 use crate::app::App;
 use crate::command::{CommandExecutor, CommandRunResult};
@@ -219,12 +220,11 @@ async fn run_command_sequence(
     tx: tokio::sync::mpsc::UnboundedSender<ActionResult>,
     active_pid: Arc<Mutex<Option<u32>>>,
     cancel_requested: Arc<AtomicBool>,
-) -> CommandRunResult {
+) -> Result<CommandRunResult> {
     let _ = tx.send(ActionResult::CommandStarted);
 
     for command in &commands {
         let mut attempts = 0usize;
-        let max_attempts = 3;
         
         loop {
             attempts += 1;
@@ -237,7 +237,7 @@ async fn run_command_sequence(
             .await
             {
                 Ok(CommandRunResult::Finished) => break,
-                Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                Ok(CommandRunResult::Cancelled) => return Ok(CommandRunResult::Cancelled),
                 Err(err) => {
                     let error_lower = err.to_lowercase();
                     let is_dependency_error = error_lower.contains("dependency") || error_lower.contains("[dependency-error]");
@@ -269,12 +269,11 @@ async fn run_command_sequence(
                         match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
                             Ok(CommandRunResult::Finished) => {
                                 let _ = tx.send(ActionResult::CommandOutput("System upgrade complete. Retrying...".to_string()));
-                                if attempts < max_attempts { continue; }
+                                if attempts < MAX_ATTEMPTS { continue; }
                             }
-                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Ok(CommandRunResult::Cancelled) => return Ok(CommandRunResult::Cancelled),
                             Err(fix_err) => {
-                                let _ = tx.send(ActionResult::Error(format!("System upgrade failed: {}", fix_err)));
-                                return CommandRunResult::Finished;
+                                return Err(crate::errors::AppError::Backend(format!("System upgrade failed: {}", fix_err)));
                             }
                         }
                     }
@@ -291,12 +290,11 @@ async fn run_command_sequence(
                         match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
                             Ok(CommandRunResult::Finished) => {
                                 let _ = tx.send(ActionResult::CommandOutput("Conflicts resolved.".to_string()));
-                                if attempts < max_attempts { continue; }
+                                if attempts < MAX_ATTEMPTS { continue; }
                             }
-                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Ok(CommandRunResult::Cancelled) => return Ok(CommandRunResult::Cancelled),
                             Err(fix_err) => {
-                                let _ = tx.send(ActionResult::Error(format!("Conflict resolution failed: {}", fix_err)));
-                                return CommandRunResult::Finished;
+                                return Err(crate::errors::AppError::Backend(format!("Conflict resolution failed: {}", fix_err)));
                             }
                         }
                     }
@@ -318,7 +316,7 @@ async fn run_command_sequence(
                         };
                         if let Ok(CommandRunResult::Finished) = run_single_command(&fix2, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
                                 let _ = tx.send(ActionResult::CommandOutput("Keys refreshed. Retrying...".to_string()));
-                                if attempts < max_attempts { continue; }
+                                if attempts < MAX_ATTEMPTS { continue; }
                             }
                     }
 
@@ -327,6 +325,7 @@ async fn run_command_sequence(
                         let _ = tx.send(ActionResult::CommandOutput(
                             "Disk space issue. Try: sudo pacman -Scc to clean cache".to_string(),
                         ));
+                        return Err(crate::errors::AppError::ResourceExhausted(err));
                     }
 
                     // Handle network errors - retry
@@ -347,9 +346,8 @@ async fn run_command_sequence(
                     }
 
                     // Max attempts reached
-                    if attempts >= max_attempts {
-                        let _ = tx.send(ActionResult::Error(format!("Failed after {} attempts: {}", attempts, err)));
-                        return CommandRunResult::Finished;
+                    if attempts >= MAX_ATTEMPTS {
+                        return Err(crate::errors::AppError::Backend(format!("Failed after {} attempts: {}", attempts, err)));
                     }
 
                     // Retry other errors
@@ -360,7 +358,7 @@ async fn run_command_sequence(
         }
     }
 
-    CommandRunResult::Finished
+    Ok(CommandRunResult::Finished)
 }
 
 #[tokio::main]
@@ -394,10 +392,30 @@ async fn main() -> Result<()> {
     let cancel_requested = Arc::new(AtomicBool::new(false));
     let shutdown_requested = Arc::new(AtomicBool::new(false));
 
+    // Initialize robustness suite
+    let watchdog = Arc::new(crate::watchdog::HealthWatchdog::new(Duration::from_secs(5)));
+    let simulator = Arc::new(crate::simulation::SimulationEngine::new("pacman".to_string()));
+    
+    // Check for btrfs
+    let root_path = "/";
+    let snapshots_dir = "/.snapshots";
+    let btrfs_provider = if std::path::Path::new("/usr/bin/btrfs").exists() {
+        Some(Arc::new(crate::backends::snapshots::btrfs::BtrfsProvider::new(root_path, snapshots_dir)) as Arc<dyn crate::traits::SnapshotProvider>)
+    } else {
+        None
+    };
+
+    let transaction_manager = Arc::new(crate::transaction_manager::TransactionManager::new(
+        btrfs_provider,
+        simulator.clone(),
+        watchdog.clone(),
+    ));
+
     // Create app
     let aur_helper = app_config.aur_helper.clone();
     let mut app = App::new();
     app.config = app_config;
+    app.operation_queue = crate::operation_queue::OperationQueue::with_manager(transaction_manager.clone());
     app.items_per_page = app.config.ui.items_per_page;
     app.search_debounce_duration = Duration::from_millis(app.config.ui.search_debounce_ms);
     app.max_history_size = app.config.ui.max_search_history;
@@ -433,6 +451,7 @@ async fn main() -> Result<()> {
     let aur_helper_for_spawn = aur_helper.clone();
     let active_pid_for_spawn = active_pid.clone();
     let cancel_requested_for_spawn = cancel_requested.clone();
+    let transaction_manager_for_spawn = transaction_manager.clone();
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
             let action_id = action.id();
@@ -474,22 +493,28 @@ async fn main() -> Result<()> {
                     let active_pid_clone = active_pid_for_spawn.clone();
                     let cancel_requested_clone = cancel_requested_for_spawn.clone();
                     let commands = commands.clone();
+                    let tm = transaction_manager_for_spawn.clone();
 
                     tokio::spawn(async move {
-                        let sequence_result = run_command_sequence(
-                            commands,
-                            result_tx_clone.clone(),
-                            active_pid_clone,
-                            cancel_requested_clone,
-                        )
-                        .await;
+                        let res = tm.run_safe_transaction("operation", || async {
+                            run_command_sequence(
+                                commands,
+                                result_tx_clone.clone(),
+                                active_pid_clone,
+                                cancel_requested_clone,
+                            )
+                            .await
+                        }).await;
 
-                        match sequence_result {
-                            CommandRunResult::Finished => {
+                        match res {
+                            Ok(CommandRunResult::Finished) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandFinished);
                             }
-                            CommandRunResult::Cancelled => {
+                            Ok(CommandRunResult::Cancelled) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
                             }
                         }
                     });
@@ -518,6 +543,7 @@ async fn main() -> Result<()> {
                     let aur_helper_value = aur_helper_for_spawn.clone();
                     let active_pid_clone = active_pid_for_spawn.clone();
                     let cancel_requested_clone = cancel_requested_for_spawn.clone();
+                    let tm = transaction_manager_for_spawn.clone();
 
                     tokio::spawn(async move {
                         let helper_cmd = AurHelperCommand::new(&crate::config::AppConfig {
@@ -525,21 +551,53 @@ async fn main() -> Result<()> {
                             ..Default::default()
                         });
 
-                        let sequence_result = run_command_sequence(
-                            vec![helper_cmd.update_command()],
-                            result_tx_clone.clone(),
-                            active_pid_clone,
-                            cancel_requested_clone,
-                        )
-                        .await;
+                        let res = tm.run_safe_transaction("system-update", || async {
+                            run_command_sequence(
+                                vec![helper_cmd.update_command()],
+                                result_tx_clone.clone(),
+                                active_pid_clone,
+                                cancel_requested_clone,
+                            )
+                            .await
+                        }).await;
 
-                        match sequence_result {
-                            CommandRunResult::Finished => {
+                        match res {
+                            Ok(CommandRunResult::Finished) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandFinished);
                                 let _ = action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
                             }
-                            CommandRunResult::Cancelled => {
+                            Ok(CommandRunResult::Cancelled) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
+                            }
+                        }
+                    });
+                }
+                ActionInner::Simulate(commands) => {
+                    tracing::info!(action_id, "Processing Simulate action");
+                    let result_tx_clone = result_tx.clone();
+                    let simulator = simulator.clone();
+                    let commands = commands.clone();
+
+                    tokio::spawn(async move {
+                        let pkg_names = if let Some(cmd) = commands.first() {
+                            if cmd.args.len() > 1 {
+                                vec![cmd.args[cmd.args.len() - 1].as_str()]
+                            } else {
+                                vec!["system"]
+                            }
+                        } else {
+                            vec!["system"]
+                        };
+                        
+                        match simulator.simulate_install(&pkg_names).await {
+                            Ok(res) => {
+                                let _ = result_tx_clone.send(ActionResult::SimulationResult(res));
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone.send(ActionResult::Error(format!("Simulation failed: {}", e)));
                             }
                         }
                     });
@@ -799,6 +857,11 @@ async fn main() -> Result<()> {
                     if count > 0 {
                         app.add_toast(format!("{} updates available!", count), crate::animations::ToastStyle::Warning);
                     }
+                }
+                ActionResult::SimulationResult(res) => {
+                    app.simulation_result = Some(res);
+                    app.show_simulation = true;
+                    app.is_loading = false;
                 }
                 ActionResult::Cancelled => {
                     app.is_operation_running = false;

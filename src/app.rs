@@ -193,6 +193,9 @@ pub struct App {
     pub transaction_history: VecDeque<TransactionRecord>,
     pub current_transaction: Option<TransactionRecord>,
 
+    // Operation queue for batch operations
+    pub operation_queue: crate::operation_queue::OperationQueue,
+
     // Visual overhaul - sidebar, animations, toasts, scroll states
     pub show_sidebar: bool,
     pub animation_state: crate::animations::AnimationState,
@@ -210,6 +213,8 @@ pub struct App {
     // Robustness & Safety
     pub show_simulation: bool,
     pub simulation_result: Option<crate::traits::SimulationResult>,
+    pub pending_simulation_commands: Vec<CommandSpec>,
+    pub pending_simulation_packages: Vec<Package>,
     pub show_rollback_confirm: bool,
     pub pending_rollback_id: Option<String>,
 }
@@ -327,6 +332,7 @@ impl App {
 
             transaction_history: VecDeque::new(),
             current_transaction: None,
+            operation_queue: crate::operation_queue::OperationQueue::new(),
 
             show_sidebar: false,
             animation_state: crate::animations::AnimationState::new(),
@@ -343,6 +349,8 @@ impl App {
             // Robustness & Safety
             show_simulation: false,
             simulation_result: None,
+            pending_simulation_commands: Vec::new(),
+            pending_simulation_packages: Vec::new(),
             show_rollback_confirm: false,
             pending_rollback_id: None,
         }

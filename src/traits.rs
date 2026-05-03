@@ -48,6 +48,7 @@ pub trait SnapshotProvider: Send + Sync {
 }
 
 /// Information about a filesystem snapshot
+#[derive(Debug, Clone)]
 pub struct SnapshotInfo {
     /// Unique identifier for the snapshot
     pub id: String,
@@ -57,7 +58,7 @@ pub struct SnapshotInfo {
     pub created_at: chrono::DateTime<chrono::Local>,
 }
 
-/// Trait for package simulation
+/// Interface for package operation simulation (dry-run)
 #[async_trait]
 pub trait PackageSimulator: Send + Sync {
     /// Simulate installing a set of packages
@@ -68,6 +69,7 @@ pub trait PackageSimulator: Send + Sync {
 }
 
 /// Result of a package operation simulation
+#[derive(Debug, Clone)]
 pub struct SimulationResult {
     /// Total download size in bytes
     pub total_download_bytes: u64,
@@ -75,6 +77,6 @@ pub struct SimulationResult {
     pub disk_change_bytes: i64,
     /// List of identified package conflicts
     pub conflicts: Vec<String>,
-    /// List of configuration files that will be modified
+    /// List of potential configuration file changes
     pub config_changes: Vec<String>,
 }

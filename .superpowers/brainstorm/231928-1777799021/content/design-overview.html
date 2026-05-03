@@ -1,0 +1,55 @@
+<h2>Robustness & Safety Design</h2>
+<p class="subtitle">Architecture for the "Never-Break" System Suite</p>
+
+<div class="mockup">
+  <div class="mockup-header">Component Overview</div>
+  <div class="mockup-body">
+    <div style="display: flex; gap: 20px;">
+      <!-- Snapshot Layer -->
+      <div style="flex: 1; border: 1px solid #444; padding: 10px; border-radius: 4px;">
+        <h4 style="color: #89b4fa;">1. Snapshot Engine</h4>
+        <p style="font-size: 13px;">Generic Trait Interface:</p>
+        <ul style="font-size: 12px; color: #a6adc8;">
+          <li><code>create_snapshot(name)</code></li>
+          <li><code>rollback(id)</code></li>
+          <li><code>list_snapshots()</code></li>
+        </ul>
+        <div style="background: #313244; padding: 5px; font-size: 11px; margin-top: 5px;">
+          Providers: BTRFS, ZFS, LVM, Timeshift
+        </div>
+      </div>
+
+      <!-- Dry Run Layer -->
+      <div style="flex: 1; border: 1px solid #444; padding: 10px; border-radius: 4px;">
+        <h4 style="color: #fab387;">2. Simulation Layer</h4>
+        <p style="font-size: 13px;">Pre-Execution Hook:</p>
+        <ul style="font-size: 12px; color: #a6adc8;">
+          <li>Native Dry-Run (Pacman -S p)</li>
+          <li>Disk Space Projection</li>
+          <li>Conflicting File Detection</li>
+        </ul>
+      </div>
+
+      <!-- Watchdog Layer -->
+      <div style="flex: 1; border: 1px solid #444; padding: 10px; border-radius: 4px;">
+        <h4 style="color: #f38ba8;">3. Health Watchdog</h4>
+        <p style="font-size: 13px;">Background Checks:</p>
+        <ul style="font-size: 12px; color: #a6adc8;">
+          <li>Mirror Latency Monitoring</li>
+          <li>GPG Key Expiry Alerts</li>
+          <li>Database Integrity Verifier</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>The Workflow</h3>
+  <ol style="color: #a6adc8;">
+    <li><b>User selects packages</b> and hits Install.</li>
+    <li><b>Simulation Layer</b> runs a dry-run. If conflicts found → Show Warning.</li>
+    <li><b>Snapshot Engine</b> creates a "Pre-Install" restore point.</li>
+    <li><b>Execution</b> proceeds. If failure occurs → Offer 1-click Rollback.</li>
+  </ol>
+</div>

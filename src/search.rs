@@ -296,12 +296,14 @@ fn split_query(input: &str) -> Vec<String> {
 }
 
 fn parse_size(value: &str) -> Option<u64> {
-    let value = value.trim();
-    let multiplier: u64 = if value.ends_with("GB") || value.ends_with("G") {
+    let value = value.trim().to_uppercase();
+    let multiplier: u64 = if value.ends_with("TIB") || value.ends_with("TI") || value.ends_with("TB") || value.ends_with("T") {
+        1024 * 1024 * 1024
+    } else if value.ends_with("GIB") || value.ends_with("GI") || value.ends_with("GB") || value.ends_with("G") {
         1024 * 1024
-    } else if value.ends_with("MB") || value.ends_with("M") {
+    } else if value.ends_with("MIB") || value.ends_with("MI") || value.ends_with("MB") || value.ends_with("M") {
         1024
-    } else if value.ends_with("KB") || value.ends_with("K") || value.ends_with("KB") {
+    } else if value.ends_with("KIB") || value.ends_with("KI") || value.ends_with("KB") || value.ends_with("K") {
         1
     } else {
         1

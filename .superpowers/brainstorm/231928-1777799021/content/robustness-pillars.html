@@ -1,0 +1,46 @@
+<h2>Robustness & Safety Suite</h2>
+<p class="subtitle">I'll design these three pillars to make arch-tui "system-safe." Which one should we refine first?</p>
+
+<div class="cards">
+  <!-- Snapshot Card -->
+  <div class="card" data-choice="snapshots" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #1e1e2e; padding: 15px; font-family: monospace; font-size: 12px; color: #a6adc8;">
+      <div style="color: #89b4fa;">[System Snapshot]</div>
+      <div>├─ pre-update-2026-05-03</div>
+      <div style="color: #f38ba8;">└─ [Active] post-update (Broken)</div>
+      <div style="margin-top: 10px; color: #a6e3a1;">> ROLLBACK TO STABLE? [Y/n]</div>
+    </div>
+    <div class="card-body">
+      <h3>Transaction Rollbacks</h3>
+      <p>BTRFS/LVM integration to create atomic snapshots before major operations.</p>
+    </div>
+  </div>
+
+  <!-- Dry Run Card -->
+  <div class="card" data-choice="dryrun" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #1e1e2e; padding: 15px; font-family: monospace; font-size: 12px; color: #a6adc8;">
+      <div style="color: #fab387;">[Dry-Run Simulation]</div>
+      <div>Net Change: +450MB</div>
+      <div style="color: #f38ba8;">Conflicts: 0</div>
+      <div style="color: #89b4fa;">Config Overwrites: /etc/pacman.conf</div>
+    </div>
+    <div class="card-body">
+      <h3>Predictive Dry-Run</h3>
+      <p>Simulate operations to predict disk impact and file conflicts before execution.</p>
+    </div>
+  </div>
+
+  <!-- Health Card -->
+  <div class="card" data-choice="health" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #1e1e2e; padding: 15px; font-family: monospace; font-size: 12px; color: #a6adc8;">
+      <div style="color: #89b4fa;">[Source Health]</div>
+      <div>Mirror #1: 45ms (Healthy)</div>
+      <div style="color: #f9e2af;">Mirror #2: 1500ms (Slow)</div>
+      <div style="color: #f38ba8;">GPG Key: Expired (python-pypy)</div>
+    </div>
+    <div class="card-body">
+      <h3>Mirror & GPG Health</h3>
+      <p>Real-time monitoring of mirror speed and GPG key validity to prevent failures.</p>
+    </div>
+  </div>
+</div>

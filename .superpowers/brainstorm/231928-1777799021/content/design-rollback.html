@@ -1,0 +1,27 @@
+<h2>Error Handling & Rollback Logic</h2>
+<p class="subtitle">What happens when things go wrong?</p>
+
+<div class="mockup">
+  <div class="mockup-header">Rollback UI Mockup</div>
+  <div class="mockup-body" style="background: #11111b; border: 1px solid #f38ba8; padding: 20px; text-align: center;">
+    <h3 style="color: #f38ba8;">⚠️ Operation Failed</h3>
+    <p style="font-size: 14px; color: #cdd6f4;">The installation of <code>nvidia-utils</code> exited with an error.</p>
+    <div style="background: #181825; padding: 10px; margin: 15px 0; font-family: monospace; font-size: 12px; color: #f38ba8; text-align: left;">
+      error: failed to commit transaction (conflicting files)<br>
+      /usr/lib/libnvidia-glcore.so.550.67 exists in filesystem
+    </div>
+    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px;">
+      <button style="background: #f38ba8; color: #11111b; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold;">[R] Rollback to Snapshot</button>
+      <button style="background: #313244; color: #cdd6f4; border: none; padding: 8px 16px; border-radius: 4px;">[C] Close (Keep Changes)</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>The Rollback Strategy</h3>
+  <ul>
+    <li><b>Automatic cleanup:</b> If an operation succeeds, the "Pre-Install" snapshot is marked for auto-deletion after 24 hours (configurable).</li>
+    <li><b>Forced Rollback:</b> If the user chooses Rollback, the system reboots (if needed for root FS) and uses the snapshot provider to set the default subvolume/dataset to the pre-install state.</li>
+    <li><b>Logging:</b> Every rollback event is logged with full context (why it failed, what was being installed).</li>
+  </ul>
+</div>

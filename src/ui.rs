@@ -69,12 +69,12 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_details_sidebar(app, f, sidebar_area, theme);
     }
 
-    if app.show_help {
-        render_help_overlay(f, area, theme);
-    } else if app.show_rollback_confirm {
+    if app.show_rollback_confirm {
         render_rollback_dialog(app, f, theme);
     } else if app.show_simulation {
         render_simulation_modal(app, f, theme);
+    } else if app.show_help {
+        render_help_overlay(f, area, theme);
     } else if app.show_updates_view {
         render_updates_view(app, f, area, theme);
     } else if app.show_diagnostics {
@@ -1165,9 +1165,9 @@ fn render_package_sizes_overlay(app: &App, f: &mut Frame, area: Rect, theme: &cr
         lines.push(Line::from("No package size data available."));
     } else {
         // Calculate total size
-        let total_kb: u64 = app.package_sizes.iter().map(|p| p.size_kb).sum();
-        let total_mb = total_kb as f64 / 1024.0;
-        lines.push(Line::from(format!("Top 30 largest packages (Total: {:.1} MB):", total_mb)));
+        let total_bytes: u64 = app.package_sizes.iter().map(|p| p.size_kb * 1024).sum();
+        let total_size = crate::models::Package::format_size_bytes(total_bytes);
+        lines.push(Line::from(format!("Top 30 largest packages (Total: {}):", total_size)));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("Package", Style::default().add_modifier(Modifier::BOLD)),
@@ -1269,17 +1269,7 @@ fn render_cache_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::the
 }
 
 fn format_cache_size(bytes: u64) -> String {
-    let kb = bytes as f64 / 1024.0;
-    let mb = kb / 1024.0;
-    let gb = mb / 1024.0;
-
-    if gb >= 1.0 {
-        format!("{:.2} GB", gb)
-    } else if mb >= 1.0 {
-        format!("{:.2} MB", mb)
-    } else {
-        format!("{:.2} KB", kb)
-    }
+    crate::models::Package::format_size_bytes(bytes)
 }
 
 fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -1848,11 +1838,11 @@ fn render_simulation_modal(app: &App, f: &mut Frame, theme: &crate::theme::Theme
 
     if let Some(result) = &app.simulation_result {
         // Summary
-        let download_size = crate::models::Package::format_size(result.total_download_bytes / 1024);
+        let download_size = crate::models::Package::format_size_bytes(result.total_download_bytes);
         let disk_change = if result.disk_change_bytes >= 0 {
-            format!("+{}", crate::models::Package::format_size(result.disk_change_bytes as u64 / 1024))
+            format!("+{}", crate::models::Package::format_size_bytes(result.disk_change_bytes as u64))
         } else {
-            format!("-{}", crate::models::Package::format_size(result.disk_change_bytes.abs() as u64 / 1024))
+            format!("-{}", crate::models::Package::format_size_bytes(result.disk_change_bytes.abs() as u64))
         };
 
         let summary = Paragraph::new(vec![
