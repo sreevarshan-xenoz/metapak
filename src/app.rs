@@ -24,24 +24,19 @@ pub enum InputMode {
     Normal,
     Editing,
 }
-
 /// Search filter options
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum FilterOption {
+    #[default]
     All,
     Installed,
     NotInstalled,
     RepoOnly,
     AurOnly,
+    Updates,
+    AUR,
     Group(String),
 }
-
-impl Default for FilterOption {
-    fn default() -> Self {
-        Self::All
-    }
-}
-
 /// Sort options
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortOption {
@@ -53,36 +48,28 @@ pub enum SortOption {
     Group,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum UpdatesSortOption {
     NameAsc,
     NameDesc,
     SizeAsc,
     SizeDesc,
     Repository,
+    #[default]
     SecurityFirst,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum UpdatesFilter {
+    #[default]
     All,
+    Security,
     SecurityOnly,
     Repository(String),
+    Official,
+    AUR,
     AurOnly,
 }
-
-impl Default for UpdatesSortOption {
-    fn default() -> Self {
-        Self::SecurityFirst
-    }
-}
-
-impl Default for UpdatesFilter {
-    fn default() -> Self {
-        Self::All
-    }
-}
-
 /// Main application state
 pub struct App {
     // Search
@@ -207,9 +194,15 @@ pub struct App {
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
 
+    // Overlay cursors for scrolling
+    pub history_cursor: Option<usize>,
+    pub console_cursor: Option<usize>,
+    pub diagnostics_cursor: Option<usize>,
+
     // Fuzzy search
     pub fuzzy_matcher: crate::search::FuzzySearch,
     pub fuzzy_scores: std::collections::HashMap<String, i64>,
+    pub fuzzy_indices: std::collections::HashMap<String, Vec<usize>>,
 
     // Robustness & Safety
     pub show_simulation: bool,
@@ -345,8 +338,13 @@ impl App {
             console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
 
+            history_cursor: Some(0),
+            console_cursor: Some(0),
+            diagnostics_cursor: Some(0),
+
             fuzzy_matcher: crate::search::FuzzySearch::new(),
             fuzzy_scores: std::collections::HashMap::new(),
+            fuzzy_indices: std::collections::HashMap::new(),
 
             // Robustness & Safety
             show_simulation: false,
@@ -600,11 +598,14 @@ impl App {
             FilterOption::NotInstalled => !pkg.is_installed,
             FilterOption::RepoOnly => matches!(pkg.source, crate::models::PackageSource::Pacman),
             FilterOption::AurOnly => matches!(pkg.source, crate::models::PackageSource::Aur),
+            FilterOption::Updates => pkg.is_installed && pkg.is_outdated,
+            FilterOption::AUR => matches!(pkg.source, crate::models::PackageSource::Aur),
             FilterOption::Group(ref g) => pkg.groups.iter().any(|gr| gr == g),
         });
 
         // Apply fuzzy scoring for search
         self.fuzzy_scores.clear();
+        self.fuzzy_indices.clear();
         if !self.search_input.is_empty() {
             let items: Vec<(String, String)> = filtered
                 .iter()
@@ -614,8 +615,9 @@ impl App {
             let results = self
                 .fuzzy_matcher
                 .filter_and_sort(&items, &self.search_input);
-            for (name, score, _) in results {
+            for (name, score, indices) in results {
                 self.fuzzy_scores.insert(name.to_string(), score);
+                self.fuzzy_indices.insert(name.to_string(), indices);
             }
         }
 
@@ -671,6 +673,31 @@ impl App {
             FilterOption::NotInstalled => FilterOption::RepoOnly,
             FilterOption::RepoOnly => FilterOption::AurOnly,
             FilterOption::AurOnly => FilterOption::All,
+            FilterOption::Updates => FilterOption::All,
+            FilterOption::AUR => FilterOption::All,
+            FilterOption::Group(_) => FilterOption::All,
+        };
+        self.apply_filter_and_sort();
+    }
+
+    pub fn set_filter(&mut self, filter: FilterOption) {
+        self.current_filter = filter;
+        self.apply_filter_and_sort();
+    }
+
+    pub fn next_filter(&mut self) {
+        self.cycle_filter();
+    }
+
+    pub fn previous_filter(&mut self) {
+        self.current_filter = match self.current_filter {
+            FilterOption::All => FilterOption::AurOnly,
+            FilterOption::Installed => FilterOption::All,
+            FilterOption::NotInstalled => FilterOption::Installed,
+            FilterOption::RepoOnly => FilterOption::NotInstalled,
+            FilterOption::AurOnly => FilterOption::RepoOnly,
+            FilterOption::Updates => FilterOption::All,
+            FilterOption::AUR => FilterOption::All,
             FilterOption::Group(_) => FilterOption::All,
         };
         self.apply_filter_and_sort();
@@ -866,8 +893,11 @@ impl App {
 
         if !matches!(self.updates_filter, UpdatesFilter::All) {
             packages.retain(|p| match &self.updates_filter {
+                UpdatesFilter::Security => p.is_security_update,
                 UpdatesFilter::SecurityOnly => p.is_security_update,
                 UpdatesFilter::Repository(repo) => &p.repository == repo,
+                UpdatesFilter::Official => !p.is_aur,
+                UpdatesFilter::AUR => p.is_aur,
                 UpdatesFilter::AurOnly => p.is_aur,
                 UpdatesFilter::All => true,
             });
@@ -1158,8 +1188,32 @@ impl App {
         self.animation_state.tick(delta_ms);
         self.expire_toasts();
 
+        // Update scroll state content positions
         self.results_scroll_state = self
             .results_scroll_state
-            .position(self.get_paginated_results().len());
+            .content_length(self.get_paginated_results().len());
+
+        if let Some(state) = self.history_scroll_state.as_mut() {
+            let len = self.transaction_history.len().min(30).saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.history_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.console_scroll_state.as_mut() {
+            *state = state.content_length(self.console_buffer.len());
+            if let Some(cursor) = self.console_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.diagnostics_scroll_state.as_mut() {
+            let len = self.diagnostics.len().saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.diagnostics_cursor {
+                *state = state.position(cursor);
+            }
+        }
     }
 }
