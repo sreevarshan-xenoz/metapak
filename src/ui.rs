@@ -17,6 +17,8 @@ use ratatui::{
 };
 use std::cmp::min;
 
+const CYAN: Color = Color::Rgb(0, 255, 255);
+
 pub fn render(app: &mut App, f: &mut Frame) {
     let theme = &app.theme;
     let area = f.size();
@@ -102,6 +104,12 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_foreign_overlay(app, f, area, theme);
     } else if app.show_groups {
         render_groups_overlay(app, f, area, theme);
+    } else if app.show_pacnew_pacsave {
+        render_pacnew_pacsave_overlay(app, f, area, theme);
+    } else if app.show_pacman_log {
+        render_pacman_log_overlay(app, f, area, theme);
+    } else if app.show_downgrade_modal {
+        render_downgrade_modal(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -125,6 +133,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_cache
         && !app.show_foreign
         && !app.show_groups
+        && !app.show_pacnew_pacsave
+        && !app.show_pacman_log
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1567,6 +1577,200 @@ fn render_groups_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::th
                 .border_type(BorderType::Thick)
                 .title("Package Groups")
                 .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(60, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_pacnew_pacsave_overlay(
+    app: &App,
+    f: &mut Frame,
+    area: Rect,
+    theme: &crate::theme::Theme,
+) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Config Files (.pacnew / .pacsave)",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.pacnew_pacsave_files.is_empty() {
+        lines.push(Line::from("No .pacnew or .pacsave files found in /etc."));
+    } else {
+        lines.push(Line::from(format!(
+            "Found {} file(s):",
+            app.pacnew_pacsave_files.len()
+        )));
+        lines.push(Line::from(""));
+        for (idx, file) in app.pacnew_pacsave_files.iter().enumerate() {
+            let indicator = if idx == app.pacnew_cursor.unwrap_or(0) {
+                "▶"
+            } else {
+                " "
+            };
+            let file_type_str = match file.file_type {
+                crate::services::PacnewType::New => ".pacnew",
+                crate::services::PacnewType::Save => ".pacsave",
+            };
+            lines.push(Line::from(vec![
+                Span::raw(indicator),
+                Span::raw(" "),
+                Span::styled(&file.original_name, Style::default().fg(CYAN)),
+                Span::raw(file_type_str),
+            ]));
+            if idx == app.pacnew_cursor.unwrap_or(0) {
+                lines.push(Line::from(vec![
+                    Span::raw("   "),
+                    Span::styled(
+                        &file.path,
+                        Style::default()
+                            .fg(theme.muted())
+                            .add_modifier(Modifier::DIM),
+                    ),
+                ]));
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(
+            "Keys: [↑/↓ or j/k] Navigate  [d] Delete  [Esc] Close",
+        ));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'N' to toggle this view"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Config Files")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_pacman_log_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Pacman Log",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "[1] All  [2] Installed  [3] Removed  [4] Upgraded",
+    ));
+
+    let filtered: Vec<_> = if let Some(filter) = &app.pacman_log_filter {
+        app.pacman_log_entries
+            .iter()
+            .filter(|e| &e.operation == filter)
+            .collect()
+    } else {
+        app.pacman_log_entries.iter().collect()
+    };
+
+    lines.push(Line::from(""));
+    if filtered.is_empty() {
+        lines.push(Line::from("No log entries found."));
+    } else {
+        lines.push(Line::from(format!("Showing {} entries:", filtered.len())));
+        lines.push(Line::from(""));
+        for entry in filtered.iter().take(30) {
+            let op_str = match &entry.operation {
+                crate::services::LogOperation::Installed => "[INSTALLED]",
+                crate::services::LogOperation::Removed => "[REMOVED]",
+                crate::services::LogOperation::Upgraded => "[UPGRADED]",
+                crate::services::LogOperation::Downgraded => "[DOWNGRADED]",
+            };
+            let color = match &entry.operation {
+                crate::services::LogOperation::Installed => theme.success(),
+                crate::services::LogOperation::Removed => theme.error(),
+                crate::services::LogOperation::Upgraded => theme.info(),
+                crate::services::LogOperation::Downgraded => theme.warning(),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(op_str, Style::default().fg(color)),
+                Span::raw(" "),
+                Span::styled(&entry.package, Style::default().fg(CYAN)),
+                Span::raw(" "),
+                Span::raw(&entry.timestamp),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "Keys: [↑/↓ or j/k] Scroll  [1-4] Filter  [Esc/L] Close",
+    ));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Pacman Log")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(75, 70, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_downgrade_modal(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let pkg_name = app.downgrade_package.as_deref().unwrap_or("Unknown");
+
+    let mut lines = vec![Line::from(vec![Span::styled(
+        format!("Downgrade: {}", pkg_name),
+        Style::default()
+            .fg(theme.warning())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    lines.push(Line::from("Select a version to downgrade:"));
+    lines.push(Line::from(""));
+
+    if app.available_versions.is_empty() {
+        lines.push(Line::from("No older versions available."));
+    } else {
+        for (idx, version) in app.available_versions.iter().enumerate() {
+            let indicator = if idx == app.downgrade_cursor.unwrap_or(0) {
+                "▶"
+            } else {
+                " "
+            };
+            lines.push(Line::from(vec![
+                Span::raw(indicator),
+                Span::raw(" "),
+                Span::styled(&version.version, Style::default().fg(CYAN)),
+                Span::raw(" ("),
+                Span::raw(&version.date),
+                Span::raw(")"),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "Keys: [↑/↓ or j/k] Navigate  [Enter] Select  [Esc] Cancel",
+    ));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Package Downgrade")
+                .border_style(Style::default().fg(theme.warning())),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 

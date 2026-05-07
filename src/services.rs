@@ -891,6 +891,240 @@ impl PackageService {
     pub async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
         self.update_provider.get_outdated_packages().await
     }
+
+    pub async fn get_orphans(&self) -> Result<Vec<String>> {
+        tokio::task::spawn_blocking(move || {
+            let output = Command::new("pacman")
+                .args(["-Qdtq"])
+                .output()
+                .map_err(|e| AppError::Pacman(format!("Failed to get orphans: {}", e)))?;
+
+            if !output.status.success() {
+                return Ok(Vec::new());
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let orphans: Vec<String> = stdout
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
+
+            Ok(orphans)
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+    }
+
+    pub async fn remove_orphans(&self, packages: &[String]) -> Result<Vec<CommandSpec>> {
+        if packages.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let names: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+        let helper = AurHelperCommand::new(&self.config);
+        Ok(vec![helper.remove_command(&names)])
+    }
+
+    pub fn scan_pacnew_pacsave() -> Result<Vec<PacnewPacsaveFile>> {
+        let mut files = Vec::new();
+        let etc_dir = std::path::Path::new("/etc");
+
+        if !etc_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let entries = std::fs::read_dir(etc_dir)
+            .map_err(|e| AppError::Other(format!("Failed to read /etc: {}", e)))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            let file_type = if let Some(ext) = path.extension() {
+                if ext == "pacnew" {
+                    Some(PacnewType::New)
+                } else if ext == "pacsave" {
+                    Some(PacnewType::Save)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(ft) = file_type {
+                let original_name = file_name
+                    .strip_suffix(".pacnew")
+                    .or_else(|| file_name.strip_suffix(".pacsave"))
+                    .unwrap_or(file_name)
+                    .to_string();
+
+                let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+
+                files.push(PacnewPacsaveFile {
+                    path: path.to_string_lossy().to_string(),
+                    original_name,
+                    file_type: ft,
+                    modified,
+                });
+            }
+        }
+
+        files.sort_by(|a, b| a.original_name.cmp(&b.original_name));
+        Ok(files)
+    }
+
+    pub fn read_pacman_log(limit: usize) -> Result<Vec<LogEntry>> {
+        let log_path = std::path::Path::new("/var/log/pacman.log");
+        if !log_path.exists() {
+            return Err(AppError::Other("Pacman log not found".to_string()));
+        }
+
+        let content = std::fs::read_to_string(log_path)
+            .map_err(|e| AppError::Other(format!("Failed to read log: {}", e)))?;
+
+        let entries: Vec<LogEntry> = content
+            .lines()
+            .rev()
+            .take(limit)
+            .filter_map(|line| Self::parse_log_line(line))
+            .collect();
+
+        Ok(entries)
+    }
+
+    fn parse_log_line(line: &str) -> Option<LogEntry> {
+        // Format: [2026-05-07T10:30:45+0000] [ALPM] info: installed foo
+        let line = line.trim();
+        if !line.starts_with('[') {
+            return None;
+        }
+
+        let mut parts = line.splitn(4, ']');
+        let timestamp = parts.next()?.trim_start_matches('[').to_string();
+        let rest = parts.next()?.trim();
+
+        let operation = if rest.contains("installed") {
+            LogOperation::Installed
+        } else if rest.contains("removed") {
+            LogOperation::Removed
+        } else if rest.contains("upgraded") {
+            LogOperation::Upgraded
+        } else if rest.contains("downgraded") {
+            LogOperation::Downgraded
+        } else {
+            return None;
+        };
+
+        // Extract package name from message like "installed foo"
+        let msg = parts.next()?.trim();
+        let package = msg.split_whitespace().last()?.to_string();
+
+        Some(LogEntry {
+            timestamp,
+            operation,
+            package,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PacnewPacsaveFile {
+    pub path: String,
+    pub original_name: String,
+    pub file_type: PacnewType,
+    pub modified: Option<std::time::SystemTime>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PacnewType {
+    New,
+    Save,
+}
+
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub operation: LogOperation,
+    pub package: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LogOperation {
+    Installed,
+    Removed,
+    Upgraded,
+    Downgraded,
+}
+
+#[derive(Debug, Clone)]
+pub struct AvailableVersion {
+    pub version: String,
+    pub date: String,
+    pub repo: String,
+}
+
+impl PackageService {
+    pub fn get_available_versions(pkg_name: &str) -> Result<Vec<AvailableVersion>> {
+        let output = Command::new("curl")
+            .args([
+                "-s",
+                &format!(
+                    "https://archive.archlinux.org/packages/{}/{}/",
+                    &pkg_name[0..1],
+                    pkg_name
+                ),
+            ])
+            .output();
+
+        if output.is_err() {
+            return Err(AppError::Other(
+                "Failed to fetch package versions".to_string(),
+            ));
+        }
+
+        let output = output.unwrap();
+        let html = String::from_utf8_lossy(&output.stdout);
+        let mut versions = Vec::new();
+
+        let re = regex::Regex::new(r#"href="(\d{4}/\d{2}/\d{2})/([^"]+/)""#).unwrap();
+        for cap in re.captures_iter(&html) {
+            if let (Some(date), Some(ver)) = (cap.get(1), cap.get(2)) {
+                let version = ver.as_str().trim_end_matches('/').to_string();
+                if !version.is_empty() {
+                    versions.push(AvailableVersion {
+                        version,
+                        date: date.as_str().to_string(),
+                        repo: "unknown".to_string(),
+                    });
+                }
+            }
+        }
+
+        versions.sort_by(|a, b| b.version.cmp(&a.version));
+        versions.truncate(20);
+
+        Ok(versions)
+    }
+
+    pub fn build_downgrade_command(pkg_name: &str, version: &str) -> CommandSpec {
+        CommandSpec {
+            prog: "sudo".to_string(),
+            args: vec![
+                "pacman".to_string(),
+                "-U".to_string(),
+                "--noconfirm".to_string(),
+                format!(
+                    "https://archive.archlinux.org/packages/{}/{}/{}-{}.pkg.tar.zst",
+                    &pkg_name[0..1],
+                    pkg_name,
+                    pkg_name,
+                    version
+                ),
+            ],
+        }
+    }
 }
 
 impl Default for PackageService {
@@ -1279,7 +1513,7 @@ mod tests {
 
         // Put with very short TTL
         cache.put_cached(query, results);
-        
+
         // Immediate hit
         assert!(cache.get_cached(query, Duration::from_secs(10)).is_some());
 
@@ -1292,8 +1526,19 @@ mod tests {
         let cache = SearchCache::new();
         let query = "clear-query";
         cache.put_cached(query, vec![Package::new("p", "1")]);
-        
+
         cache.clear();
         assert!(cache.get_cached(query, Duration::from_secs(60)).is_none());
     }
+}
+
+pub fn copy_to_clipboard(text: &str) -> bool {
+    match arboard::Clipboard::new() {
+        Ok(mut clipboard) => clipboard.set_text(text).is_ok(),
+        Err(_) => false,
+    }
+}
+
+pub fn get_aur_clone_command(pkg_name: &str) -> String {
+    format!("git clone https://aur.archlinux.org/{}.git", pkg_name)
 }

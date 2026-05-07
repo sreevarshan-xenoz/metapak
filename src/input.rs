@@ -159,6 +159,131 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_pacnew_pacsave {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('N') => {
+                    app.show_pacnew_pacsave = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if cursor > 0 {
+                            app.pacnew_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.pacnew_pacsave_files.len().saturating_sub(1);
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if cursor < max {
+                            app.pacnew_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                KeyCode::Char('d') => {
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if let Some(file) = app.pacnew_pacsave_files.get(cursor) {
+                            if let Err(e) = std::fs::remove_file(&file.path) {
+                                app.add_toast(
+                                    format!("Failed to delete: {}", e),
+                                    crate::animations::ToastStyle::Error,
+                                );
+                            } else {
+                                app.pacnew_pacsave_files.remove(cursor);
+                                if app.pacnew_pacsave_files.is_empty() {
+                                    app.show_pacnew_pacsave = false;
+                                } else {
+                                    let max = app.pacnew_pacsave_files.len().saturating_sub(1);
+                                    app.pacnew_cursor = Some(cursor.min(max));
+                                }
+                                app.add_toast(
+                                    "File deleted".to_string(),
+                                    crate::animations::ToastStyle::Success,
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if app.show_pacman_log {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('L') => {
+                    app.show_pacman_log = false;
+                }
+                KeyCode::Char('1') => {
+                    app.set_pacman_log_filter(None);
+                }
+                KeyCode::Char('2') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Installed));
+                }
+                KeyCode::Char('3') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Removed));
+                }
+                KeyCode::Char('4') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Upgraded));
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.diagnostics_cursor {
+                        if cursor > 0 {
+                            app.diagnostics_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.pacman_log_entries.len().saturating_sub(1);
+                    if let Some(cursor) = app.diagnostics_cursor {
+                        if cursor < max {
+                            app.diagnostics_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if app.show_downgrade_modal {
+            match key.code {
+                KeyCode::Esc => {
+                    app.hide_downgrade_modal();
+                }
+                KeyCode::Enter => {
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if let Some(version) = app.available_versions.get(cursor) {
+                            if let Some(pkg_name) = &app.downgrade_package {
+                                let cmd = crate::services::PackageService::build_downgrade_command(
+                                    pkg_name,
+                                    &version.version,
+                                );
+                                app.pending_command = Some((cmd.prog.clone(), cmd.args.clone()));
+                                app.hide_downgrade_modal();
+                            }
+                        }
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if cursor > 0 {
+                            app.downgrade_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.available_versions.len().saturating_sub(1);
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if cursor < max {
+                            app.downgrade_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -389,6 +514,8 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         KeyCode::Char('C') => app.toggle_cache(),
         KeyCode::Char('F') => app.toggle_foreign(),
         KeyCode::Char('G') => app.toggle_groups(),
+        KeyCode::Char('N') => app.toggle_pacnew_pacsave(),
+        KeyCode::Char('l') => app.toggle_pacman_log(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {
@@ -471,11 +598,41 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             trigger_rollback(app);
         }
 
-        // Package Details
-        KeyCode::Char('d') => app.show_package_details(),
+        // Package Details / Downgrade (if installed)
+        KeyCode::Char('d') => {
+            if let Some(pkg) = app.get_selected_package() {
+                if pkg.is_installed {
+                    app.show_downgrade_modal(pkg.name.clone());
+                } else {
+                    app.show_package_details();
+                }
+            }
+        }
 
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
+
+        // Copy to clipboard
+        KeyCode::Char('y') => {
+            if let Some(pkg) = app.get_selected_package() {
+                let text = if matches!(pkg.source, crate::models::PackageSource::Aur) {
+                    crate::services::get_aur_clone_command(&pkg.name)
+                } else {
+                    pkg.name.clone()
+                };
+                if crate::services::copy_to_clipboard(&text) {
+                    app.add_toast(
+                        "Copied to clipboard".to_string(),
+                        crate::animations::ToastStyle::Success,
+                    );
+                } else {
+                    app.add_toast(
+                        "Failed to copy".to_string(),
+                        crate::animations::ToastStyle::Error,
+                    );
+                }
+            }
+        }
 
         // Open in browser
         KeyCode::Char('o') => {

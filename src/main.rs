@@ -70,6 +70,40 @@ use crate::notifications::DesktopNotifier;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
 use crate::traits::PackageSimulator;
 use crate::transaction_history::{save_history, TransactionStatus};
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "arch-tui")]
+#[command(about = "Arch Linux TUI Package Manager", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Initial search query (opens TUI with search pre-filled)
+    #[arg(short, long)]
+    search: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Search for packages
+    Search {
+        /// Package name to search for
+        query: String,
+    },
+    /// Check for updates
+    Check,
+    /// Install a package
+    Install {
+        /// Package name(s) to install
+        package: Vec<String>,
+    },
+    /// Remove a package
+    Remove {
+        /// Package name(s) to remove
+        package: Vec<String>,
+    },
+}
 
 async fn read_output_lines<R>(
     reader: R,
@@ -457,6 +491,67 @@ async fn run_command_sequence(
 async fn main() -> Result<()> {
     // Initialize tracing
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
+
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
+    // Handle CLI-only commands (non-interactive)
+    if let Some(command) = cli.command {
+        match command {
+            Commands::Search { query } => {
+                eprintln!("Searching for: {}", query);
+                let config = crate::config::AppConfig::default();
+                let service = PackageService::new(config);
+                match tokio::runtime::Runtime::new()?.block_on(service.search_all(&query)) {
+                    Ok(results) => {
+                        eprintln!("Found {} packages:", results.len());
+                        for pkg in results.iter().take(20) {
+                            eprintln!("  {} - {}", pkg.name, pkg.version);
+                        }
+                        if results.len() > 20 {
+                            eprintln!("  ... and {} more", results.len() - 20);
+                        }
+                    }
+                    Err(e) => eprintln!("Search failed: {}", e),
+                }
+                return Ok(());
+            }
+            Commands::Check => {
+                let config = crate::config::AppConfig::default();
+                let service = PackageService::new(config);
+                match tokio::runtime::Runtime::new()?.block_on(service.check_updates()) {
+                    Ok(count) => {
+                        if count > 0 {
+                            eprintln!("{} updates available", count);
+                        } else {
+                            eprintln!("System is up to date");
+                        }
+                    }
+                    Err(e) => eprintln!("Check failed: {}", e),
+                }
+                return Ok(());
+            }
+            Commands::Install { package } => {
+                eprintln!("Installing: {:?}", package);
+                let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
+                let cmd =
+                    helper.install_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                return Ok(());
+            }
+            Commands::Remove { package } => {
+                eprintln!("Removing: {:?}", package);
+                let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
+                let cmd =
+                    helper.remove_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                return Ok(());
+            }
+        }
+    }
+
+    // Handle --search flag (pre-fill search in TUI)
+    let initial_search = cli.search;
 
     // Display platform and package manager info
     let platform_info = crate::platform::get_platform_info();
