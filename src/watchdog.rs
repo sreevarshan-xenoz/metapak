@@ -12,6 +12,15 @@ pub struct MirrorHealth {
     pub reachable: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct DiskHealth {
+    pub mount_point: String,
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+    pub usage_percent: f64,
+}
+
 pub struct HealthWatchdog {
     ping_timeout: Duration,
 }
@@ -86,6 +95,72 @@ impl HealthWatchdog {
     pub async fn check_db_lock(&self) -> Result<bool> {
         Ok(Path::new("/var/lib/pacman/db.lck").exists())
     }
+
+    pub async fn check_disk_space(&self) -> Result<Vec<DiskHealth>> {
+        let output = Command::new("df")
+            .args(["-B1", "-T", "/", "/boot", "/home"])
+            .output()
+            .await
+            .map_err(|e| crate::errors::AppError::Command(format!("Failed to run df: {}", e)))?;
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut disks = Vec::new();
+
+        for line in stdout.lines().skip(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 7 {
+                let fs_type = parts[1];
+                if fs_type == "tmpfs" || fs_type == "devtmpfs" || fs_type == "squashfs" {
+                    continue;
+                }
+
+                let mount = parts[6].to_string();
+                if let (Ok(total), Ok(used), Ok(available)) = (
+                    parts[2].parse::<u64>(),
+                    parts[3].parse::<u64>(),
+                    parts[4].parse::<u64>(),
+                ) {
+                    let usage_percent = if total > 0 {
+                        (used as f64 / total as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    disks.push(DiskHealth {
+                        mount_point: mount,
+                        total_bytes: total,
+                        used_bytes: used,
+                        available_bytes: available,
+                        usage_percent,
+                    });
+                }
+            }
+        }
+
+        Ok(disks)
+    }
+
+    pub async fn check_pacman_status(&self) -> Result<PacmanStatus> {
+        let db_lock = self.check_db_lock().await?;
+        let gpg_ok = self.check_gpg_keys().await?;
+
+        Ok(PacmanStatus {
+            db_locked: db_lock,
+            gpg_valid: gpg_ok,
+            last_update: None,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PacmanStatus {
+    pub db_locked: bool,
+    pub gpg_valid: bool,
+    pub last_update: Option<chrono::DateTime<chrono::Local>>,
 }
 
 #[cfg(test)]

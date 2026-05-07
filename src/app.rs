@@ -156,6 +156,10 @@ pub struct App {
     pub diagnostics: Vec<crate::diagnostics::DiagnosticItem>,
     pub show_system_info: bool,
     pub system_info: Vec<crate::diagnostics::DiagnosticItem>,
+    pub show_health_dashboard: bool,
+    pub health_disk_info: Vec<crate::watchdog::DiskHealth>,
+    pub health_mirror_info: Vec<crate::watchdog::MirrorHealth>,
+    pub health_pacman_status: Option<crate::watchdog::PacmanStatus>,
     pub show_orphans: bool,
     pub orphan_packages: Vec<crate::diagnostics::OrphanPackage>,
     pub show_package_sizes: bool,
@@ -243,6 +247,9 @@ pub struct CommandProgress {
     pub current: usize,
     pub total: usize,
     pub current_package: String,
+    pub download_speed: Option<String>,
+    pub downloaded_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
 }
 
 impl App {
@@ -322,6 +329,10 @@ impl App {
             diagnostics: Vec::new(),
             show_system_info: false,
             system_info: Vec::new(),
+            show_health_dashboard: false,
+            health_disk_info: Vec::new(),
+            health_mirror_info: Vec::new(),
+            health_pacman_status: None,
             show_orphans: false,
             orphan_packages: Vec::new(),
             show_package_sizes: false,
@@ -838,6 +849,15 @@ impl App {
         self.show_system_info = !self.show_system_info;
     }
 
+    pub async fn toggle_health_dashboard(&mut self) {
+        if !self.show_health_dashboard {
+            let watchdog = crate::watchdog::HealthWatchdog::new(Duration::from_secs(5));
+            self.health_disk_info = watchdog.check_disk_space().await.unwrap_or_default();
+            self.health_pacman_status = watchdog.check_pacman_status().await.ok();
+        }
+        self.show_health_dashboard = !self.show_health_dashboard;
+    }
+
     pub fn toggle_orphans(&mut self) {
         if !self.show_orphans {
             self.orphan_packages = crate::diagnostics::find_orphan_packages();
@@ -1092,20 +1112,86 @@ impl App {
                             parts[0].trim().parse::<usize>(),
                             parts[1].trim().parse::<usize>(),
                         ) {
+                            // Try to extract package name and download info
+                            let package_name =
+                                line.split_whitespace().next().unwrap_or("").to_string();
+
+                            // Parse download speed (e.g., "5.2 MiB/s")
+                            let download_speed = line
+                                .split("downloading")
+                                .nth(1)
+                                .and_then(|s| s.split_whitespace().next())
+                                .map(|s| s.to_string());
+
+                            // Parse bytes downloaded (e.g., "5.2 MiB / 10.0 MiB")
+                            let (downloaded_bytes, total_bytes) = if line.contains("MiB")
+                                || line.contains("KiB")
+                                || line.contains("GiB")
+                            {
+                                Self::parse_download_size(line)
+                            } else {
+                                (None, None)
+                            };
+
                             self.command_progress = Some(CommandProgress {
                                 current,
                                 total,
-                                current_package: line
-                                    .split_whitespace()
-                                    .next()
-                                    .unwrap_or("")
-                                    .to_string(),
+                                current_package: package_name,
+                                download_speed,
+                                downloaded_bytes,
+                                total_bytes,
                             });
                         }
                     }
                 }
             }
         }
+    }
+
+    fn parse_download_size(line: &str) -> (Option<u64>, Option<u64>) {
+        let mut downloaded: Option<u64> = None;
+        let mut total: Option<u64> = None;
+
+        // Match pattern like "5.2 MiB / 10.0 MiB"
+        if let Some(slash_pos) = line.find('/') {
+            let after_slash = &line[slash_pos..];
+            total = Self::parse_size_string(after_slash);
+
+            if slash_pos > 0 {
+                let before_slash = &line[..slash_pos];
+                if let Some(last_space) = before_slash.rfind(' ') {
+                    downloaded = Self::parse_size_string(&before_slash[last_space..]);
+                }
+            }
+        }
+
+        (downloaded, total)
+    }
+
+    fn parse_size_string(s: &str) -> Option<u64> {
+        let s = s.trim();
+        let multiplier: u64 = if s.contains("GiB") || s.contains("G") {
+            1024 * 1024 * 1024
+        } else if s.contains("MiB") || s.contains("M") {
+            1024 * 1024
+        } else if s.contains("KiB") || s.contains("K") {
+            1024
+        } else {
+            1
+        };
+
+        let num: f64 = s
+            .replace("GiB", "")
+            .replace("MiB", "")
+            .replace("KiB", "")
+            .replace("G", "")
+            .replace("M", "")
+            .replace("K", "")
+            .trim()
+            .parse()
+            .ok()?;
+
+        Some((num * multiplier as f64) as u64)
     }
 
     pub fn clear_console(&mut self) {

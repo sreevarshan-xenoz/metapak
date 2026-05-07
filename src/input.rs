@@ -509,6 +509,41 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.toggle_diagnostics();
         }
         KeyCode::Char('I') => app.toggle_system_info(),
+        KeyCode::Char('H') => {
+            // Toggle health dashboard - simple sync check
+            use std::process::Command;
+            let df_output = Command::new("df").args(["-B1", "-T"]).output();
+            if let Ok(output) = df_output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines().skip(1) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 7 {
+                        let mount = parts[6].to_string();
+                        if mount == "/" || mount == "/home" {
+                            if let (Ok(total), Ok(used), Ok(available)) = (
+                                parts[2].parse::<u64>(),
+                                parts[3].parse::<u64>(),
+                                parts[4].parse::<u64>(),
+                            ) {
+                                let usage = if total > 0 {
+                                    (used as f64 / total as f64) * 100.0
+                                } else {
+                                    0.0
+                                };
+                                app.health_disk_info.push(crate::watchdog::DiskHealth {
+                                    mount_point: mount,
+                                    total_bytes: total,
+                                    used_bytes: used,
+                                    available_bytes: available,
+                                    usage_percent: usage,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            app.show_health_dashboard = !app.show_health_dashboard;
+        }
         KeyCode::Char('O') => app.toggle_orphans(),
         KeyCode::Char('P') => app.toggle_package_sizes(),
         KeyCode::Char('C') => app.toggle_cache(),

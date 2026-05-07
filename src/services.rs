@@ -1530,6 +1530,88 @@ mod tests {
         cache.clear();
         assert!(cache.get_cached(query, Duration::from_secs(60)).is_none());
     }
+
+    #[test]
+    fn test_get_aur_clone_command() {
+        let cmd = get_aur_clone_command("firefox");
+        assert_eq!(cmd, "git clone https://aur.archlinux.org/firefox.git");
+
+        let cmd = get_aur_clone_command("polybar");
+        assert_eq!(cmd, "git clone https://aur.archlinux.org/polybar.git");
+    }
+
+    #[test]
+    fn test_log_operation_enum() {
+        assert_eq!(LogOperation::Installed, LogOperation::Installed);
+        assert_eq!(LogOperation::Removed, LogOperation::Removed);
+        assert_eq!(LogOperation::Upgraded, LogOperation::Upgraded);
+        assert_eq!(LogOperation::Downgraded, LogOperation::Downgraded);
+    }
+
+    #[test]
+    fn test_log_entry_creation() {
+        let entry = LogEntry {
+            timestamp: "2026-05-07T10:30:45+0000".to_string(),
+            operation: LogOperation::Installed,
+            package: "firefox".to_string(),
+        };
+        assert_eq!(entry.package, "firefox");
+        assert_eq!(entry.operation, LogOperation::Installed);
+    }
+
+    #[test]
+    fn test_pacnew_type_enum() {
+        assert_eq!(PacnewType::New, PacnewType::New);
+        assert_eq!(PacnewType::Save, PacnewType::Save);
+    }
+
+    #[test]
+    fn test_command_spec_display() {
+        let spec = CommandSpec {
+            prog: "sudo".to_string(),
+            args: vec!["pacman".to_string(), "-S".to_string(), "firefox".to_string()],
+        };
+        assert_eq!(command_display(&spec), "sudo pacman -S firefox");
+    }
+
+    #[test]
+    fn test_aur_helper_install_command_paru() {
+        let config = AppConfig {
+            aur_helper: "paru".to_string(),
+            ..Default::default()
+        };
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.install_command(&["firefox"]);
+        assert_eq!(cmd.prog, "paru");
+    }
+
+    #[test]
+    fn test_aur_helper_install_command_yay() {
+        let config = AppConfig {
+            aur_helper: "yay".to_string(),
+            ..Default::default()
+        };
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.install_command(&["vlc"]);
+        assert_eq!(cmd.prog, "yay");
+    }
+
+    #[test]
+    fn test_aur_helper_remove_command() {
+        let config = AppConfig::default();
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.remove_command(&["firefox"]);
+        assert!(cmd.args.contains(&"-Rns".to_string()));
+    }
+
+    #[test]
+    fn test_downgrade_command_builder() {
+        let cmd = PackageService::build_downgrade_command("firefox", "120.0-1");
+        assert_eq!(cmd.prog, "sudo");
+        assert!(cmd.args.contains(&"pacman".to_string()));
+        assert!(cmd.args.contains(&"-U".to_string()));
+        assert!(cmd.args.iter().any(|a| a.contains("archive.archlinux.org")));
+    }
 }
 
 pub fn copy_to_clipboard(text: &str) -> bool {

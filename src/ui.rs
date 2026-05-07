@@ -110,6 +110,8 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_pacman_log_overlay(app, f, area, theme);
     } else if app.show_downgrade_modal {
         render_downgrade_modal(app, f, area, theme);
+    } else if app.show_health_dashboard {
+        render_health_dashboard_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -135,6 +137,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_groups
         && !app.show_pacnew_pacsave
         && !app.show_pacman_log
+        && !app.show_health_dashboard
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
@@ -1779,6 +1782,113 @@ fn render_downgrade_modal(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     f.render_widget(para, popup);
 }
 
+fn render_health_dashboard_overlay(
+    app: &App,
+    f: &mut Frame,
+    area: Rect,
+    theme: &crate::theme::Theme,
+) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "System Health Dashboard",
+        Style::default()
+            .fg(theme.success())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    // Disk Space
+    lines.push(Line::from(vec![Span::styled(
+        "Disk Space:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )]));
+    if app.health_disk_info.is_empty() {
+        lines.push(Line::from("  No disk data available"));
+    } else {
+        for disk in &app.health_disk_info {
+            let used_mb = disk.used_bytes as f64 / 1024.0 / 1024.0;
+            let total_mb = disk.total_bytes as f64 / 1024.0 / 1024.0;
+            let color = if disk.usage_percent > 90.0 {
+                theme.error()
+            } else if disk.usage_percent > 75.0 {
+                theme.warning()
+            } else {
+                theme.success()
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(&disk.mount_point, Style::default().fg(CYAN)),
+                Span::raw(": "),
+                Span::styled(
+                    format!(
+                        "{:.1} / {:.1} MB ({:.1}%)",
+                        used_mb, total_mb, disk.usage_percent
+                    ),
+                    Style::default().fg(color),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "Pacman Status:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )]));
+    if let Some(status) = &app.health_pacman_status {
+        let db_color = if status.db_locked {
+            theme.error()
+        } else {
+            theme.success()
+        };
+        let gpg_color = if status.gpg_valid {
+            theme.success()
+        } else {
+            theme.error()
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  Database lock: "),
+            Span::styled(
+                if status.db_locked {
+                    "LOCKED"
+                } else {
+                    "Available"
+                },
+                Style::default().fg(db_color),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("  GPG keys: "),
+            Span::styled(
+                if status.gpg_valid {
+                    "Valid"
+                } else {
+                    "Invalid/Expired"
+                },
+                Style::default().fg(gpg_color),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from("  Status unknown"));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'H' to toggle this view"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Health Dashboard")
+                .border_style(Style::default().fg(theme.success())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(65, 50, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1863,25 +1973,55 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
 
     // Render progress bar if available
     if let Some(progress) = &app.command_progress {
+        let progress_y = if app.command_stdin_tx.is_some() {
+            chunk.y + chunk.height.saturating_sub(5)
+        } else {
+            chunk.y + chunk.height.saturating_sub(4)
+        };
+
+        // Package progress bar
         let progress_area = Rect {
             x: chunk.x + 2,
-            y: if app.command_stdin_tx.is_some() {
-                chunk.y + chunk.height.saturating_sub(4)
-            } else {
-                chunk.y + chunk.height.saturating_sub(3)
-            },
+            y: progress_y,
             width: chunk.width - 4,
             height: 1,
         };
 
         let ratio = progress.current as f64 / progress.total as f64;
+
+        // Build label with download info if available
+        let label = if let Some(speed) = &progress.download_speed {
+            if let (Some(downloaded), Some(total)) =
+                (progress.downloaded_bytes, progress.total_bytes)
+            {
+                let downloaded_mb = downloaded as f64 / 1024.0 / 1024.0;
+                let total_mb = total as f64 / 1024.0 / 1024.0;
+                format!(
+                    "{} ({}/{}) {} - {:.1}/{:.1} MB",
+                    progress.current_package,
+                    progress.current,
+                    progress.total,
+                    speed,
+                    downloaded_mb,
+                    total_mb
+                )
+            } else {
+                format!(
+                    "{} ({}/{}) {}",
+                    progress.current_package, progress.current, progress.total, speed
+                )
+            }
+        } else {
+            format!(
+                " {} {}/{} ",
+                progress.current_package, progress.current, progress.total
+            )
+        };
+
         let gauge = Gauge::default()
             .ratio(ratio.min(1.0))
-            .label(format!(
-                "{} {}/{}",
-                progress.current_package, progress.current, progress.total
-            ))
-            .style(Style::default().fg(theme.primary()).bg(theme.border()));
+            .label(&label)
+            .style(Style::default().fg(theme.success()).bg(theme.muted()));
 
         f.render_widget(gauge, progress_area);
     }
