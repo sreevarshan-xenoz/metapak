@@ -160,7 +160,8 @@ pub struct App {
     // Views
     pub show_package_details: bool,
     pub show_dependency_visualization: bool,
-    pub dependency_tree_text: Option<String>,
+    pub interactive_dependency_tree: Option<crate::dependency_visualization::InteractiveDependencyNode>,
+    pub dependency_tree_cursor: Option<usize>,
     pub show_help: bool,
     pub show_history: bool,
     pub show_diagnostics: bool,
@@ -303,7 +304,8 @@ impl App {
 
             show_package_details: false,
             show_dependency_visualization: false,
-            dependency_tree_text: None,
+            interactive_dependency_tree: None,
+            dependency_tree_cursor: None,
             show_help: false,
             show_history: false,
             show_diagnostics: false,
@@ -715,34 +717,39 @@ impl App {
 
     pub fn show_dependency_visualization(&mut self) {
         if let Some(pkg) = self.get_selected_package().cloned() {
-            let (tree, warnings) =
+            let (tree, _warnings) =
                 crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree_safe(
-                    &pkg, 3,
+                    &pkg, 5,
                 );
-            let mut text =
-                crate::dependency_visualization::DependencyVisualizationService::format_tree(
-                    &tree, 0, true, true,
-                );
-            if !warnings.is_empty() {
-                text.push_str("\nWarnings:\n");
-                for warning in warnings.iter().take(5) {
-                    text.push_str(&format!("- {}\n", warning));
-                }
-                if warnings.len() > 5 {
-                    text.push_str(&format!(
-                        "- ...and {} more warning(s)\n",
-                        warnings.len() - 5
-                    ));
-                }
-            }
-            self.dependency_tree_text = Some(text);
+            let mut interactive_tree = crate::dependency_visualization::InteractiveDependencyNode::from(tree);
+            
+            // Perform visual orphan analysis
+            let orphans = crate::diagnostics::find_orphan_packages();
+            let orphan_names: std::collections::HashSet<String> = orphans.into_iter().map(|o| o.name).collect();
+            crate::dependency_visualization::DependencyVisualizationService::mark_orphans(&mut interactive_tree, &orphan_names);
+
+            self.interactive_dependency_tree = Some(interactive_tree);
+            self.dependency_tree_cursor = Some(0);
             self.show_dependency_visualization = true;
         }
     }
 
     pub fn hide_dependency_visualization(&mut self) {
         self.show_dependency_visualization = false;
-        self.dependency_tree_text = None;
+        self.interactive_dependency_tree = None;
+        self.dependency_tree_cursor = None;
+    }
+
+    pub fn toggle_dependency_expansion(&mut self) {
+        let cursor = self.dependency_tree_cursor;
+        if let (Some(tree), Some(cursor)) = (self.interactive_dependency_tree.as_mut(), cursor) {
+            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+            if let Some(item) = flattened.get(cursor) {
+                crate::dependency_visualization::DependencyVisualizationService::toggle_node_expansion(
+                    tree, &item.name, item.depth, 0
+                );
+            }
+        }
     }
 
     pub fn toggle_help(&mut self) {

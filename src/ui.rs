@@ -1707,16 +1707,38 @@ fn render_dependency_visualization(app: &App, f: &mut Frame, theme: &crate::them
         .alignment(Alignment::Center);
         f.render_widget(title, chunks[0]);
 
-        let tree_text = app
-            .dependency_tree_text
-            .clone()
-            .unwrap_or_else(|| "No dependency information available.".to_string());
+        if let Some(tree) = &app.interactive_dependency_tree {
+            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+            let items: Vec<ListItem> = flattened.iter().map(|item| {
+                let style = if item.is_orphan {
+                    Style::default().fg(theme.warning())
+                } else if item.is_installed {
+                    Style::default().fg(theme.success())
+                } else {
+                    Style::default().fg(theme.foreground())
+                };
+                ListItem::new(item.full_display_name.clone()).style(style)
+            }).collect();
 
-        let tree_para = Paragraph::new(tree_text)
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .scroll((0, 0))
-            .style(Style::default().fg(theme.foreground()));
-        f.render_widget(tree_para, chunks[1]);
+            let mut state = ratatui::widgets::ListState::default();
+            state.select(app.dependency_tree_cursor);
+
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::NONE))
+                .highlight_style(
+                    Style::default()
+                        .fg(theme.highlight_fg())
+                        .bg(theme.highlight_bg())
+                        .add_modifier(Modifier::BOLD),
+                );
+
+            f.render_stateful_widget(list, chunks[1], &mut state);
+        } else {
+            let empty = Paragraph::new("No dependency information available.")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.muted()));
+            f.render_widget(empty, chunks[1]);
+        }
 
         // Footer
         let footer = Paragraph::new("Press 'Esc' to return")

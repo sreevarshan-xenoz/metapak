@@ -196,8 +196,26 @@ pub fn handle_event(app: &mut App, event: Event) {
         if app.show_dependency_visualization {
             match key.code {
                 KeyCode::Esc => app.hide_dependency_visualization(),
-                KeyCode::Char('j') | KeyCode::Down => {} // Could add scrolling
-                KeyCode::Char('k') | KeyCode::Up => {}
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.dependency_tree_cursor {
+                        if cursor > 0 {
+                            app.dependency_tree_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(cursor) = app.dependency_tree_cursor {
+                        if let Some(tree) = &app.interactive_dependency_tree {
+                            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+                            if cursor < flattened.len().saturating_sub(1) {
+                                app.dependency_tree_cursor = Some(cursor + 1);
+                            }
+                        }
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Right | KeyCode::Left => {
+                    app.toggle_dependency_expansion();
+                }
                 _ => {}
             }
             return;

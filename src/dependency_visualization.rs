@@ -42,6 +42,44 @@ impl DependencyNode {
     }
 }
 
+/// Represents an interactive dependency relationship with UI state
+#[derive(Debug, Clone)]
+pub struct InteractiveDependencyNode {
+    pub name: String,
+    pub version: String,
+    pub is_installed: bool,
+    pub is_expanded: bool,
+    pub is_orphan: bool,
+    pub children: Vec<InteractiveDependencyNode>,
+}
+
+impl From<DependencyNode> for InteractiveDependencyNode {
+    fn from(node: DependencyNode) -> Self {
+        Self {
+            name: node.name,
+            version: node.version,
+            is_installed: node.is_installed,
+            is_expanded: true, // Default to expanded
+            is_orphan: false,   // Will be calculated later
+            children: node.children.into_iter().map(InteractiveDependencyNode::from).collect(),
+        }
+    }
+}
+
+/// A flattened representation of a dependency node for UI rendering
+#[derive(Debug, Clone)]
+pub struct FlattenedDependencyItem {
+    pub name: String,
+    pub version: String,
+    pub is_installed: bool,
+    pub is_expanded: bool,
+    pub is_orphan: bool,
+    pub has_children: bool,
+    pub depth: usize,
+    pub prefix: String,
+    pub full_display_name: String,
+}
+
 /// Service for building dependency trees
 pub struct DependencyVisualizationService;
 
@@ -184,6 +222,87 @@ impl PacmanDependencyResolver {
 }
 
 impl DependencyVisualizationService {
+    /// Flattens an interactive tree into a list of items for UI rendering
+    pub fn flatten_interactive_tree(node: &InteractiveDependencyNode) -> Vec<FlattenedDependencyItem> {
+        let mut items = Vec::new();
+        Self::flatten_interactive_recursive(node, 0, &[], true, &mut items);
+        items
+    }
+
+    fn flatten_interactive_recursive(
+        node: &InteractiveDependencyNode,
+        depth: usize,
+        parent_prefixes: &[bool],
+        is_last: bool,
+        items: &mut Vec<FlattenedDependencyItem>
+    ) {
+        let mut prefix = String::new();
+        for &has_sibling in parent_prefixes {
+            prefix.push_str(if has_sibling { "│   " } else { "    " });
+        }
+        
+        if depth > 0 {
+            prefix.push_str(if is_last { "└── " } else { "├── " });
+        }
+
+        let expand_icon = if node.children.is_empty() {
+            "  "
+        } else if node.is_expanded {
+            "▼ "
+        } else {
+            "▶ "
+        };
+
+        let status = if node.is_installed { "✓" } else { "○" };
+        let orphan_tag = if node.is_orphan { " [Orphan]" } else { "" };
+        
+        items.push(FlattenedDependencyItem {
+            name: node.name.clone(),
+            version: node.version.clone(),
+            is_installed: node.is_installed,
+            is_expanded: node.is_expanded,
+            is_orphan: node.is_orphan,
+            has_children: !node.children.is_empty(),
+            depth,
+            prefix: prefix.clone(),
+            full_display_name: format!("{}{}{} {} ({}){}", prefix, expand_icon, status, node.name, node.version, orphan_tag),
+        });
+
+        if node.is_expanded {
+            let mut child_prefixes = parent_prefixes.to_vec();
+            if depth > 0 {
+                child_prefixes.push(!is_last);
+            }
+            let child_count = node.children.len();
+            for (i, child) in node.children.iter().enumerate() {
+                Self::flatten_interactive_recursive(child, depth + 1, &child_prefixes, i == child_count - 1, items);
+            }
+        }
+    }
+
+    pub fn toggle_node_expansion(node: &mut InteractiveDependencyNode, name: &str, target_depth: usize, current_depth: usize) -> bool {
+        if node.name == name && target_depth == current_depth {
+            node.is_expanded = !node.is_expanded;
+            return true;
+        }
+        for child in &mut node.children {
+            if Self::toggle_node_expansion(child, name, target_depth, current_depth + 1) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Marks nodes in the tree as orphans if they are present in the provided set
+    pub fn mark_orphans(node: &mut InteractiveDependencyNode, orphans: &HashSet<String>) {
+        if orphans.contains(&node.name) {
+            node.is_orphan = true;
+        }
+        for child in &mut node.children {
+            Self::mark_orphans(child, orphans);
+        }
+    }
+
     /// Builds a dependency tree for a given package
     ///
     /// # Arguments
