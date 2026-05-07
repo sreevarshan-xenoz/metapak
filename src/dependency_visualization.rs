@@ -60,8 +60,12 @@ impl From<DependencyNode> for InteractiveDependencyNode {
             version: node.version,
             is_installed: node.is_installed,
             is_expanded: true, // Default to expanded
-            is_orphan: false,   // Will be calculated later
-            children: node.children.into_iter().map(InteractiveDependencyNode::from).collect(),
+            is_orphan: false,  // Will be calculated later
+            children: node
+                .children
+                .into_iter()
+                .map(InteractiveDependencyNode::from)
+                .collect(),
         }
     }
 }
@@ -223,7 +227,9 @@ impl PacmanDependencyResolver {
 
 impl DependencyVisualizationService {
     /// Flattens an interactive tree into a list of items for UI rendering
-    pub fn flatten_interactive_tree(node: &InteractiveDependencyNode) -> Vec<FlattenedDependencyItem> {
+    pub fn flatten_interactive_tree(
+        node: &InteractiveDependencyNode,
+    ) -> Vec<FlattenedDependencyItem> {
         let mut items = Vec::new();
         Self::flatten_interactive_recursive(node, 0, &[], true, &mut items);
         items
@@ -234,13 +240,13 @@ impl DependencyVisualizationService {
         depth: usize,
         parent_prefixes: &[bool],
         is_last: bool,
-        items: &mut Vec<FlattenedDependencyItem>
+        items: &mut Vec<FlattenedDependencyItem>,
     ) {
         let mut prefix = String::new();
         for &has_sibling in parent_prefixes {
             prefix.push_str(if has_sibling { "│   " } else { "    " });
         }
-        
+
         if depth > 0 {
             prefix.push_str(if is_last { "└── " } else { "├── " });
         }
@@ -253,9 +259,13 @@ impl DependencyVisualizationService {
             "▶ "
         };
 
-        let status = if node.is_installed { "✓" } else { "○" };
+        let status = if node.is_installed {
+            "[Installed]"
+        } else {
+            "[Not Installed]"
+        };
         let orphan_tag = if node.is_orphan { " [Orphan]" } else { "" };
-        
+
         items.push(FlattenedDependencyItem {
             name: node.name.clone(),
             version: node.version.clone(),
@@ -265,7 +275,10 @@ impl DependencyVisualizationService {
             has_children: !node.children.is_empty(),
             depth,
             prefix: prefix.clone(),
-            full_display_name: format!("{}{}{} {} ({}){}", prefix, expand_icon, status, node.name, node.version, orphan_tag),
+            full_display_name: format!(
+                "{}{}{} {} ({}){}",
+                prefix, expand_icon, status, node.name, node.version, orphan_tag
+            ),
         });
 
         if node.is_expanded {
@@ -275,12 +288,23 @@ impl DependencyVisualizationService {
             }
             let child_count = node.children.len();
             for (i, child) in node.children.iter().enumerate() {
-                Self::flatten_interactive_recursive(child, depth + 1, &child_prefixes, i == child_count - 1, items);
+                Self::flatten_interactive_recursive(
+                    child,
+                    depth + 1,
+                    &child_prefixes,
+                    i == child_count - 1,
+                    items,
+                );
             }
         }
     }
 
-    pub fn toggle_node_expansion(node: &mut InteractiveDependencyNode, name: &str, target_depth: usize, current_depth: usize) -> bool {
+    pub fn toggle_node_expansion(
+        node: &mut InteractiveDependencyNode,
+        name: &str,
+        target_depth: usize,
+        current_depth: usize,
+    ) -> bool {
         if node.name == name && target_depth == current_depth {
             node.is_expanded = !node.is_expanded;
             return true;
@@ -403,54 +427,40 @@ impl DependencyVisualizationService {
     /// Formats the dependency tree as a string with box-drawing characters
     pub fn format_tree(
         node: &DependencyNode,
-        indent_level: usize,
         is_last: bool,
+        parent_prefixes: &[bool],
         is_root: bool,
     ) -> String {
-        if is_root {
-            let status = if node.is_installed { "✓" } else { "○" };
-            let mut result = format!("{} {} ({})\n", status, node.name, node.version);
-
-            let child_count = node.children.len();
-            for (i, child) in node.children.iter().enumerate() {
-                let child_is_last = i == child_count - 1;
-                let prefixes: Vec<bool> = vec![];
-                result.push_str(&Self::format_node(child, &prefixes, child_is_last));
-            }
-            result
+        let status = if node.is_installed {
+            "[Installed]"
         } else {
-            let prefixes: Vec<bool> = vec![false; indent_level];
-            Self::format_node(node, &prefixes, is_last)
-        }
-    }
-
-    fn format_node(node: &DependencyNode, parent_prefixes: &[bool], is_last: bool) -> String {
-        let status = if node.is_installed { "✓" } else { "○" };
+            "[Not Installed]"
+        };
         let mut result = String::new();
 
-        for &has_sibling in parent_prefixes.iter() {
-            if has_sibling {
-                result.push_str("│   ");
-            } else {
-                result.push_str("    ");
+        if !is_root {
+            for &has_sibling in parent_prefixes {
+                result.push_str(if has_sibling { "│   " } else { "    " });
             }
-        }
-
-        if is_last {
-            result.push_str("└── ");
-        } else {
-            result.push_str("├── ");
+            result.push_str(if is_last { "└── " } else { "├── " });
         }
 
         result.push_str(&format!("{} {} ({})\n", status, node.name, node.version));
 
         let mut child_prefixes = parent_prefixes.to_vec();
-        child_prefixes.push(!is_last);
+        if !is_root {
+            child_prefixes.push(!is_last);
+        }
 
         let child_count = node.children.len();
         for (i, child) in node.children.iter().enumerate() {
             let child_is_last = i == child_count - 1;
-            result.push_str(&Self::format_node(child, &child_prefixes, child_is_last));
+            result.push_str(&Self::format_tree(
+                child,
+                child_is_last,
+                &child_prefixes,
+                false,
+            ));
         }
 
         result
@@ -541,11 +551,12 @@ Description     : Test package
         root.add_child(child1);
         root.add_child(child2);
 
-        let formatted = DependencyVisualizationService::format_tree(&root, 0, true, true);
+        let formatted = DependencyVisualizationService::format_tree(&root, true, &[], true);
         assert!(formatted.contains("root"));
-        assert!(formatted.contains("child1"));
-        assert!(formatted.contains("child2"));
-        assert!(formatted.contains("grandchild"));
+        assert!(formatted.contains("[Installed] root"));
+        assert!(formatted.contains("├── [Not Installed] child1"));
+        assert!(formatted.contains("└── [Installed] child2"));
+        assert!(formatted.contains("    └── [Not Installed] grandchild"));
     }
 
     #[test]

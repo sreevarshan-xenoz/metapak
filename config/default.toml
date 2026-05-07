@@ -2,9 +2,6 @@ aur_helper = "auto"
 
 [theme]
 preset = "mocha"
-primary_color = "blue"
-secondary_color = "yellow"
-accent_color = "green"
 
 [keyboard]
 quit = "q"
@@ -36,3 +33,7 @@ max_undo_history = 20
 auto_check_updates = false
 update_check_interval_minutes = 60
 auto_update_on_startup = false
+
+[robustness]
+snapshot_keep_count = 5
+simulation_backend = "auto"

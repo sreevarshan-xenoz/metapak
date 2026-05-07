@@ -69,14 +69,49 @@ pub fn handle_event(app: &mut App, event: Event) {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('t') => app.show_history = false,
                 KeyCode::Char('R') => trigger_rollback(app),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.history_cursor {
+                        if current > 0 {
+                            app.history_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app
+                        .transaction_history
+                        .len()
+                        .saturating_add(2)
+                        .saturating_sub(1);
+                    if let Some(current) = app.history_cursor {
+                        if current < max {
+                            app.history_cursor = Some(current + 1);
+                        }
+                    }
+                }
                 _ => {}
             }
             return;
         }
 
         if app.show_diagnostics {
-            if key.code == KeyCode::Esc || key.code == KeyCode::Char('h') {
-                app.show_diagnostics = false;
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('h') => app.show_diagnostics = false,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.diagnostics_cursor {
+                        if current > 0 {
+                            app.diagnostics_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.diagnostics.len().saturating_add(3).saturating_sub(1);
+                    if let Some(current) = app.diagnostics_cursor {
+                        if current < max {
+                            app.diagnostics_cursor = Some(current + 1);
+                        }
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -132,9 +167,9 @@ pub fn handle_event(app: &mut App, event: Event) {
                         let password = crate::utils::PasswordInput::from_string(
                             app.password_input.expose_secret().to_string(),
                         );
-                        let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::InitSudo(
-                            password.get_secret().clone(),
-                        )));
+                        let _ = tx.send(crate::action::Action::new(
+                            crate::action::ActionInner::InitSudo(password.get_secret().clone()),
+                        ));
                     }
                     app.is_loading = true;
                 }
@@ -160,6 +195,21 @@ pub fn handle_event(app: &mut App, event: Event) {
                 }
                 KeyCode::Char('q') if app.command_stdin_tx.is_none() => {
                     app.show_console = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.console_cursor {
+                        if current > 0 {
+                            app.console_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.console_buffer.len().saturating_sub(1);
+                    if let Some(current) = app.console_cursor {
+                        if current < max {
+                            app.console_cursor = Some(current + 1);
+                        }
+                    }
                 }
                 KeyCode::Enter => {
                     if let Some(tx) = &app.command_stdin_tx {
@@ -251,10 +301,10 @@ pub fn handle_event(app: &mut App, event: Event) {
                     app.show_simulation = false;
                     app.show_console = true;
                     app.clear_console();
-                    
+
                     let commands = std::mem::take(&mut app.pending_simulation_commands);
                     let packages = std::mem::take(&mut app.pending_simulation_packages);
-                    
+
                     if !commands.is_empty() {
                         let installed_packages = packages
                             .iter()
@@ -274,7 +324,9 @@ pub fn handle_event(app: &mut App, event: Event) {
                         app.is_operation_running = true;
 
                         if let Some(tx) = &app.action_tx {
-                            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
+                            let _ = tx.send(crate::action::Action::new(
+                                crate::action::ActionInner::RunCommands(commands),
+                            ));
                         }
                     }
                 }
@@ -366,6 +418,13 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Filter and Sort
         KeyCode::Char('f') => app.cycle_filter(),
         KeyCode::Char('s') => app.cycle_sort(),
+        KeyCode::Char('1') => app.set_filter(crate::app::FilterOption::All),
+        KeyCode::Char('2') => app.set_filter(crate::app::FilterOption::Installed),
+        KeyCode::Char('3') => app.set_filter(crate::app::FilterOption::NotInstalled),
+        KeyCode::Char('4') => app.set_filter(crate::app::FilterOption::RepoOnly),
+        KeyCode::Char('5') => app.set_filter(crate::app::FilterOption::AurOnly),
+        KeyCode::Char('[') => app.previous_filter(),
+        KeyCode::Char(']') => app.next_filter(),
 
         // Actions
         KeyCode::Enter => {
@@ -401,7 +460,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.clear_console();
             app.is_operation_running = true;
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::SystemUpdate));
+                let _ = tx.send(crate::action::Action::new(
+                    crate::action::ActionInner::SystemUpdate,
+                ));
             }
         }
 
@@ -446,7 +507,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Cancel operation
         KeyCode::Char('c') if key == KeyCode::Char('c') => {
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::CancelOperation));
+                let _ = tx.send(crate::action::Action::new(
+                    crate::action::ActionInner::CancelOperation,
+                ));
             }
         }
 
@@ -479,7 +542,9 @@ fn trigger_rollback(app: &mut App) {
         app.clear_console();
         app.is_operation_running = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::RunCommands(commands)));
+            let _ = tx.send(crate::action::Action::new(
+                crate::action::ActionInner::RunCommands(commands),
+            ));
         }
     } else {
         app.error_message = Some("No successful transaction found to rollback.".to_string());
@@ -538,7 +603,9 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
         app.pending_simulation_packages = packages.to_vec();
         app.is_loading = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::new(crate::action::ActionInner::Simulate(commands)));
+            let _ = tx.send(crate::action::Action::new(
+                crate::action::ActionInner::Simulate(commands),
+            ));
         }
     }
 }

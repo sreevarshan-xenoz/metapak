@@ -14,8 +14,8 @@ use crate::theme::Theme;
 
 const SPINNER_CHARS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 const SPINNER_FRAME_COUNT: u8 = SPINNER_CHARS.len() as u8; // 8
-// At 30fps each frame advances every ~33ms; we advance one spinner frame every
-// 3 frames so the full cycle takes ~800ms (comfortable for terminal rendering).
+                                                           // At 30fps each frame advances every ~33ms; we advance one spinner frame every
+                                                           // 3 frames so the full cycle takes ~800ms (comfortable for terminal rendering).
 const MS_PER_SPINNER_FRAME: u64 = 100; // advance spinner every 100ms
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,9 @@ pub struct Toast {
 #[derive(Debug)]
 pub struct AnimationState {
     spinner_frame: u8,
+    pub accumulated_ms: u64,
     border_phase: f32,
+    last_tick: Instant,
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +72,9 @@ impl AnimationState {
     pub fn new() -> Self {
         Self {
             spinner_frame: 0,
+            accumulated_ms: 0,
             border_phase: 0.0,
+            last_tick: Instant::now(),
         }
     }
 
@@ -80,18 +84,13 @@ impl AnimationState {
     /// jump directly to the correct frame so the animation stays in sync
     /// with wall-clock time.
     pub fn tick(&mut self, delta_ms: u64) {
+        self.last_tick = Instant::now();
+
         // --- Spinner ---
-        // Total spinner frames advanced = delta_ms / MS_PER_SPINNER_FRAME
-        if delta_ms > 100 {
-            // Frame-skipping path: compute target frame directly.
-            let frames_advanced = (delta_ms / MS_PER_SPINNER_FRAME) as u8;
-            self.spinner_frame = (self.spinner_frame + frames_advanced) % SPINNER_FRAME_COUNT;
-        } else {
-            // Normal path: advance frame by frame (single step at a time).
-            let frames_advanced = (delta_ms / MS_PER_SPINNER_FRAME) as u8;
-            if frames_advanced > 0 {
-                self.spinner_frame = (self.spinner_frame + frames_advanced) % SPINNER_FRAME_COUNT;
-            }
+        self.accumulated_ms += delta_ms;
+        while self.accumulated_ms >= MS_PER_SPINNER_FRAME {
+            self.accumulated_ms -= MS_PER_SPINNER_FRAME;
+            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAME_COUNT;
         }
 
         // --- Border pulse ---
@@ -222,7 +221,9 @@ mod tests {
     fn make_state(spinner_frame: u8, border_phase: f32) -> AnimationState {
         AnimationState {
             spinner_frame,
+            accumulated_ms: 0,
             border_phase,
+            last_tick: Instant::now(),
         }
     }
 
@@ -269,15 +270,24 @@ mod tests {
         let mut state = make_state(0, 0.0);
         // A 200ms delta should advance spinner by 200/100 = 2 frames.
         state.tick(200);
-        assert_eq!(state.spinner_frame, 2, "200ms delta should advance 2 frames");
+        assert_eq!(
+            state.spinner_frame, 2,
+            "200ms delta should advance 2 frames"
+        );
 
         // A 500ms delta should advance by 5 frames → from 2 to 7.
         state.tick(500);
-        assert_eq!(state.spinner_frame, 7, "500ms delta should advance 5 frames");
+        assert_eq!(
+            state.spinner_frame, 7,
+            "500ms delta should advance 5 frames"
+        );
 
         // A 1000ms delta advances 10 frames → wraps: (7+10)%8 = 1.
         state.tick(1000);
-        assert_eq!(state.spinner_frame, 1, "1000ms delta should wrap to frame 1");
+        assert_eq!(
+            state.spinner_frame, 1,
+            "1000ms delta should wrap to frame 1"
+        );
     }
 
     // ---- Test 4: toast expiry after 3 seconds ----
@@ -408,8 +418,35 @@ mod tests {
 
     #[test]
     fn test_toast_with_custom_duration() {
-        let toast = Toast::new("hi".into(), ToastStyle::Info)
-            .with_duration(Duration::from_secs(10));
+        let toast =
+            Toast::new("hi".into(), ToastStyle::Info).with_duration(Duration::from_secs(10));
         assert_eq!(toast.duration, Duration::from_secs(10));
+    }
+
+    // ---- Test 6: spinner accumulates small ticks ----
+    #[test]
+    fn test_spinner_accumulates_small_ticks() {
+        let mut state = AnimationState::new();
+        assert_eq!(state.spinner_frame, 0);
+
+        // Advance by 33ms (simulating ~30fps).
+        // With MS_PER_SPINNER_FRAME = 100, it should NOT advance after one 33ms tick.
+        state.tick(33);
+        assert_eq!(state.spinner_frame, 0, "Should not advance after 33ms");
+
+        // After 3 ticks (99ms), it should still be at frame 0.
+        state.tick(33);
+        state.tick(33);
+        assert_eq!(
+            state.spinner_frame, 0,
+            "Should not advance after 99ms total"
+        );
+
+        // One more 33ms tick (132ms total) should advance it to frame 1.
+        state.tick(33);
+        assert_eq!(
+            state.spinner_frame, 1,
+            "Should advance to frame 1 after ~132ms total"
+        );
     }
 }

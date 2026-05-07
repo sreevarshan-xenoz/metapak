@@ -2,13 +2,24 @@
 
 [theme]
 # Theme preset: "mocha" (dark), "latte" (light), "dark", "light", or "custom"
+# "mocha" and "latte" use Catppuccin color palettes.
 preset = "mocha"
 
-# Optional color overrides (only used when preset = "custom" or to tweak presets)
-# Colors can be hex strings ("#89b4fa"), RGB ({r=100, g=150, b=255}), or named ("blue")
+# Optional color overrides
+# These can be used to tweak any preset or when using preset = "custom"
+# Colors can be:
+# - Hex strings: "#89b4fa"
+# - Named colors: "blue", "red", "green", "yellow", "magenta", "cyan", "white", "black"
+# - RGB objects: { r = 137, g = 180, b = 250 }
+
+# primary_color: Used for main UI accents and selection highlights
 # primary_color = "#89b4fa"
+
+# secondary_color: Used for secondary elements and AUR packages
 # secondary_color = "#fab387"
-# accent_color = "green"
+
+# accent_color: Used for success messages and installed packages
+# accent_color = "#a6e3a1"
 
 [aur]
 helper = "auto"
@@ -45,3 +56,7 @@ max_undo_history = 20
 auto_check_updates = false          # Enable periodic update checks
 update_check_interval_minutes = 60  # How often to check for updates
 auto_update_on_startup = false     # Check for updates on app start
+
+[robustness]
+snapshot_keep_count = 5            # Number of btrfs snapshots to keep
+simulation_backend = "auto"        # Backend for simulation (auto, mock)
