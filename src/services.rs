@@ -4,26 +4,18 @@
 //! following the provider traits pattern for better testability and organization.
 
 use async_trait::async_trait;
-use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::Command;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
 use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::search::EnhancedSearch;
 use crate::traits::{PackageProvider, UpdateProvider};
-
-/// Cache search results to avoid repeated queries
-static PACKAGE_CACHE: Lazy<DashMap<String, CachedSearch>> = Lazy::new(|| DashMap::new());
-
-/// Configurable cache TTL in seconds
-static CACHE_TTL_SECS: Lazy<std::sync::atomic::AtomicU64> =
-    Lazy::new(|| std::sync::atomic::AtomicU64::new(300));
 
 /// Circuit breaker for AUR API
 static AUR_CIRCUIT_BREAKER: Lazy<CircuitBreaker> = Lazy::new(|| CircuitBreaker::new());
@@ -110,78 +102,44 @@ impl Default for CircuitBreaker {
     }
 }
 
-/// Get the current cache TTL
-pub fn get_cache_ttl() -> u64 {
-    CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst)
+/// Thread-safe search result cache
+pub struct SearchCache {
+    map: RwLock<HashMap<String, (Vec<Package>, Instant)>>,
 }
 
-/// Set the cache TTL (in seconds)
-pub fn set_cache_ttl(seconds: u64) {
-    CACHE_TTL_SECS.store(seconds, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Clear the search cache
-pub fn clear_cache() {
-    PACKAGE_CACHE.clear();
-}
-
-/// Get cache statistics
-pub fn get_cache_stats() -> (usize, usize) {
-    let total = PACKAGE_CACHE.len();
-    let expired = PACKAGE_CACHE.iter().filter(|r| r.is_expired()).count();
-    (total, expired)
-}
-
-/// Enforce cache size limit to prevent memory exhaustion
-pub fn enforce_cache_limit() {
-    use crate::constants::cache::{CLEANUP_BATCH_SIZE, MAX_CACHE_ENTRIES};
-
-    if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
-        tracing::warn!(
-            "Cache size {} exceeds limit {}, cleaning up",
-            PACKAGE_CACHE.len(),
-            MAX_CACHE_ENTRIES
-        );
-
-        // Remove expired entries first
-        let keys_to_remove: Vec<String> = PACKAGE_CACHE
-            .iter()
-            .filter(|r| r.is_expired())
-            .take(CLEANUP_BATCH_SIZE)
-            .map(|r| r.key().to_string())
-            .collect();
-
-        for key in keys_to_remove {
-            PACKAGE_CACHE.remove(&key);
+impl SearchCache {
+    pub fn new() -> Self {
+        Self {
+            map: RwLock::new(HashMap::new()),
         }
+    }
 
-        // If still over limit, remove oldest entries
-        if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
-            // Note: DashMap doesn't maintain insertion order, so we just clear expired again
-            let remaining_keys: Vec<String> = PACKAGE_CACHE
-                .iter()
-                .take(PACKAGE_CACHE.len() - MAX_CACHE_ENTRIES + CLEANUP_BATCH_SIZE)
-                .map(|r| r.key().to_string())
-                .collect();
-
-            for key in remaining_keys {
-                PACKAGE_CACHE.remove(&key);
+    pub fn get_cached(&self, query: &str, ttl: Duration) -> Option<Vec<Package>> {
+        let map = self.map.read().ok()?;
+        if let Some((results, timestamp)) = map.get(query) {
+            if timestamp.elapsed() < ttl {
+                return Some(results.clone());
             }
+        }
+        None
+    }
+
+    pub fn put_cached(&self, query: &str, results: Vec<Package>) {
+        if let Ok(mut map) = self.map.write() {
+            map.insert(query.to_string(), (results, Instant::now()));
+        }
+    }
+
+    pub fn clear(&self) {
+        if let Ok(mut map) = self.map.write() {
+            map.clear();
         }
     }
 }
 
-/// Cached search entry with timestamp
-#[derive(Clone)]
-struct CachedSearch {
-    packages: Vec<Package>,
-    cached_at: std::time::Instant,
-}
-
-impl CachedSearch {
-    fn is_expired(&self) -> bool {
-        let ttl = CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst);
-        self.cached_at.elapsed() > std::time::Duration::from_secs(ttl)
+impl Default for SearchCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -197,15 +155,6 @@ impl PacmanProvider {
 #[async_trait]
 impl PackageProvider for PacmanProvider {
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
-        // Check cache first
-        let cache_key = format!("pacman:{}", query);
-        if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
-            if !cached.is_expired() {
-                tracing::debug!("Cache hit for pacman search: {}", query);
-                return Ok(cached.packages.clone());
-            }
-        }
-
         let query = query.to_string();
         tokio::task::spawn_blocking(move || Self::search_blocking(&query))
             .await
@@ -270,15 +219,6 @@ impl PacmanProvider {
                 }
             }
         }
-
-        let cache_key = format!("pacman:{}", query);
-        PACKAGE_CACHE.insert(
-            cache_key,
-            CachedSearch {
-                packages: packages.clone(),
-                cached_at: std::time::Instant::now(),
-            },
-        );
 
         Ok(packages)
     }
@@ -368,15 +308,6 @@ impl PackageProvider for AurProvider {
             return Err(AppError::Aur(
                 "AUR service temporarily unavailable (circuit breaker open)".to_string(),
             ));
-        }
-
-        // Check cache first
-        let cache_key = format!("aur:{}", query);
-        if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
-            if !cached.is_expired() {
-                tracing::debug!("Cache hit for AUR search: {}", query);
-                return Ok(cached.packages.clone());
-            }
         }
 
         let url = format!(
@@ -479,14 +410,6 @@ impl PackageProvider for AurProvider {
                 }
             })
             .collect();
-
-        PACKAGE_CACHE.insert(
-            cache_key,
-            CachedSearch {
-                packages: packages.clone(),
-                cached_at: std::time::Instant::now(),
-            },
-        );
 
         Ok(packages)
     }
@@ -645,6 +568,8 @@ impl UpdateProvider for SystemUpdateProvider {
 pub struct PackageService {
     providers: Vec<Arc<dyn PackageProvider>>,
     update_provider: Arc<dyn UpdateProvider>,
+    cache: Arc<SearchCache>,
+    config: AppConfig,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -812,19 +737,31 @@ pub fn plan_rollback_transaction(
     commands
 }
 
+/// Global search cache shared across PackageService instances
+static SEARCH_CACHE: Lazy<Arc<SearchCache>> = Lazy::new(|| Arc::new(SearchCache::new()));
+
 impl PackageService {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         Self {
             providers: vec![
                 Arc::new(PacmanProvider::new()),
                 Arc::new(AurProvider::new()),
             ],
             update_provider: Arc::new(SystemUpdateProvider::new()),
+            cache: Arc::clone(&SEARCH_CACHE),
+            config,
         }
     }
 
     /// Search across all providers concurrently
     pub async fn search_all(&self, query: &str) -> Result<Vec<Package>> {
+        // Check cache first
+        let ttl = Duration::from_secs(self.config.search.cache_ttl_seconds);
+        if let Some(cached) = self.cache.get_cached(query, ttl) {
+            tracing::debug!("Cache hit for search_all: {}", query);
+            return Ok(cached);
+        }
+
         let spec = QuerySpec::parse(query);
         if spec.text.trim().is_empty()
             && spec.installed.is_none()
@@ -940,6 +877,8 @@ impl PackageService {
             results.truncate(MAX_TOTAL_RESULTS);
         }
 
+        self.cache.put_cached(query, results.clone());
+
         Ok(results)
     }
 
@@ -952,16 +891,11 @@ impl PackageService {
     pub async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
         self.update_provider.get_outdated_packages().await
     }
-
-    /// Clear expired cache entries
-    pub fn clear_expired_cache() {
-        PACKAGE_CACHE.retain(|_, v| !v.is_expired());
-    }
 }
 
 impl Default for PackageService {
     fn default() -> Self {
-        Self::new()
+        Self::new(AppConfig::default())
     }
 }
 
@@ -1313,5 +1247,53 @@ mod tests {
             .args(&["firefox", "vlc"]);
 
         assert_eq!(cmd.build_display(), "pacman -S firefox vlc");
+    }
+
+    #[test]
+    fn test_search_cache_hit_miss() {
+        let cache = SearchCache::new();
+        let query = "test-query";
+        let pkg = Package::new("test-pkg", "1.0");
+        let results = vec![pkg];
+        let ttl = Duration::from_secs(60);
+
+        // Miss initially
+        assert!(cache.get_cached(query, ttl).is_none());
+
+        // Put and Hit
+        cache.put_cached(query, results.clone());
+        let cached = cache.get_cached(query, ttl);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap()[0].name, "test-pkg");
+
+        // Different query miss
+        assert!(cache.get_cached("other", ttl).is_none());
+    }
+
+    #[test]
+    fn test_search_cache_expiry() {
+        let cache = SearchCache::new();
+        let query = "expiry-query";
+        let pkg = Package::new("test-pkg", "1.0");
+        let results = vec![pkg];
+
+        // Put with very short TTL
+        cache.put_cached(query, results);
+        
+        // Immediate hit
+        assert!(cache.get_cached(query, Duration::from_secs(10)).is_some());
+
+        // Expired hit (using 0 TTL)
+        assert!(cache.get_cached(query, Duration::from_secs(0)).is_none());
+    }
+
+    #[test]
+    fn test_search_cache_clear() {
+        let cache = SearchCache::new();
+        let query = "clear-query";
+        cache.put_cached(query, vec![Package::new("p", "1")]);
+        
+        cache.clear();
+        assert!(cache.get_cached(query, Duration::from_secs(60)).is_none());
     }
 }

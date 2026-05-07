@@ -86,25 +86,6 @@ mod circuit_breaker_tests {
 }
 
 #[cfg(test)]
-mod cache_tests {
-    use arch_tui::services::{enforce_cache_limit, get_cache_stats};
-
-    #[test]
-    fn test_cache_stats() {
-        let (total, expired) = get_cache_stats();
-        // Just verify the function works without panic
-        assert!(total >= 0);
-        assert!(expired >= 0);
-    }
-
-    #[test]
-    fn test_enforce_cache_limit_no_panic() {
-        // This should not panic even with empty cache
-        enforce_cache_limit();
-    }
-}
-
-#[cfg(test)]
 mod error_type_tests {
     use arch_tui::errors::AppError;
 

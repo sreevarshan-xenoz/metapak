@@ -8,7 +8,21 @@ pub struct AppConfig {
     pub theme: ThemeConfig,
     pub keyboard: KeyboardConfig,
     pub ui: UiConfig,
+    pub search: SearchConfig,
     pub robustness: RobustnessConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SearchConfig {
+    pub cache_ttl_seconds: u64,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            cache_ttl_seconds: 300,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -116,6 +130,7 @@ impl Default for AppConfig {
                 update_check_interval_minutes: 60,
                 auto_update_on_startup: false,
             },
+            search: SearchConfig::default(),
             robustness: RobustnessConfig::default(),
         }
     }

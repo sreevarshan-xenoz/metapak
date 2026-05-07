@@ -528,7 +528,7 @@ async fn main() -> Result<()> {
     // Create app
     let aur_helper = app_config.aur_helper.clone();
     let mut app = App::new();
-    app.config = app_config;
+    app.config = app_config.clone();
     app.operation_queue =
         crate::operation_queue::OperationQueue::with_manager(transaction_manager.clone());
     app.items_per_page = app.config.ui.items_per_page;
@@ -565,17 +565,20 @@ async fn main() -> Result<()> {
     let active_pid_for_spawn = active_pid.clone();
     let cancel_requested_for_spawn = cancel_requested.clone();
     let transaction_manager_for_spawn = transaction_manager.clone();
+    let app_config_for_spawn = app_config.clone();
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
             let action_id = action.id();
+            let config = app_config_for_spawn.clone();
             match &action.inner {
                 ActionInner::Search(query) => {
                     tracing::info!(action_id, "Processing Search action");
                     let result_tx_clone = result_tx.clone();
                     let query = query.clone();
+                    let config = config.clone();
 
                     tokio::spawn(async move {
-                        let package_service = PackageService::new();
+                        let package_service = PackageService::new(config);
                         match package_service.search_all(&query).await {
                             Ok(results) => {
                                 let _ = result_tx_clone.send(ActionResult::SearchResults(results));
@@ -646,9 +649,10 @@ async fn main() -> Result<()> {
                 ActionInner::CheckUpdates => {
                     tracing::info!(action_id, "Processing CheckUpdates action");
                     let result_tx_clone = result_tx.clone();
+                    let config = config.clone();
 
                     tokio::spawn(async move {
-                        let package_service = PackageService::new();
+                        let package_service = PackageService::new(config);
                         match package_service.check_updates().await {
                             Ok(count) => {
                                 let _ = result_tx_clone.send(ActionResult::UpdateCount(count));
@@ -1060,8 +1064,6 @@ async fn main() -> Result<()> {
 
         // Periodic cleanup
         if last_update.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
-            PackageService::clear_expired_cache();
-            crate::services::enforce_cache_limit();
             last_update = std::time::Instant::now();
         }
 

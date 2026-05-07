@@ -34,6 +34,9 @@ auto_check_updates = false
 update_check_interval_minutes = 60
 auto_update_on_startup = false
 
+[search]
+cache_ttl_seconds = 300
+
 [robustness]
 snapshot_keep_count = 5
 simulation_backend = "auto"
