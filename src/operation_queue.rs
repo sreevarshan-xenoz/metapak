@@ -130,13 +130,18 @@ impl OperationQueue {
 
     /// Execute a safe transaction if a manager is configured.
     /// Falls back to direct execution if no manager is present.
-    pub async fn execute_safe<F, Fut, T>(&self, action_name: &str, action: F) -> Result<T>
+    pub async fn execute_safe<F, Fut, T>(
+        &self, 
+        action_name: &str, 
+        commands: Option<&[crate::services::CommandSpec]>,
+        action: F
+    ) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
         if let Some(manager) = &self.transaction_manager {
-            manager.run_safe_transaction(action_name, action).await
+            manager.run_safe_transaction(action_name, commands, action).await
         } else {
             tracing::warn!("No TransactionManager configured, running directly");
             action().await

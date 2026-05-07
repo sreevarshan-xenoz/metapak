@@ -45,6 +45,9 @@ pub enum AppError {
     #[error("Backend error: {0}")]
     Backend(String),
 
+    #[error("Transaction failed: {0}")]
+    TransactionFailed(String, Option<String>),
+
     #[error("Other error: {0}")]
     Other(String),
 

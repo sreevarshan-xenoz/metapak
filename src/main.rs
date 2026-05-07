@@ -496,7 +496,7 @@ async fn main() -> Result<()> {
                     let tm = transaction_manager_for_spawn.clone();
 
                     tokio::spawn(async move {
-                        let res = tm.run_safe_transaction("operation", || async {
+                        let res = tm.run_safe_transaction("operation", Some(&commands.clone()), || async {
                             run_command_sequence(
                                 commands,
                                 result_tx_clone.clone(),
@@ -514,7 +514,11 @@ async fn main() -> Result<()> {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
                             }
                             Err(e) => {
-                                let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
+                                if let crate::errors::AppError::TransactionFailed(msg, Some(id)) = e {
+                                    let _ = result_tx_clone.send(ActionResult::TransactionFailedWithRollback(msg, id));
+                                } else {
+                                    let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
+                                }
                             }
                         }
                     });
@@ -550,10 +554,12 @@ async fn main() -> Result<()> {
                             aur_helper: aur_helper_value,
                             ..Default::default()
                         });
+                        let update_cmd = helper_cmd.update_command();
+                        let update_cmds = vec![update_cmd.clone()];
 
-                        let res = tm.run_safe_transaction("system-update", || async {
+                        let res = tm.run_safe_transaction("system-update", Some(&update_cmds.clone()), || async {
                             run_command_sequence(
-                                vec![helper_cmd.update_command()],
+                                update_cmds,
                                 result_tx_clone.clone(),
                                 active_pid_clone,
                                 cancel_requested_clone,
@@ -570,7 +576,11 @@ async fn main() -> Result<()> {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
                             }
                             Err(e) => {
-                                let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
+                                if let crate::errors::AppError::TransactionFailed(msg, Some(id)) = e {
+                                    let _ = result_tx_clone.send(ActionResult::TransactionFailedWithRollback(msg, id));
+                                } else {
+                                    let _ = result_tx_clone.send(ActionResult::Error(format!("Transaction failed: {}", e)));
+                                }
                             }
                         }
                     });
@@ -787,6 +797,15 @@ async fn main() -> Result<()> {
                         }
                     }
                     app.is_operation_running = false;
+                }
+                ActionResult::TransactionFailedWithRollback(msg, snapshot_id) => {
+                    tracing::error!("Transaction failed: {}. Snapshot {} is available.", msg, snapshot_id);
+                    app.error_message = Some(msg.clone());
+                    app.is_loading = false;
+                    app.is_operation_running = false;
+                    app.show_rollback_confirm = true;
+                    app.pending_rollback_id = Some(snapshot_id);
+                    app.add_toast(format!("Failed: {}", msg), crate::animations::ToastStyle::Error);
                 }
                 ActionResult::SudoResult(success) => {
                     app.is_loading = false;

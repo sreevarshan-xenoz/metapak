@@ -103,4 +103,7 @@ pub enum ActionResult {
 
     /// Error occurred
     Error(String),
+
+    /// Transaction failed with a snapshot available for rollback (error_msg, snapshot_id)
+    TransactionFailedWithRollback(String, String),
 }
