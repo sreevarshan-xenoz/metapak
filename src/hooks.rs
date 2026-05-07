@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,27 +48,51 @@ impl HookRunner {
     }
 
     pub fn run_pre_install(&self) -> Vec<Result<String, String>> {
-        self.config.pre_install.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .pre_install
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 
     pub fn run_post_install(&self) -> Vec<Result<String, String>> {
-        self.config.post_install.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .post_install
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 
     pub fn run_pre_remove(&self) -> Vec<Result<String, String>> {
-        self.config.pre_remove.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .pre_remove
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 
     pub fn run_post_remove(&self) -> Vec<Result<String, String>> {
-        self.config.post_remove.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .post_remove
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 
     pub fn run_pre_update(&self) -> Vec<Result<String, String>> {
-        self.config.pre_update.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .pre_update
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 
     pub fn run_post_update(&self) -> Vec<Result<String, String>> {
-        self.config.post_update.iter().map(|h| self.run_hook(h)).collect()
+        self.config
+            .post_update
+            .iter()
+            .map(|h| self.run_hook(h))
+            .collect()
     }
 }
 

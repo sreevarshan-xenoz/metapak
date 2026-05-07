@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct AptBackend;
@@ -23,9 +23,7 @@ impl UniversalPackageManager for AptBackend {
     }
 
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
-        let output = Command::new("apt-cache")
-            .args(["search", query])
-            .output()?;
+        let output = Command::new("apt-cache").args(["search", query]).output()?;
 
         if !output.status.success() {
             return Ok(Vec::new());
@@ -53,17 +51,13 @@ impl UniversalPackageManager for AptBackend {
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
-        let output = Command::new("dpkg")
-            .args(["-l", pkg_name])
-            .output();
+        let output = Command::new("dpkg").args(["-l", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }
 
     async fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("dpkg")
-            .args(["-l"])
-            .output()?;
+        let output = Command::new("dpkg").args(["-l"]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let packages: Vec<Package> = stdout
@@ -106,7 +100,12 @@ impl UniversalPackageManager for AptBackend {
                         // Format: package oldver -> newver
                         if let Some((name, rest)) = line.split_once(" ") {
                             let new_ver = rest.trim().split(" -> ").nth(1).unwrap_or("?");
-                            Some(OutdatedPackage::new(name.trim().to_string(), "?".to_string(), new_ver.to_string(), "main".to_string()))
+                            Some(OutdatedPackage::new(
+                                name.trim().to_string(),
+                                "?".to_string(),
+                                new_ver.to_string(),
+                                "main".to_string(),
+                            ))
                         } else {
                             None
                         }
@@ -131,7 +130,14 @@ impl UniversalPackageManager for AptBackend {
     }
 
     fn build_update_command(&self) -> CommandSpec {
-        CommandSpec::new("sudo", vec!["update".to_string(), "-y".to_string(), "upgrade".to_string()])
+        CommandSpec::new(
+            "sudo",
+            vec![
+                "update".to_string(),
+                "-y".to_string(),
+                "upgrade".to_string(),
+            ],
+        )
     }
 }
 

@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct ChocolateyBackend;
@@ -89,9 +89,7 @@ impl UniversalPackageManager for ChocolateyBackend {
     }
 
     async fn check_updates(&self) -> Result<Vec<OutdatedPackage>> {
-        let output = Command::new("choco")
-            .args(["outdated"])
-            .output()?;
+        let output = Command::new("choco").args(["outdated"]).output()?;
 
         if !output.status.success() {
             return Ok(Vec::new());

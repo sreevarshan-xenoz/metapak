@@ -9,12 +9,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use crate::constants::ui::CAPTURED_OUTPUT_MAX_LINES;
-use crate::constants::retry::{
-    LOCK_RETRY_DELAY_SECS, MAX_ATTEMPTS, NETWORK_RETRY_DELAY_SECS, GENERAL_RETRY_DELAY_SECS,
-};
-use crate::services::CommandSpec;
 use crate::action::ActionResult;
+use crate::constants::retry::{
+    GENERAL_RETRY_DELAY_SECS, LOCK_RETRY_DELAY_SECS, MAX_ATTEMPTS, NETWORK_RETRY_DELAY_SECS,
+};
+use crate::constants::ui::CAPTURED_OUTPUT_MAX_LINES;
+use crate::services::CommandSpec;
 
 pub enum CommandRunResult {
     Finished,
@@ -54,18 +54,15 @@ impl CommandExecutor {
 
             loop {
                 attempts += 1;
-                match self
-                    .run_single(command, tx.clone())
-                    .await
-                {
+                match self.run_single(command, tx.clone()).await {
                     Ok(CommandRunResult::Finished) => break,
                     Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
                     Err(err) => {
                         let error_lower = err.to_lowercase();
                         let is_dependency_error = error_lower.contains("dependency")
                             || error_lower.contains("[dependency-error]");
-                        let is_lock_error = error_lower.contains("lock")
-                            || error_lower.contains("[db-lock-error]");
+                        let is_lock_error =
+                            error_lower.contains("lock") || error_lower.contains("[db-lock-error]");
                         let is_conflict_error =
                             error_lower.contains("conflict") || error_lower.contains("::");
                         let is_signature_error =
@@ -88,7 +85,8 @@ impl CommandExecutor {
 
                         if is_dependency_error {
                             let _ = tx.send(ActionResult::CommandOutput(
-                                "Dependency issue detected. Running: sudo pacman -Syu...".to_string(),
+                                "Dependency issue detected. Running: sudo pacman -Syu..."
+                                    .to_string(),
                             ));
                             let fix = CommandSpec {
                                 prog: "sudo".to_string(),

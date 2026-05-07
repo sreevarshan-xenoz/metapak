@@ -1,6 +1,6 @@
-use std::process::Command;
-use std::fs;
 use crate::export::chrono_lite;
+use std::fs;
+use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct DiagnosticItem {
@@ -144,7 +144,11 @@ fn get_os_info() -> Option<String> {
     let content = fs::read_to_string("/etc/os-release").ok()?;
     for line in content.lines() {
         if line.starts_with("PRETTY_NAME=") {
-            return Some(line.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string());
+            return Some(
+                line.trim_start_matches("PRETTY_NAME=")
+                    .trim_matches('"')
+                    .to_string(),
+            );
         }
     }
     Some("Arch Linux".to_string())
@@ -201,7 +205,9 @@ fn get_cpu_info() -> Option<String> {
 }
 
 fn get_cpu_cores() -> usize {
-    std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(1)
 }
 
 fn get_memory_info() -> Option<String> {
@@ -233,9 +239,7 @@ fn parse_meminfo_value(line: &str) -> Option<u64> {
 
 fn get_total_packages() -> Result<String, std::io::Error> {
     let output = Command::new("pacman").arg("-Qq").output()?;
-    let count = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .count();
+    let count = String::from_utf8_lossy(&output.stdout).lines().count();
     Ok(count.to_string())
 }
 
@@ -303,23 +307,18 @@ pub fn find_orphan_packages() -> Vec<OrphanPackage> {
 
 fn is_required_by_other_package(pkg_name: &str) -> bool {
     // Check if any package depends on this one
-    let output = Command::new("pacman")
-        .args(["-Q", pkg_name])
-        .output();
+    let output = Command::new("pacman").args(["-Q", pkg_name]).output();
 
     if let Ok(output) = output {
         if output.status.success() {
             // pacman -Q shows the package info including dependencies
-            let info = String::from_utf8_lossy(&output.stdout);
             // If it says "optional dependencies" it might still be needed
             // But we keep it simple - if explicitly installed, check reverse deps
         }
     }
 
     // Check reverse dependencies using pacman -Sii
-    let output = Command::new("pacman")
-        .args(["-Sii", pkg_name])
-        .output();
+    let output = Command::new("pacman").args(["-Sii", pkg_name]).output();
 
     if let Ok(output) = output {
         let info = String::from_utf8_lossy(&output.stdout);
@@ -610,12 +609,13 @@ pub fn get_foreign_packages() -> Vec<ForeignPackage> {
 }
 
 fn get_package_info(pkg_name: &str) -> Result<(String, String), std::io::Error> {
-    let output = Command::new("pacman")
-        .args(["-Qi", pkg_name])
-        .output()?;
+    let output = Command::new("pacman").args(["-Qi", pkg_name]).output()?;
 
     if !output.status.success() {
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Package not found"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Package not found",
+        ));
     }
 
     let content = String::from_utf8_lossy(&output.stdout);
@@ -699,12 +699,7 @@ pub fn get_group_members(group_name: &str) -> Vec<String> {
             return content
                 .lines()
                 .next()
-                .map(|l| {
-                    l.split_whitespace()
-                        .skip(1)
-                        .map(String::from)
-                        .collect()
-                })
+                .map(|l| l.split_whitespace().skip(1).map(String::from).collect())
                 .unwrap_or_default();
         }
     }

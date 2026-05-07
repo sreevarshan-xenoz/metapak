@@ -4,7 +4,7 @@
 //! allowing for pluggable implementations and easier testing.
 
 use crate::errors::Result;
-use crate::models::{Package, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package};
 use async_trait::async_trait;
 
 /// Trait for package search providers

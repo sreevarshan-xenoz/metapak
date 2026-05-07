@@ -9,7 +9,12 @@ impl DesktopNotifier {
 
     pub fn send(&self, title: &str, body: &str) -> Result<(), String> {
         // Try notify-send (libnotify)
-        if Command::new("which").arg("notify-send").output().map(|o| o.status.success()).unwrap_or(false) {
+        if Command::new("which")
+            .arg("notify-send")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
             let output = Command::new("notify-send")
                 .args(["-i", "system-software-install", title, body])
                 .output();
@@ -19,7 +24,12 @@ impl DesktopNotifier {
         }
 
         // Try kdialog (KDE)
-        if Command::new("which").arg("kdialog").output().map(|o| o.status.success()).unwrap_or(false) {
+        if Command::new("which")
+            .arg("kdialog")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
             let output = Command::new("kdialog")
                 .args(["--msgbox", body, title])
                 .output();
@@ -29,9 +39,18 @@ impl DesktopNotifier {
         }
 
         // Try zenlist (generic)
-        if Command::new("which").arg("zenity").output().map(|o| o.status.success()).unwrap_or(false) {
+        if Command::new("which")
+            .arg("zenity")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
             let output = Command::new("zenity")
-                .args(["--info", &format!("--text={}", body), &format!("--title={}", title)])
+                .args([
+                    "--info",
+                    &format!("--text={}", body),
+                    &format!("--title={}", title),
+                ])
                 .output();
             if output.map(|o| o.status.success()).unwrap_or(false) {
                 return Ok(());
@@ -42,13 +61,16 @@ impl DesktopNotifier {
     }
 
     pub fn notify_install(&self, package_name: &str) {
-        let _ = self.send("Package Installed", &format!("{} has been installed successfully.", package_name));
+        let _ = self.send(
+            "Package Installed",
+            &format!("{} has been installed successfully.", package_name),
+        );
     }
 
     pub fn notify_update(&self, count: usize) {
         let _ = self.send(
-            "System Updated", 
-            &format!("{} packages have been updated.", count)
+            "System Updated",
+            &format!("{} packages have been updated.", count),
         );
     }
 

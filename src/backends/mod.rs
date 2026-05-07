@@ -5,21 +5,20 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-pub mod pacman;
 pub mod apt;
-pub mod dnf;
-pub mod zypper;
 pub mod brew;
-pub mod winget;
 pub mod chocolatey;
+pub mod dnf;
 pub mod flatpak;
+pub mod pacman;
 pub mod snap;
 pub mod snapshots;
+pub mod winget;
+pub mod zypper;
 
-use crate::errors::{AppError, Result};
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::errors::Result;
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 /// Unified package manager trait
@@ -141,15 +140,20 @@ impl UniversalPackageService {
 
 /// Parse version string to sortable form
 pub fn parse_version(version: &str) -> (u64, u64, u64) {
-    let parts: Vec<&str> = version.split(|c| c == '.' || c == '-').collect();
-    let major: u64 = parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let parts: Vec<&str> = version.split(['.', '-']).collect();
+    let major: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
     let minor: u64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
     let patch: u64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
     (major, minor, patch)
 }
 
 /// Create a package from a name and version
-pub fn create_package(name: String, version: String, description: String, source: PackageSource) -> Package {
+pub fn create_package(
+    name: String,
+    version: String,
+    description: String,
+    source: PackageSource,
+) -> Package {
     Package {
         name,
         version,

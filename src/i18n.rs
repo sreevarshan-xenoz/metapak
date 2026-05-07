@@ -110,12 +110,24 @@ impl Localizer {
         t.insert("help_install".into(), "Install/Remove".into());
         t.insert("help_update".into(), "Update System".into());
         t.insert("help_details".into(), "Show Details".into());
-        t.insert("console_output_title".into(), "Command Output (Type 'y'/'n' to interact, 'Esc' to close)".into());
-        t.insert("sudo_password_required".into(), "Sudo Password Required".into());
-        t.insert("enter_sudo_password".into(), "Please enter your sudo password:".into());
+        t.insert(
+            "console_output_title".into(),
+            "Command Output (Type 'y'/'n' to interact, 'Esc' to close)".into(),
+        );
+        t.insert(
+            "sudo_password_required".into(),
+            "Sudo Password Required".into(),
+        );
+        t.insert(
+            "enter_sudo_password".into(),
+            "Please enter your sudo password:".into(),
+        );
         t.insert("password_label".into(), "Password".into());
         t.insert("confirm_single".into(), "Are you sure you want to".into());
-        t.insert("confirmation_instructions".into(), "Press 'y' to proceed, 'n' to cancel".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "Press 'y' to proceed, 'n' to cancel".into(),
+        );
         t.insert("filter_all".into(), "All".into());
         t.insert("filter_installed".into(), "Installed".into());
         t.insert("filter_not_installed".into(), "Not Installed".into());
@@ -126,7 +138,10 @@ impl Localizer {
         t.insert("help_navigation".into(), "Navigation".into());
         t.insert("help_actions".into(), "Actions".into());
         t.insert("history_title".into(), "Transaction History".into());
-        t.insert("rollback_prompt".into(), "Rollback this transaction?".into());
+        t.insert(
+            "rollback_prompt".into(),
+            "Rollback this transaction?".into(),
+        );
         t.insert("no_results_found".into(), "No packages found".into());
         t.insert("size_label".into(), "Size".into());
         t.insert("total_size".into(), "Total".into());
@@ -149,11 +164,20 @@ impl Localizer {
         t.insert("cancel_button".into(), "Cancelar".into());
         t.insert("confirm_install".into(), "Confirmar Instalacion".into());
         t.insert("confirm_remove".into(), "Confirmar Eliminacion".into());
-        t.insert("confirm_multiple".into(), "Confirmar Acciones Multiples".into());
+        t.insert(
+            "confirm_multiple".into(),
+            "Confirmar Acciones Multiples".into(),
+        );
         t.insert("up_to_date".into(), "Actualizado".into());
-        t.insert("updates_available".into(), "Actualizaciones Disponibles".into());
+        t.insert(
+            "updates_available".into(),
+            "Actualizaciones Disponibles".into(),
+        );
         t.insert("error_occurred".into(), "Ocurrio un error".into());
-        t.insert("no_results_found".into(), "No se encontraron paquetes".into());
+        t.insert(
+            "no_results_found".into(),
+            "No se encontraron paquetes".into(),
+        );
         t.insert("status".into(), "Estado".into());
         t.insert("help_quit".into(), "Salir".into());
         t.insert("help_search".into(), "Buscar".into());
@@ -161,12 +185,24 @@ impl Localizer {
         t.insert("help_install".into(), "Instalar/Eliminar".into());
         t.insert("help_update".into(), "Actualizar Sistema".into());
         t.insert("help_details".into(), "Mostrar Detalles".into());
-        t.insert("console_output_title".into(), "Salida (Escribe 'y'/'n' para interactuar, 'Esc' para cerrar)".into());
-        t.insert("sudo_password_required".into(), "Contrasena Sudo Requerida".into());
-        t.insert("enter_sudo_password".into(), "Ingrese su contrasena sudo:".into());
+        t.insert(
+            "console_output_title".into(),
+            "Salida (Escribe 'y'/'n' para interactuar, 'Esc' para cerrar)".into(),
+        );
+        t.insert(
+            "sudo_password_required".into(),
+            "Contrasena Sudo Requerida".into(),
+        );
+        t.insert(
+            "enter_sudo_password".into(),
+            "Ingrese su contrasena sudo:".into(),
+        );
         t.insert("password_label".into(), "Contrasena".into());
         t.insert("confirm_single".into(), "Esta seguro de que desea".into());
-        t.insert("confirmation_instructions".into(), "Presione 'y' para continuar, 'n' para cancelar".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "Presione 'y' para continuar, 'n' para cancelar".into(),
+        );
         t.insert("filter_all".into(), "Todos".into());
         t.insert("filter_installed".into(), "Instalados".into());
         t.insert("filter_not_installed".into(), "No Instalados".into());
@@ -177,14 +213,23 @@ impl Localizer {
         t.insert("help_navigation".into(), "Navegacion".into());
         t.insert("help_actions".into(), "Acciones".into());
         t.insert("history_title".into(), "Historial de Transacciones".into());
-        t.insert("rollback_prompt".into(), "Revertir esta transaccion?".into());
+        t.insert(
+            "rollback_prompt".into(),
+            "Revertir esta transaccion?".into(),
+        );
         self.translations.insert("es".into(), t);
     }
 
     fn load_french(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - Gestionnaire de Paquets".into());
-        t.insert("search_placeholder".into(), "Rechercher des paquets...".into());
+        t.insert(
+            "app_title".into(),
+            "Arch TUI - Gestionnaire de Paquets".into(),
+        );
+        t.insert(
+            "search_placeholder".into(),
+            "Rechercher des paquets...".into(),
+        );
         t.insert("packages_label".into(), "Paquets".into());
         t.insert("loading_label".into(), "Chargement...".into());
         t.insert("installed_label".into(), "[INSTALLE]".into());
@@ -197,9 +242,15 @@ impl Localizer {
         t.insert("cancel_button".into(), "Annuler".into());
         t.insert("confirm_install".into(), "Confirmer Installation".into());
         t.insert("confirm_remove".into(), "Confirmer Suppression".into());
-        t.insert("confirm_multiple".into(), "Confirmer Actions Multiples".into());
+        t.insert(
+            "confirm_multiple".into(),
+            "Confirmer Actions Multiples".into(),
+        );
         t.insert("up_to_date".into(), "A jour".into());
-        t.insert("updates_available".into(), "Mises a jour disponibles".into());
+        t.insert(
+            "updates_available".into(),
+            "Mises a jour disponibles".into(),
+        );
         t.insert("error_occurred".into(), "Une erreur est survenue".into());
         t.insert("no_results_found".into(), "Aucun paquet trouve".into());
         t.insert("status".into(), "Statut".into());
@@ -209,12 +260,24 @@ impl Localizer {
         t.insert("help_install".into(), "Installer/Supprimer".into());
         t.insert("help_update".into(), "Mettre a jour".into());
         t.insert("help_details".into(), "Afficher Details".into());
-        t.insert("console_output_title".into(), "Sortie (Tapez 'y'/'n', 'Esc' pour fermer)".into());
-        t.insert("sudo_password_required".into(), "Mot de passe Sudo Requis".into());
-        t.insert("enter_sudo_password".into(), "Entrez votre mot de passe sudo:".into());
+        t.insert(
+            "console_output_title".into(),
+            "Sortie (Tapez 'y'/'n', 'Esc' pour fermer)".into(),
+        );
+        t.insert(
+            "sudo_password_required".into(),
+            "Mot de passe Sudo Requis".into(),
+        );
+        t.insert(
+            "enter_sudo_password".into(),
+            "Entrez votre mot de passe sudo:".into(),
+        );
         t.insert("password_label".into(), "Mot de passe".into());
         t.insert("confirm_single".into(), "Etes-vous sur de vouloir".into());
-        t.insert("confirmation_instructions".into(), "Appuyez 'y' pour continuer, 'n' pour annuler".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "Appuyez 'y' pour continuer, 'n' pour annuler".into(),
+        );
         t.insert("filter_all".into(), "Tous".into());
         t.insert("filter_installed".into(), "Installes".into());
         t.insert("filter_not_installed".into(), "Non Installes".into());
@@ -225,7 +288,10 @@ impl Localizer {
         t.insert("help_navigation".into(), "Navigation".into());
         t.insert("help_actions".into(), "Actions".into());
         t.insert("history_title".into(), "Historique des Transactions".into());
-        t.insert("rollback_prompt".into(), "Annuler cette transaction?".into());
+        t.insert(
+            "rollback_prompt".into(),
+            "Annuler cette transaction?".into(),
+        );
         self.translations.insert("fr".into(), t);
     }
 
@@ -245,7 +311,10 @@ impl Localizer {
         t.insert("cancel_button".into(), "Abbrechen".into());
         t.insert("confirm_install".into(), "Installation bestaetigen".into());
         t.insert("confirm_remove".into(), "Entfernen bestaetigen".into());
-        t.insert("confirm_multiple".into(), "Mehrfache Aktionen bestaetigen".into());
+        t.insert(
+            "confirm_multiple".into(),
+            "Mehrfache Aktionen bestaetigen".into(),
+        );
         t.insert("up_to_date".into(), "Aktuell".into());
         t.insert("updates_available".into(), "Updates verfuegbar".into());
         t.insert("error_occurred".into(), "Ein Fehler ist aufgetreten".into());
@@ -256,12 +325,24 @@ impl Localizer {
         t.insert("help_install".into(), "Installieren/Entfernen".into());
         t.insert("help_update".into(), "System aktualisieren".into());
         t.insert("help_details".into(), "Details anzeigen".into());
-        t.insert("console_output_title".into(), "Ausgabe ('y'/'n', 'Esc' zum Schliessen)".into());
-        t.insert("sudo_password_required".into(), "Sudo-Passwort erforderlich".into());
-        t.insert("enter_sudo_password".into(), "Bitte Passwort eingeben:".into());
+        t.insert(
+            "console_output_title".into(),
+            "Ausgabe ('y'/'n', 'Esc' zum Schliessen)".into(),
+        );
+        t.insert(
+            "sudo_password_required".into(),
+            "Sudo-Passwort erforderlich".into(),
+        );
+        t.insert(
+            "enter_sudo_password".into(),
+            "Bitte Passwort eingeben:".into(),
+        );
         t.insert("password_label".into(), "Passwort".into());
         t.insert("confirm_single".into(), "Sind Sie sicher, dass Sie".into());
-        t.insert("confirmation_instructions".into(), "'y' zum Fortfahren, 'n' zum Abbrechen".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "'y' zum Fortfahren, 'n' zum Abbrechen".into(),
+        );
         t.insert("filter_all".into(), "Alle".into());
         t.insert("filter_installed".into(), "Installiert".into());
         t.insert("filter_not_installed".into(), "Nicht Installiert".into());
@@ -272,7 +353,10 @@ impl Localizer {
         t.insert("help_navigation".into(), "Navigation".into());
         t.insert("help_actions".into(), "Aktionen".into());
         t.insert("history_title".into(), "Transaktionsverlauf".into());
-        t.insert("rollback_prompt".into(), "Diese Transaktion rueckgaengig machen?".into());
+        t.insert(
+            "rollback_prompt".into(),
+            "Diese Transaktion rueckgaengig machen?".into(),
+        );
         self.translations.insert("de".into(), t);
     }
 
@@ -303,12 +387,18 @@ impl Localizer {
         t.insert("help_install".into(), "安装/卸载".into());
         t.insert("help_update".into(), "更新系统".into());
         t.insert("help_details".into(), "显示详情".into());
-        t.insert("console_output_title".into(), "命令输出 (输入'y'/'n', 'Esc'关闭)".into());
+        t.insert(
+            "console_output_title".into(),
+            "命令输出 (输入'y'/'n', 'Esc'关闭)".into(),
+        );
         t.insert("sudo_password_required".into(), "需要sudo密码".into());
         t.insert("enter_sudo_password".into(), "请输入sudo密码:".into());
         t.insert("password_label".into(), "密码".into());
         t.insert("confirm_single".into(), "确定要".into());
-        t.insert("confirmation_instructions".into(), "按'y'继续, 'n'取消".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "按'y'继续, 'n'取消".into(),
+        );
         t.insert("filter_all".into(), "全部".into());
         t.insert("filter_installed".into(), "已安装".into());
         t.insert("filter_not_installed".into(), "未安装".into());
@@ -350,12 +440,21 @@ impl Localizer {
         t.insert("help_install".into(), "インストール/削除".into());
         t.insert("help_update".into(), "システム更新".into());
         t.insert("help_details".into(), "詳細表示".into());
-        t.insert("console_output_title".into(), "出力 ('y'/'n', 'Esc'で閉じる)".into());
-        t.insert("sudo_password_required".into(), "sudoパスワードが必要".into());
+        t.insert(
+            "console_output_title".into(),
+            "出力 ('y'/'n', 'Esc'で閉じる)".into(),
+        );
+        t.insert(
+            "sudo_password_required".into(),
+            "sudoパスワードが必要".into(),
+        );
         t.insert("enter_sudo_password".into(), "sudoパスワードを入力:".into());
         t.insert("password_label".into(), "パスワード".into());
         t.insert("confirm_single".into(), "本当に".into());
-        t.insert("confirmation_instructions".into(), "'y'で続行, 'n'でキャンセル".into());
+        t.insert(
+            "confirmation_instructions".into(),
+            "'y'で続行, 'n'でキャンセル".into(),
+        );
         t.insert("filter_all".into(), "すべて".into());
         t.insert("filter_installed".into(), "インストール済み".into());
         t.insert("filter_not_installed".into(), "未インストール".into());
@@ -366,7 +465,10 @@ impl Localizer {
         t.insert("help_navigation".into(), "ナビゲーション".into());
         t.insert("help_actions".into(), "アクション".into());
         t.insert("history_title".into(), "トランザクション履歴".into());
-        t.insert("rollback_prompt".into(), "このトランザクションをロールバック?".into());
+        t.insert(
+            "rollback_prompt".into(),
+            "このトランザクションをロールバック?".into(),
+        );
         self.translations.insert("ja".into(), t);
     }
 
@@ -437,7 +539,10 @@ mod tests {
         let mut localizer = Localizer::new();
         localizer.set_language(Language::French);
         // French will work now with full translations
-        assert_eq!(localizer.t("app_title"), "Arch TUI - Gestionnaire de Paquets");
+        assert_eq!(
+            localizer.t("app_title"),
+            "Arch TUI - Gestionnaire de Paquets"
+        );
     }
 
     #[test]

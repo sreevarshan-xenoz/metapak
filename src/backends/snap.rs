@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct SnapBackend;
@@ -45,7 +45,8 @@ impl UniversalPackageManager for SnapBackend {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let results: serde_json::Value = serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
+        let results: serde_json::Value =
+            serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
         let packages: Vec<Package> = results
             .as_array()
             .map(|arr| {
@@ -69,9 +70,7 @@ impl UniversalPackageManager for SnapBackend {
             return false;
         }
 
-        let output = Command::new("snap")
-            .args(["list", pkg_name])
-            .output();
+        let output = Command::new("snap").args(["list", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }
@@ -87,7 +86,8 @@ impl UniversalPackageManager for SnapBackend {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let results: serde_json::Value = serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
+        let results: serde_json::Value =
+            serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
         let packages: Vec<Package> = results
             .as_array()
             .map(|arr| {
@@ -102,7 +102,8 @@ impl UniversalPackageManager for SnapBackend {
                             String::new()
                         };
 
-                        let mut pkg = create_package(name, version, description, PackageSource::Snap);
+                        let mut pkg =
+                            create_package(name, version, description, PackageSource::Snap);
                         pkg.is_installed = true;
                         Some(pkg)
                     })
@@ -128,7 +129,8 @@ impl UniversalPackageManager for SnapBackend {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let results: serde_json::Value = serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
+        let results: serde_json::Value =
+            serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
         let updates: Vec<OutdatedPackage> = results
             .as_array()
             .map(|arr| {

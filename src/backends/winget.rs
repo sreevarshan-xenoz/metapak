@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct WingetBackend;
@@ -23,9 +23,7 @@ impl UniversalPackageManager for WingetBackend {
     }
 
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
-        let output = Command::new("winget")
-            .args(["search", query])
-            .output()?;
+        let output = Command::new("winget").args(["search", query]).output()?;
 
         if !output.status.success() {
             return Ok(Vec::new());
@@ -61,17 +59,13 @@ impl UniversalPackageManager for WingetBackend {
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
-        let output = Command::new("winget")
-            .args(["list", pkg_name])
-            .output();
+        let output = Command::new("winget").args(["list", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }
 
     async fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("winget")
-            .args(["list"])
-            .output()?;
+        let output = Command::new("winget").args(["list"]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let packages: Vec<Package> = stdout
@@ -111,7 +105,10 @@ impl UniversalPackageManager for WingetBackend {
                 if parts.len() >= 3 {
                     return Some(OutdatedPackage::new(
                         parts[0].to_string(),
-                        parts.get(1).map(|s| s.to_string()).unwrap_or_else(|| "?".to_string()),
+                        parts
+                            .get(1)
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| "?".to_string()),
                         parts.get(parts.len() - 1).unwrap_or(&"?").to_string(),
                         "winget".to_string(),
                     ));
@@ -124,7 +121,11 @@ impl UniversalPackageManager for WingetBackend {
     }
 
     fn build_install_command(&self, packages: &[&str]) -> CommandSpec {
-        let mut args = vec!["install".to_string(), "--accept-package-agreements".to_string(), "--accept-source-agreements".to_string()];
+        let mut args = vec![
+            "install".to_string(),
+            "--accept-package-agreements".to_string(),
+            "--accept-source-agreements".to_string(),
+        ];
         args.extend(packages.iter().map(|s| s.to_string()));
         CommandSpec::no_sudo("winget", args)
     }

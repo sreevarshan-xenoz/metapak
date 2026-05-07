@@ -1,7 +1,7 @@
 use crate::errors::Result;
-use std::time::{Duration, Instant};
 use futures::StreamExt;
 use std::path::Path;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing;
 

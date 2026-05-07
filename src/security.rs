@@ -126,7 +126,8 @@ impl SecurityAuditService {
             }
         }
 
-        let ecosystem = self.ecosystem_map
+        let ecosystem = self
+            .ecosystem_map
             .get(&package.source.to_string())
             .cloned()
             .unwrap_or_else(|| "PyPI".to_string());
@@ -140,11 +141,7 @@ impl SecurityAuditService {
         };
 
         let url = "https://api.osv.dev/v1/query";
-        let response = self.client
-            .post(url)
-            .json(&query)
-            .send()
-            .await;
+        let response = self.client.post(url).json(&query).send().await;
 
         match response {
             Ok(resp) if resp.status().is_success() => {
@@ -156,7 +153,8 @@ impl SecurityAuditService {
                         .map(|v| Vulnerability {
                             id: v.id.clone(),
                             summary: v.summary.clone().unwrap_or_default(),
-                            severity: v.severity
+                            severity: v
+                                .severity
                                 .as_ref()
                                 .and_then(|s| s.severity_type.as_deref())
                                 .map(Severity::from)
@@ -181,7 +179,10 @@ impl SecurityAuditService {
         }
     }
 
-    pub async fn check_packages(&self, packages: &[Package]) -> HashMap<String, Vec<Vulnerability>> {
+    pub async fn check_packages(
+        &self,
+        packages: &[Package],
+    ) -> HashMap<String, Vec<Vulnerability>> {
         let mut results = HashMap::new();
 
         for package in packages {
@@ -198,19 +199,23 @@ impl SecurityAuditService {
     pub async fn audit_installed(&self, packages: &[Package]) -> SecurityAuditReport {
         let vulnerable_packages = self.check_packages(packages).await;
 
-        let critical = vulnerable_packages.values()
+        let critical = vulnerable_packages
+            .values()
             .flat_map(|v| v.iter())
             .filter(|v| v.severity == Severity::Critical)
             .count();
-        let high = vulnerable_packages.values()
+        let high = vulnerable_packages
+            .values()
             .flat_map(|v| v.iter())
             .filter(|v| v.severity == Severity::High)
             .count();
-        let medium = vulnerable_packages.values()
+        let medium = vulnerable_packages
+            .values()
             .flat_map(|v| v.iter())
             .filter(|v| v.severity == Severity::Medium)
             .count();
-        let low = vulnerable_packages.values()
+        let low = vulnerable_packages
+            .values()
             .flat_map(|v| v.iter())
             .filter(|v| v.severity == Severity::Low)
             .count();
@@ -318,16 +323,17 @@ mod tests {
         assert_eq!(report.risk_level(), "NONE");
 
         let mut vulns = HashMap::new();
-        vulns.insert("test".to_string(), vec![
-            Vulnerability {
+        vulns.insert(
+            "test".to_string(),
+            vec![Vulnerability {
                 id: "CVE-2021-1234".to_string(),
                 summary: "Test".to_string(),
                 severity: Severity::Critical,
                 published: None,
                 modified: None,
                 details: None,
-            },
-        ]);
+            }],
+        );
 
         let report = SecurityAuditReport {
             total_packages_checked: 100,

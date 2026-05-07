@@ -73,19 +73,28 @@ impl SearchQuery {
                 }
             } else if part.starts_with("installed:") {
                 let value = part.trim_start_matches("installed:").trim();
-                tokens.push(SearchToken::Filter(FilterType::Installed, value.to_string()));
+                tokens.push(SearchToken::Filter(
+                    FilterType::Installed,
+                    value.to_string(),
+                ));
             } else if part.starts_with("outdated:") {
                 let value = part.trim_start_matches("outdated:").trim();
                 tokens.push(SearchToken::Filter(FilterType::Outdated, value.to_string()));
             } else if part.starts_with("size>:") {
                 let value = part.trim_start_matches("size>:").trim();
-                tokens.push(SearchToken::Filter(FilterType::SizeGreater, value.to_string()));
+                tokens.push(SearchToken::Filter(
+                    FilterType::SizeGreater,
+                    value.to_string(),
+                ));
             } else if part.starts_with("size<:") {
                 let value = part.trim_start_matches("size<:").trim();
                 tokens.push(SearchToken::Filter(FilterType::SizeLess, value.to_string()));
             } else if part.starts_with("maintainer:") {
                 let value = part.trim_start_matches("maintainer:").trim();
-                tokens.push(SearchToken::Filter(FilterType::Maintainer, value.to_string()));
+                tokens.push(SearchToken::Filter(
+                    FilterType::Maintainer,
+                    value.to_string(),
+                ));
             } else if part.starts_with("license:") {
                 let value = part.trim_start_matches("license:").trim();
                 tokens.push(SearchToken::Filter(FilterType::License, value.to_string()));
@@ -115,7 +124,12 @@ impl SearchQuery {
         Self { tokens, is_regex }
     }
 
-    pub fn matches_package(&self, name: &str, description: &str, package: &crate::models::Package) -> bool {
+    pub fn matches_package(
+        &self,
+        name: &str,
+        description: &str,
+        package: &crate::models::Package,
+    ) -> bool {
         if self.tokens.is_empty() {
             return true;
         }
@@ -153,102 +167,117 @@ impl SearchQuery {
                         return false;
                     }
                 }
-                SearchToken::Filter(filter_type, value) => {
-                    match filter_type {
-                        FilterType::Repo => {
-                            if value.is_empty() {
-                                if !matches!(package.source, crate::models::PackageSource::Pacman) {
-                                    return false;
-                                }
-                            } else if !value.eq_ignore_ascii_case("core") && 
-                                      !value.eq_ignore_ascii_case("extra") && 
-                                      !value.eq_ignore_ascii_case("community") {
+                SearchToken::Filter(filter_type, value) => match filter_type {
+                    FilterType::Repo => {
+                        if value.is_empty() {
+                            if !matches!(package.source, crate::models::PackageSource::Pacman) {
                                 return false;
                             }
+                        } else if !value.eq_ignore_ascii_case("core")
+                            && !value.eq_ignore_ascii_case("extra")
+                            && !value.eq_ignore_ascii_case("community")
+                        {
+                            return false;
                         }
-                        FilterType::Aur => {
-                            if value.is_empty() {
-                                if !matches!(package.source, crate::models::PackageSource::Aur) {
-                                    return false;
-                                }
-                            } else {
-                                let term_lower = value.to_lowercase();
-                                let name_lower = name.to_lowercase();
-                                if !name_lower.contains(&term_lower) {
-                                    return false;
-                                }
-                            }
-                            has_positive_match = true;
-                        }
-                        FilterType::Installed => {
-                            let check_installed = value.eq_ignore_ascii_case("yes") || value.eq_ignore_ascii_case("true") || value.is_empty();
-                            if check_installed != package.is_installed {
+                    }
+                    FilterType::Aur => {
+                        if value.is_empty() {
+                            if !matches!(package.source, crate::models::PackageSource::Aur) {
                                 return false;
                             }
-                            has_positive_match = true;
-                        }
-                        FilterType::Outdated => {
-                            let check_outdated = value.eq_ignore_ascii_case("yes") || value.eq_ignore_ascii_case("true") || value.is_empty();
-                            if check_outdated != package.is_outdated {
-                                return false;
-                            }
-                            has_positive_match = true;
-                        }
-                        FilterType::SizeGreater => {
-                            if let Some(size) = parse_size(value) {
-                                if let Some(pkg_size) = package.installed_size {
-                                    if pkg_size <= size {
-                                        return false;
-                                    }
-                                    has_positive_match = true;
-                                } else {
-                                    return false;
-                                }
-                            }
-                        }
-                        FilterType::SizeLess => {
-                            if let Some(size) = parse_size(value) {
-                                if let Some(pkg_size) = package.installed_size {
-                                    if pkg_size >= size {
-                                        return false;
-                                    }
-                                    has_positive_match = true;
-                                } else {
-                                    return false;
-                                }
-                            }
-                        }
-                        FilterType::Maintainer => {
+                        } else {
                             let term_lower = value.to_lowercase();
-                            if !package.maintainers.iter().any(|m| m.to_lowercase().contains(&term_lower)) {
+                            let name_lower = name.to_lowercase();
+                            if !name_lower.contains(&term_lower) {
                                 return false;
                             }
-                            has_positive_match = true;
                         }
-                        FilterType::License => {
-                            let term_lower = value.to_lowercase();
-                            if !package.licenses.iter().any(|l| l.to_lowercase().contains(&term_lower)) {
-                                return false;
-                            }
-                            has_positive_match = true;
+                        has_positive_match = true;
+                    }
+                    FilterType::Installed => {
+                        let check_installed = value.eq_ignore_ascii_case("yes")
+                            || value.eq_ignore_ascii_case("true")
+                            || value.is_empty();
+                        if check_installed != package.is_installed {
+                            return false;
                         }
-                        FilterType::Group => {
-                            let term_lower = value.to_lowercase();
-                            if !package.groups.iter().any(|g| g.to_lowercase().contains(&term_lower)) {
-                                return false;
-                            }
-                            has_positive_match = true;
+                        has_positive_match = true;
+                    }
+                    FilterType::Outdated => {
+                        let check_outdated = value.eq_ignore_ascii_case("yes")
+                            || value.eq_ignore_ascii_case("true")
+                            || value.is_empty();
+                        if check_outdated != package.is_outdated {
+                            return false;
                         }
-                        FilterType::Regex => {
-                            if let Ok(re) = Regex::new(value) {
-                                if !re.is_match(name) && !re.is_match(description) {
+                        has_positive_match = true;
+                    }
+                    FilterType::SizeGreater => {
+                        if let Some(size) = parse_size(value) {
+                            if let Some(pkg_size) = package.installed_size {
+                                if pkg_size <= size {
                                     return false;
                                 }
                                 has_positive_match = true;
+                            } else {
+                                return false;
                             }
                         }
                     }
-                }
+                    FilterType::SizeLess => {
+                        if let Some(size) = parse_size(value) {
+                            if let Some(pkg_size) = package.installed_size {
+                                if pkg_size >= size {
+                                    return false;
+                                }
+                                has_positive_match = true;
+                            } else {
+                                return false;
+                            }
+                        }
+                    }
+                    FilterType::Maintainer => {
+                        let term_lower = value.to_lowercase();
+                        if !package
+                            .maintainers
+                            .iter()
+                            .any(|m| m.to_lowercase().contains(&term_lower))
+                        {
+                            return false;
+                        }
+                        has_positive_match = true;
+                    }
+                    FilterType::License => {
+                        let term_lower = value.to_lowercase();
+                        if !package
+                            .licenses
+                            .iter()
+                            .any(|l| l.to_lowercase().contains(&term_lower))
+                        {
+                            return false;
+                        }
+                        has_positive_match = true;
+                    }
+                    FilterType::Group => {
+                        let term_lower = value.to_lowercase();
+                        if !package
+                            .groups
+                            .iter()
+                            .any(|g| g.to_lowercase().contains(&term_lower))
+                        {
+                            return false;
+                        }
+                        has_positive_match = true;
+                    }
+                    FilterType::Regex => {
+                        if let Ok(re) = Regex::new(value) {
+                            if !re.is_match(name) && !re.is_match(description) {
+                                return false;
+                            }
+                            has_positive_match = true;
+                        }
+                    }
+                },
             }
         }
 
@@ -297,20 +326,42 @@ fn split_query(input: &str) -> Vec<String> {
 
 fn parse_size(value: &str) -> Option<u64> {
     let value = value.trim().to_uppercase();
-    let multiplier: u64 = if value.ends_with("TIB") || value.ends_with("TI") || value.ends_with("TB") || value.ends_with("T") {
+    let multiplier: u64 = if value.ends_with("TIB")
+        || value.ends_with("TI")
+        || value.ends_with("TB")
+        || value.ends_with("T")
+    {
         1024 * 1024 * 1024
-    } else if value.ends_with("GIB") || value.ends_with("GI") || value.ends_with("GB") || value.ends_with("G") {
+    } else if value.ends_with("GIB")
+        || value.ends_with("GI")
+        || value.ends_with("GB")
+        || value.ends_with("G")
+    {
         1024 * 1024
-    } else if value.ends_with("MIB") || value.ends_with("MI") || value.ends_with("MB") || value.ends_with("M") {
+    } else if value.ends_with("MIB")
+        || value.ends_with("MI")
+        || value.ends_with("MB")
+        || value.ends_with("M")
+    {
         1024
-    } else if value.ends_with("KIB") || value.ends_with("KI") || value.ends_with("KB") || value.ends_with("K") {
+    } else if value.ends_with("KIB")
+        || value.ends_with("KI")
+        || value.ends_with("KB")
+        || value.ends_with("K")
+    {
         1
     } else {
         1
     };
 
-    let num_part: String = value.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-    num_part.parse::<f64>().ok().map(|n| (n * multiplier as f64) as u64)
+    let num_part: String = value
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    num_part
+        .parse::<f64>()
+        .ok()
+        .map(|n| (n * multiplier as f64) as u64)
 }
 
 pub struct EnhancedSearch {
@@ -333,7 +384,12 @@ impl EnhancedSearch {
         if query.is_regex {
             if let Ok(re) = Regex::new(pattern) {
                 if re.is_match(text) {
-                    let indices: Vec<usize> = text.match_indices(&regex::Regex::find(&re, text).map(|m| m.as_str()).unwrap_or(""))
+                    let indices: Vec<usize> = text
+                        .match_indices(
+                            &regex::Regex::find(&re, text)
+                                .map(|m| m.as_str())
+                                .unwrap_or(""),
+                        )
                         .map(|(i, _)| i)
                         .collect();
                     return Some((100, indices));
@@ -416,7 +472,11 @@ impl EnhancedSearch {
         self.history.clear();
     }
 
-    pub fn get_suggestions(&self, prefix: &str, packages: &[crate::models::Package]) -> Vec<String> {
+    pub fn get_suggestions(
+        &self,
+        prefix: &str,
+        packages: &[crate::models::Package],
+    ) -> Vec<String> {
         if prefix.len() < 2 {
             return vec![];
         }
@@ -524,15 +584,27 @@ mod tests {
     #[test]
     fn test_query_parse_not() {
         let query = SearchQuery::parse("firefox -chrome");
-        assert!(query.tokens.iter().any(|t| matches!(t, SearchToken::Not(_))));
+        assert!(query
+            .tokens
+            .iter()
+            .any(|t| matches!(t, SearchToken::Not(_))));
     }
 
     #[test]
     fn test_query_parse_filters() {
         let query = SearchQuery::parse("repo:core aur: true installed:");
-        assert!(query.tokens.iter().any(|t| matches!(t, SearchToken::Filter(FilterType::Repo, _))));
-        assert!(query.tokens.iter().any(|t| matches!(t, SearchToken::Filter(FilterType::Aur, _))));
-        assert!(query.tokens.iter().any(|t| matches!(t, SearchToken::Filter(FilterType::Installed, _))));
+        assert!(query
+            .tokens
+            .iter()
+            .any(|t| matches!(t, SearchToken::Filter(FilterType::Repo, _))));
+        assert!(query
+            .tokens
+            .iter()
+            .any(|t| matches!(t, SearchToken::Filter(FilterType::Aur, _))));
+        assert!(query
+            .tokens
+            .iter()
+            .any(|t| matches!(t, SearchToken::Filter(FilterType::Installed, _))));
     }
 
     #[test]

@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::search::EnhancedSearch;
 use crate::traits::{PackageProvider, UpdateProvider};
 
@@ -62,7 +62,8 @@ impl CircuitBreaker {
                     .as_secs()
                     - last_fail;
                 if elapsed > Self::RECOVERY_SECS {
-                    self.state.store(Self::STATE_HALF_OPEN, std::sync::atomic::Ordering::SeqCst);
+                    self.state
+                        .store(Self::STATE_HALF_OPEN, std::sync::atomic::Ordering::SeqCst);
                     true
                 } else {
                     false
@@ -74,21 +75,31 @@ impl CircuitBreaker {
     }
 
     pub fn record_success(&self) {
-        self.failure_count.store(0, std::sync::atomic::Ordering::SeqCst);
-        self.state.store(Self::STATE_CLOSED, std::sync::atomic::Ordering::SeqCst);
+        self.failure_count
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        self.state
+            .store(Self::STATE_CLOSED, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn record_failure(&self) {
-        let count = self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let count = self
+            .failure_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        self.last_failure.store(now, std::sync::atomic::Ordering::SeqCst);
+        self.last_failure
+            .store(now, std::sync::atomic::Ordering::SeqCst);
 
         if count >= Self::FAILURE_THRESHOLD {
-            self.state.store(Self::STATE_OPEN, std::sync::atomic::Ordering::SeqCst);
-            tracing::warn!("Circuit breaker opened due to {} consecutive failures", count);
+            self.state
+                .store(Self::STATE_OPEN, std::sync::atomic::Ordering::SeqCst);
+            tracing::warn!(
+                "Circuit breaker opened due to {} consecutive failures",
+                count
+            );
         }
     }
 }
@@ -126,7 +137,11 @@ pub fn enforce_cache_limit() {
     use crate::constants::cache::{CLEANUP_BATCH_SIZE, MAX_CACHE_ENTRIES};
 
     if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
-        tracing::warn!("Cache size {} exceeds limit {}, cleaning up", PACKAGE_CACHE.len(), MAX_CACHE_ENTRIES);
+        tracing::warn!(
+            "Cache size {} exceeds limit {}, cleaning up",
+            PACKAGE_CACHE.len(),
+            MAX_CACHE_ENTRIES
+        );
 
         // Remove expired entries first
         let keys_to_remove: Vec<String> = PACKAGE_CACHE
@@ -181,7 +196,6 @@ impl PacmanProvider {
 
 #[async_trait]
 impl PackageProvider for PacmanProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Check cache first
         let cache_key = format!("pacman:{}", query);
@@ -198,7 +212,6 @@ impl PackageProvider for PacmanProvider {
             .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
-    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -322,7 +335,10 @@ pub struct AurProvider {
 
 impl AurProvider {
     pub fn new() -> Self {
-        use crate::constants::network::{AUR_CONNECT_TIMEOUT_SECS, AUR_REQUEST_TIMEOUT_SECS, HTTP_IDLE_TIMEOUT_SECS, HTTP_MAX_CONNECTIONS};
+        use crate::constants::network::{
+            AUR_CONNECT_TIMEOUT_SECS, AUR_REQUEST_TIMEOUT_SECS, HTTP_IDLE_TIMEOUT_SECS,
+            HTTP_MAX_CONNECTIONS,
+        };
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(AUR_REQUEST_TIMEOUT_SECS))
@@ -333,7 +349,10 @@ impl AurProvider {
             .tcp_nodelay(true)
             .build()
             .unwrap_or_else(|e| {
-                tracing::warn!("Failed to create optimized HTTP client: {}, using default", e);
+                tracing::warn!(
+                    "Failed to create optimized HTTP client: {}, using default",
+                    e
+                );
                 reqwest::Client::new()
             });
         Self { client }
@@ -342,12 +361,13 @@ impl AurProvider {
 
 #[async_trait]
 impl PackageProvider for AurProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Check circuit breaker first
         if !AUR_CIRCUIT_BREAKER.is_available() {
             tracing::warn!("AUR circuit breaker is open, skipping request");
-            return Err(AppError::Aur("AUR service temporarily unavailable (circuit breaker open)".to_string()));
+            return Err(AppError::Aur(
+                "AUR service temporarily unavailable (circuit breaker open)".to_string(),
+            ));
         }
 
         // Check cache first
@@ -471,7 +491,6 @@ impl PackageProvider for AurProvider {
         Ok(packages)
     }
 
-    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -507,7 +526,6 @@ impl SystemUpdateProvider {
 
 #[async_trait]
 impl UpdateProvider for SystemUpdateProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn check_updates(&self) -> Result<usize> {
         tokio::task::spawn_blocking(move || {
             // Try checkupdates first (from pacman-contrib) - doesn't require sudo
@@ -568,11 +586,7 @@ impl UpdateProvider for SystemUpdateProvider {
                         );
 
                         // Get package info
-                        if let Ok(info) = Command::new("pacman")
-                            .arg("-Qi")
-                            .arg(&name)
-                            .output()
-                        {
+                        if let Ok(info) = Command::new("pacman").arg("-Qi").arg(&name).output() {
                             if info.status.success() {
                                 let info_str = String::from_utf8_lossy(&info.stdout);
                                 for info_line in info_str.lines() {
@@ -810,7 +824,6 @@ impl PackageService {
     }
 
     /// Search across all providers concurrently
-    #[must_use = "this async method should be .await'd"]
     pub async fn search_all(&self, query: &str) -> Result<Vec<Package>> {
         let spec = QuerySpec::parse(query);
         if spec.text.trim().is_empty()
@@ -887,21 +900,28 @@ impl PackageService {
                 .or_insert(pkg);
         }
 
-        let mut results: Vec<Package> = deduped.into_values().collect();
-        
+        let results: Vec<Package> = deduped.into_values().collect();
+
         // Use EnhancedSearch for filtering and ranking
         let search_engine = EnhancedSearch::new();
         let filtered = search_engine.filter_packages(&results, base_query);
         let mut results: Vec<Package> = filtered.into_iter().cloned().collect();
-        
+
         results.sort_by(|a, b| {
             let a_name = a.name.to_lowercase();
             let b_name = b.name.to_lowercase();
-            
-            let a_score = search_engine.match_with_score(&a_name, base_query).map(|(s, _)| s).unwrap_or(0);
-            let b_score = search_engine.match_with_score(&b_name, base_query).map(|(s, _)| s).unwrap_or(0);
-            
-            b_score.cmp(&a_score) // Higher score first
+
+            let a_score = search_engine
+                .match_with_score(&a_name, base_query)
+                .map(|(s, _)| s)
+                .unwrap_or(0);
+            let b_score = search_engine
+                .match_with_score(&b_name, base_query)
+                .map(|(s, _)| s)
+                .unwrap_or(0);
+
+            b_score
+                .cmp(&a_score) // Higher score first
                 .then_with(|| a_name.cmp(&b_name))
                 .then_with(|| match (&a.source, &b.source) {
                     (PackageSource::Pacman, PackageSource::Aur) => std::cmp::Ordering::Less,
@@ -1088,11 +1108,16 @@ impl AurHelperCommand {
     }
 
     fn sanitize_package_name(name: &str) -> String {
-        name.chars().filter(|c| c.is_alphanumeric() || "@._+-".contains(*c)).collect()
+        name.chars()
+            .filter(|c| c.is_alphanumeric() || "@._+-".contains(*c))
+            .collect()
     }
 
     fn is_valid_package_name(name: &str) -> bool {
-        !name.is_empty() && regex::Regex::new(r"^[a-z0-9@._+-]+$").unwrap().is_match(name)
+        !name.is_empty()
+            && regex::Regex::new(r"^[a-z0-9@._+-]+$")
+                .unwrap()
+                .is_match(name)
     }
 
     fn detect_helper(configured: &str) -> HelperKind {
@@ -1147,7 +1172,10 @@ impl AurHelperCommand {
     }
 
     /// Build install command with validation
-    pub fn install_command_validated(&self, packages: &[&str]) -> std::result::Result<CommandSpec, String> {
+    pub fn install_command_validated(
+        &self,
+        packages: &[&str],
+    ) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1157,7 +1185,10 @@ impl AurHelperCommand {
     }
 
     /// Build remove command with validation
-    pub fn remove_command_validated(&self, packages: &[&str]) -> std::result::Result<CommandSpec, String> {
+    pub fn remove_command_validated(
+        &self,
+        packages: &[&str],
+    ) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1202,11 +1233,26 @@ mod tests {
 
     #[test]
     fn test_package_name_sanitization() {
-        assert_eq!(AurHelperCommand::sanitize_package_name("firefox"), "firefox");
-        assert_eq!(AurHelperCommand::sanitize_package_name("linux-headers"), "linux-headers");
-        assert_eq!(AurHelperCommand::sanitize_package_name("python-pytest"), "python-pytest");
-        assert_eq!(AurHelperCommand::sanitize_package_name("pkg+name@test"), "pkg+name@test");
-        assert_eq!(AurHelperCommand::sanitize_package_name("test; rm -rf /"), "testrm-rf");
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("firefox"),
+            "firefox"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("linux-headers"),
+            "linux-headers"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("python-pytest"),
+            "python-pytest"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("pkg+name@test"),
+            "pkg+name@test"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("test; rm -rf /"),
+            "testrm-rf"
+        );
     }
 
     #[test]
@@ -1214,7 +1260,9 @@ mod tests {
         assert!(AurHelperCommand::is_valid_package_name("firefox"));
         assert!(AurHelperCommand::is_valid_package_name("linux-headers"));
         assert!(AurHelperCommand::is_valid_package_name("python3"));
-        assert!(AurHelperCommand::is_valid_package_name("nodejs-lts-hydrogen"));
+        assert!(AurHelperCommand::is_valid_package_name(
+            "nodejs-lts-hydrogen"
+        ));
         assert!(!AurHelperCommand::is_valid_package_name(""));
         assert!(!AurHelperCommand::is_valid_package_name("test; rm"));
         assert!(!AurHelperCommand::is_valid_package_name("test|grep"));

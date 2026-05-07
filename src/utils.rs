@@ -169,9 +169,7 @@ pub fn sanitize_filename(name: &str) -> String {
 /// Validate a search query to prevent injection
 pub fn validate_search_query(query: &str) -> bool {
     // Check for potentially dangerous patterns
-    let dangerous_patterns = [
-        "&&", "||", ";", "|", "`", "$(", "$(", ">",
-    ];
+    let dangerous_patterns = ["&&", "||", ";", "|", "`", "$(", "$(", ">"];
     let query_lower = query.to_lowercase();
     for pattern in dangerous_patterns {
         if query_lower.contains(pattern) {

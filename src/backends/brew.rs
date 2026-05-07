@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct BrewBackend;
@@ -23,9 +23,7 @@ impl UniversalPackageManager for BrewBackend {
     }
 
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
-        let output = Command::new("brew")
-            .args(["search", query])
-            .output()?;
+        let output = Command::new("brew").args(["search", query]).output()?;
 
         if !output.status.success() {
             return Ok(Vec::new());
@@ -51,17 +49,13 @@ impl UniversalPackageManager for BrewBackend {
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
-        let output = Command::new("brew")
-            .args(["list", pkg_name])
-            .output();
+        let output = Command::new("brew").args(["list", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }
 
     async fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("brew")
-            .args(["list", "--versions"])
-            .output()?;
+        let output = Command::new("brew").args(["list", "--versions"]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let packages: Vec<Package> = stdout
@@ -72,7 +66,12 @@ impl UniversalPackageManager for BrewBackend {
                 if !parts.is_empty() {
                     let name = parts[0].to_string();
                     let version = parts.get(1).unwrap_or(&"?").to_string();
-                    return Some(create_package(name, version, String::new(), PackageSource::Pacman));
+                    return Some(create_package(
+                        name,
+                        version,
+                        String::new(),
+                        PackageSource::Pacman,
+                    ));
                 }
                 None
             })
@@ -82,9 +81,7 @@ impl UniversalPackageManager for BrewBackend {
     }
 
     async fn check_updates(&self) -> Result<Vec<OutdatedPackage>> {
-        let output = Command::new("brew")
-            .args(["outdated", "--json"])
-            .output()?;
+        let output = Command::new("brew").args(["outdated", "--json"]).output()?;
 
         // Parse JSON output for updates
         if output.status.success() {

@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct FlatpakBackend;
@@ -36,7 +36,11 @@ impl UniversalPackageManager for FlatpakBackend {
         }
 
         let output = Command::new("flatpak")
-            .args(["search", query, "--columns=name,description,version,installed"])
+            .args([
+                "search",
+                query,
+                "--columns=name,description,version,installed",
+            ])
             .output()?;
 
         if !output.status.success() {
@@ -52,10 +56,17 @@ impl UniversalPackageManager for FlatpakBackend {
                 if parts.len() >= 2 {
                     let name = parts.get(0)?.trim().to_string();
                     let description = parts.get(1)?.trim().to_string();
-                    let version = parts.get(2).map(|v| v.trim().to_string()).unwrap_or_else(|| "?".to_string());
-                    let is_installed = parts.get(3).map(|s| s.trim() == "Installed").unwrap_or(false);
+                    let version = parts
+                        .get(2)
+                        .map(|v| v.trim().to_string())
+                        .unwrap_or_else(|| "?".to_string());
+                    let is_installed = parts
+                        .get(3)
+                        .map(|s| s.trim() == "Installed")
+                        .unwrap_or(false);
 
-                    let mut pkg = create_package(name, version, description, PackageSource::Flatpak);
+                    let mut pkg =
+                        create_package(name, version, description, PackageSource::Flatpak);
                     pkg.is_installed = is_installed;
                     Some(pkg)
                 } else {
@@ -72,9 +83,7 @@ impl UniversalPackageManager for FlatpakBackend {
             return false;
         }
 
-        let output = Command::new("flatpak")
-            .args(["info", pkg_name])
-            .output();
+        let output = Command::new("flatpak").args(["info", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }

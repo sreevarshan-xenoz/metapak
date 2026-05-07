@@ -3,9 +3,9 @@
 //! This module provides functionality for managing multiple package operations
 //! in a queue, including preview, dependency checking, and transaction handling.
 
-use crate::models::{Package, PackageSource};
-use crate::transaction_manager::TransactionManager;
 use crate::errors::Result;
+use crate::models::Package;
+use crate::transaction_manager::TransactionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -131,17 +131,19 @@ impl OperationQueue {
     /// Execute a safe transaction if a manager is configured.
     /// Falls back to direct execution if no manager is present.
     pub async fn execute_safe<F, Fut, T>(
-        &self, 
-        action_name: &str, 
+        &self,
+        action_name: &str,
         commands: Option<&[crate::services::CommandSpec]>,
-        action: F
+        action: F,
     ) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
         if let Some(manager) = &self.transaction_manager {
-            manager.run_safe_transaction(action_name, commands, action).await
+            manager
+                .run_safe_transaction(action_name, commands, action)
+                .await
         } else {
             tracing::warn!("No TransactionManager configured, running directly");
             action().await
@@ -149,7 +151,9 @@ impl OperationQueue {
     }
 
     pub fn add(&mut self, operation: Operation) {
-        if !self.operations.iter().any(|o| o.package_name == operation.package_name && o.operation_type == operation.operation_type) {
+        if !self.operations.iter().any(|o| {
+            o.package_name == operation.package_name && o.operation_type == operation.operation_type
+        }) {
             self.operations.push(operation);
         }
     }
@@ -275,7 +279,10 @@ impl OperationQueue {
     }
 
     pub fn get_package_names(&self) -> Vec<&str> {
-        self.operations.iter().map(|op| op.package_name.as_str()).collect()
+        self.operations
+            .iter()
+            .map(|op| op.package_name.as_str())
+            .collect()
     }
 }
 
@@ -322,7 +329,7 @@ impl DependencyChecker {
         installed_packages: &[Package],
     ) -> Vec<Conflict> {
         let mut conflicts = Vec::new();
-        let mut packages_to_remove: HashSet<&str> = operations
+        let packages_to_remove: HashSet<&str> = operations
             .iter()
             .filter(|op| op.operation_type == OperationType::Remove)
             .map(|op| op.package_name.as_str())
@@ -351,10 +358,7 @@ impl DependencyChecker {
         conflicts
     }
 
-    pub fn check_orphans(
-        operations: &[Operation],
-        installed_packages: &[Package],
-    ) -> Vec<String> {
+    pub fn check_orphans(operations: &[Operation], installed_packages: &[Package]) -> Vec<String> {
         let mut potential_orphans = Vec::new();
         let packages_to_remove: HashSet<&str> = operations
             .iter()
@@ -369,9 +373,9 @@ impl DependencyChecker {
 
             let mut all_deps_satisfied = true;
             for dep in &pkg.depends_on {
-                let dep_installed = installed_packages.iter().any(|p| {
-                    p.name == *dep && !packages_to_remove.contains(p.name.as_str())
-                });
+                let dep_installed = installed_packages
+                    .iter()
+                    .any(|p| p.name == *dep && !packages_to_remove.contains(p.name.as_str()));
                 if !dep_installed {
                     all_deps_satisfied = false;
                     break;
@@ -410,18 +414,13 @@ pub enum ConflictType {
 impl Conflict {
     pub fn description(&self) -> String {
         match self.conflict_type {
-            ConflictType::ReverseDep => format!(
-                "{} is required by {}",
-                self.package2, self.package1
-            ),
-            ConflictType::Conflicts => format!(
-                "{} conflicts with {}",
-                self.package1, self.package2
-            ),
-            ConflictType::Provides => format!(
-                "{} provides {}",
-                self.package1, self.package2
-            ),
+            ConflictType::ReverseDep => {
+                format!("{} is required by {}", self.package2, self.package1)
+            }
+            ConflictType::Conflicts => {
+                format!("{} conflicts with {}", self.package1, self.package2)
+            }
+            ConflictType::Provides => format!("{} provides {}", self.package1, self.package2),
         }
     }
 }
@@ -432,7 +431,9 @@ pub struct TransactionLog {
 
 impl TransactionLog {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn log(&mut self, operation: &Operation, status: TransactionStatus) {
@@ -450,11 +451,17 @@ impl TransactionLog {
     }
 
     pub fn successful_count(&self) -> usize {
-        self.entries.iter().filter(|e| e.status == TransactionStatus::Success).count()
+        self.entries
+            .iter()
+            .filter(|e| e.status == TransactionStatus::Success)
+            .count()
     }
 
     pub fn failed_count(&self) -> usize {
-        self.entries.iter().filter(|e| e.status == TransactionStatus::Failed).count()
+        self.entries
+            .iter()
+            .filter(|e| e.status == TransactionStatus::Failed)
+            .count()
     }
 }
 

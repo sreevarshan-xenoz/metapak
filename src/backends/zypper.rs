@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct ZypperBackend;
@@ -61,9 +61,7 @@ impl UniversalPackageManager for ZypperBackend {
     }
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
-        let output = Command::new("rpm")
-            .args(["-q", pkg_name])
-            .output();
+        let output = Command::new("rpm").args(["-q", pkg_name]).output();
 
         output.map(|o| o.status.success()).unwrap_or(false)
     }

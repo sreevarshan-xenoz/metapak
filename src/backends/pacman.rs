@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::backends::{CommandSpec, UniversalPackageManager, parse_version, create_package};
+use crate::backends::{create_package, CommandSpec, UniversalPackageManager};
 use crate::errors::Result;
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
 use crate::platform::PackageManager;
 
 pub struct PacmanBackend;
@@ -41,7 +41,7 @@ impl UniversalPackageManager for PacmanBackend {
                 if parts.len() >= 2 {
                     let full_name = parts[0];
                     let version = parts[1];
-                    let is_installed = header.contains("[installed]");
+                    let _is_installed = header.contains("[installed]");
 
                     let name = full_name.split('/').nth(1).unwrap_or(full_name).to_string();
 
@@ -102,12 +102,12 @@ impl UniversalPackageManager for PacmanBackend {
                     .filter_map(|line| {
                         let parts: Vec<&str> = line.split_whitespace().collect();
                         if parts.len() >= 2 {
-Some(OutdatedPackage::new(
-                            parts[0].to_string(),
-                            parts[1].to_string(),
-                            parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "".to_string()),
-                            "core".to_string(),
-                        ))
+                            Some(OutdatedPackage::new(
+                                parts[0].to_string(),
+                                parts[1].to_string(),
+                                parts.get(2).map(|s| s.to_string()).unwrap_or_default(),
+                                "core".to_string(),
+                            ))
                         } else {
                             None
                         }
@@ -131,7 +131,7 @@ Some(OutdatedPackage::new(
                     Some(OutdatedPackage::new(
                         parts[0].to_string(),
                         parts[1].to_string(),
-                        parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "".to_string()),
+                        parts.get(2).map(|s| s.to_string()).unwrap_or_default(),
                         "core".to_string(),
                     ))
                 } else {

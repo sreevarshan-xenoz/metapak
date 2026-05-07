@@ -195,7 +195,8 @@ impl Package {
     }
 
     pub fn get_size(&self) -> u64 {
-        self.download_size.unwrap_or(self.installed_size.unwrap_or(0))
+        self.download_size
+            .unwrap_or(self.installed_size.unwrap_or(0))
     }
 }
 
@@ -221,7 +222,12 @@ pub struct OutdatedPackage {
 }
 
 impl OutdatedPackage {
-    pub fn new(name: String, current_version: String, new_version: String, repository: String) -> Self {
+    pub fn new(
+        name: String,
+        current_version: String,
+        new_version: String,
+        repository: String,
+    ) -> Self {
         Self {
             name,
             current_version,

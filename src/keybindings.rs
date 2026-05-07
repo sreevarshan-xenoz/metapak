@@ -3,9 +3,9 @@
 //! This module provides a flexible keybinding system that allows users
 //! to customize keyboard shortcuts through configuration.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crossterm::event::{KeyCode, KeyModifiers, KeyEvent, KeyEventKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KeyBinding {
@@ -77,6 +77,7 @@ impl KeyBinding {
 
     fn keycode_to_string(code: KeyCode) -> String {
         match code {
+            KeyCode::Char(' ') => "Space".to_string(),
             KeyCode::Char(c) => c.to_string(),
             KeyCode::F(n) => format!("F{}", n),
             KeyCode::Up => "Up".to_string(),
@@ -93,7 +94,6 @@ impl KeyBinding {
             KeyCode::Insert => "Insert".to_string(),
             KeyCode::Enter => "Enter".to_string(),
             KeyCode::Esc => "Esc".to_string(),
-            KeyCode::Char(' ') => "Space".to_string(),
             _ => format!("{:?}", code),
         }
     }
@@ -128,9 +128,17 @@ impl KeyBindings {
             KeyBinding::new(KeyCode::Down, KeyModifiers::NONE, Action::NextItem),
             KeyBinding::new(KeyCode::Up, KeyModifiers::NONE, Action::PreviousItem),
             KeyBinding::new(KeyCode::Char('d'), KeyModifiers::CONTROL, Action::NextPage),
-            KeyBinding::new(KeyCode::Char('u'), KeyModifiers::CONTROL, Action::PreviousPage),
+            KeyBinding::new(
+                KeyCode::Char('u'),
+                KeyModifiers::CONTROL,
+                Action::PreviousPage,
+            ),
             KeyBinding::new(KeyCode::Char('f'), KeyModifiers::CONTROL, Action::NextPage),
-            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::CONTROL, Action::PreviousPage),
+            KeyBinding::new(
+                KeyCode::Char('b'),
+                KeyModifiers::CONTROL,
+                Action::PreviousPage,
+            ),
             KeyBinding::new(KeyCode::Char('g'), KeyModifiers::NONE, Action::GoTop),
             KeyBinding::new(KeyCode::Char('G'), KeyModifiers::SHIFT, Action::GoBottom),
             KeyBinding::new(KeyCode::Home, KeyModifiers::NONE, Action::GoTop),
@@ -146,27 +154,55 @@ impl KeyBindings {
             KeyBinding::new(KeyCode::Char('c'), KeyModifiers::NONE, Action::CleanCache),
             KeyBinding::new(KeyCode::Char('R'), KeyModifiers::NONE, Action::Refresh),
             KeyBinding::new(KeyCode::Char('D'), KeyModifiers::NONE, Action::ViewDeps),
-            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::SHIFT, Action::ViewReverseDeps),
+            KeyBinding::new(
+                KeyCode::Char('d'),
+                KeyModifiers::SHIFT,
+                Action::ViewReverseDeps,
+            ),
             KeyBinding::new(KeyCode::Char('V'), KeyModifiers::NONE, Action::ViewDetails),
             KeyBinding::new(KeyCode::Enter, KeyModifiers::NONE, Action::ViewDetails),
             KeyBinding::new(KeyCode::Char('I'), KeyModifiers::NONE, Action::SystemInfo),
             KeyBinding::new(KeyCode::Char('O'), KeyModifiers::NONE, Action::Orphans),
             KeyBinding::new(KeyCode::Char('P'), KeyModifiers::NONE, Action::PackageSizes),
             KeyBinding::new(KeyCode::Char('C'), KeyModifiers::SHIFT, Action::CacheInfo),
-            KeyBinding::new(KeyCode::Char('F'), KeyModifiers::NONE, Action::ForeignPackages),
-            KeyBinding::new(KeyCode::Char('G'), KeyModifiers::NONE, Action::PackageGroups),
+            KeyBinding::new(
+                KeyCode::Char('F'),
+                KeyModifiers::NONE,
+                Action::ForeignPackages,
+            ),
+            KeyBinding::new(
+                KeyCode::Char('G'),
+                KeyModifiers::NONE,
+                Action::PackageGroups,
+            ),
             KeyBinding::new(KeyCode::Char('B'), KeyModifiers::NONE, Action::Backup),
             KeyBinding::new(KeyCode::Char('b'), KeyModifiers::NONE, Action::Restore),
-            KeyBinding::new(KeyCode::Char('X'), KeyModifiers::NONE, Action::SecurityAudit),
+            KeyBinding::new(
+                KeyCode::Char('X'),
+                KeyModifiers::NONE,
+                Action::SecurityAudit,
+            ),
             KeyBinding::new(KeyCode::Char('T'), KeyModifiers::NONE, Action::ThemeNext),
-            KeyBinding::new(KeyCode::Char('t'), KeyModifiers::SHIFT, Action::ThemePrevious),
+            KeyBinding::new(
+                KeyCode::Char('t'),
+                KeyModifiers::SHIFT,
+                Action::ThemePrevious,
+            ),
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE, Action::SwitchView),
             KeyBinding::new(KeyCode::Char('h'), KeyModifiers::NONE, Action::Help),
             KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE, Action::Help),
             KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE, Action::Settings),
             KeyBinding::new(KeyCode::Char('L'), KeyModifiers::NONE, Action::Logs),
-            KeyBinding::new(KeyCode::Char(' '), KeyModifiers::NONE, Action::ToggleSelection),
-            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::NONE, Action::SelectMultiple),
+            KeyBinding::new(
+                KeyCode::Char(' '),
+                KeyModifiers::NONE,
+                Action::ToggleSelection,
+            ),
+            KeyBinding::new(
+                KeyCode::Char('m'),
+                KeyModifiers::NONE,
+                Action::SelectMultiple,
+            ),
             KeyBinding::new(KeyCode::Char('q'), KeyModifiers::NONE, Action::Quit),
             KeyBinding::new(KeyCode::Char('Q'), KeyModifiers::SHIFT, Action::Quit),
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE, Action::Cancel),
@@ -175,13 +211,19 @@ impl KeyBindings {
 
         let mut action_map = HashMap::new();
         for binding in &bindings {
-            action_map.insert(binding.action.clone(), (
-                Self::parse_keycode(&binding.key),
-                Self::parse_modifiers(&binding.modifiers),
-            ));
+            action_map.insert(
+                binding.action.clone(),
+                (
+                    Self::parse_keycode(&binding.key),
+                    Self::parse_modifiers(&binding.modifiers),
+                ),
+            );
         }
 
-        Self { bindings, action_map }
+        Self {
+            bindings,
+            action_map,
+        }
     }
 
     fn parse_keycode(s: &str) -> KeyCode {
@@ -204,9 +246,7 @@ impl KeyBindings {
             "Enter" => KeyCode::Enter,
             "Esc" => KeyCode::Esc,
             "Space" => KeyCode::Char(' '),
-            s if s.starts_with('F') && s.len() <= 3 => {
-                KeyCode::F(s[1..].parse().unwrap_or(1))
-            }
+            s if s.starts_with('F') && s.len() <= 3 => KeyCode::F(s[1..].parse().unwrap_or(1)),
             _ => KeyCode::Null,
         }
     }
