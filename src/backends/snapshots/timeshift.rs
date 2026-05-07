@@ -1,9 +1,8 @@
-use crate::errors::{Result, AppError};
-use crate::traits::{SnapshotProvider, SnapshotInfo};
+use crate::errors::{AppError, Result};
+use crate::traits::{SnapshotInfo, SnapshotProvider};
 use async_trait::async_trait;
-use chrono::{Local, DateTime};
+use chrono::{DateTime, Local};
 use tokio::process::Command;
-use std::path::Path;
 
 /// Timeshift-based snapshot provider.
 ///
@@ -16,10 +15,7 @@ impl TimeshiftProvider {
     }
 
     async fn run_timeshift(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("timeshift")
-            .args(args)
-            .output()
-            .await?;
+        let output = Command::new("timeshift").args(args).output().await?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         if output.status.success() {
@@ -35,8 +31,10 @@ impl TimeshiftProvider {
 impl SnapshotProvider for TimeshiftProvider {
     async fn create(&self, label: &str) -> Result<String> {
         let comment = format!("arch-tui-{}", label);
-        let output = self.run_timeshift(&["--create", "--comments", &comment, "--tags", "O"]).await?;
-        
+        let output = self
+            .run_timeshift(&["--create", "--comments", &comment, "--tags", "O"])
+            .await?;
+
         // Timeshift output usually contains the created snapshot name/timestamp
         // We'll try to extract it or just return the comment as ID if we can't be sure
         // For Timeshift, IDs are often timestamps like "2026-05-07_12-00-00"
@@ -46,33 +44,36 @@ impl SnapshotProvider for TimeshiftProvider {
                 return Ok(id.trim().to_string());
             }
         }
-        
+
         Ok(comment)
     }
 
     async fn rollback(&self, id: &str) -> Result<()> {
-        // Warning: timeshift --restore is usually interactive. 
+        // Warning: timeshift --restore is usually interactive.
         // We use --script to avoid prompts if supported, or assume --restore with snapshot id works.
-        self.run_timeshift(&["--restore", "--snapshot", id, "--script"]).await?;
+        self.run_timeshift(&["--restore", "--snapshot", id, "--script"])
+            .await?;
         Ok(())
     }
 
     async fn list(&self) -> Result<Vec<SnapshotInfo>> {
         let output = self.run_timeshift(&["--list"]).await?;
         let mut snapshots = Vec::new();
-        
+
         // Timeshift --list output parsing:
         // Index  Name                 Tags  Description
         // 0      2026-05-07_12-00-00  O     arch-tui-operation
-        
+
         for line in output.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 && parts[1].contains('_') {
                 let id = parts[1].to_string();
                 let label = parts[3..].join(" ");
-                
+
                 // Parse "2026-05-07_12-00-00"
-                if let Ok(created_at) = DateTime::parse_from_str(&format!("{}+0000", id), "%Y-%m-%d_%H-%M-%S%z") {
+                if let Ok(created_at) =
+                    DateTime::parse_from_str(&format!("{}+0000", id), "%Y-%m-%d_%H-%M-%S%z")
+                {
                     snapshots.push(SnapshotInfo {
                         id,
                         label,
@@ -81,7 +82,7 @@ impl SnapshotProvider for TimeshiftProvider {
                 }
             }
         }
-        
+
         Ok(snapshots)
     }
 
@@ -89,14 +90,17 @@ impl SnapshotProvider for TimeshiftProvider {
         // Implementation for cleanup if needed, timeshift has its own retention policy
         // but we could implement manual deletion of oldest arch-tui snapshots.
         let snapshots = self.list().await?;
-        let arch_tui_snapshots: Vec<_> = snapshots.iter().filter(|s| s.label.contains("arch-tui")).collect();
-        
+        let arch_tui_snapshots: Vec<_> = snapshots
+            .iter()
+            .filter(|s| s.label.contains("arch-tui"))
+            .collect();
+
         if arch_tui_snapshots.len() > _keep_count {
             for s in arch_tui_snapshots.iter().skip(_keep_count) {
                 let _ = self.run_timeshift(&["--delete", "--snapshot", &s.id]).await;
             }
         }
-        
+
         Ok(())
     }
 }

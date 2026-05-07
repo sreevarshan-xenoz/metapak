@@ -28,10 +28,19 @@ async fn test_btrfs_list_parsing() {
     assert_eq!(snapshots.len(), 2, "Should have parsed 2 snapshots");
 
     // Check basic label
-    let basic = snapshots.iter().find(|s| s.id == basic_id).expect("Basic snapshot not found");
+    let basic = snapshots
+        .iter()
+        .find(|s| s.id == basic_id)
+        .expect("Basic snapshot not found");
     assert_eq!(basic.label, "base");
 
     // Check complex label - THIS IS EXPECTED TO FAIL CURRENTLY
-    let complex = snapshots.iter().find(|s| s.id == complex_id).expect("Complex snapshot not found");
-    assert_eq!(complex.label, "my-long-label", "Complex label with dashes should be correctly parsed");
+    let complex = snapshots
+        .iter()
+        .find(|s| s.id == complex_id)
+        .expect("Complex snapshot not found");
+    assert_eq!(
+        complex.label, "my-long-label",
+        "Complex label with dashes should be correctly parsed"
+    );
 }

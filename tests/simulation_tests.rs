@@ -23,7 +23,10 @@ error: failed to prepare transaction (conflicting dependencies)
 "#;
     let result = SimulationEngine::parse_pacman_output(output);
     assert!(!result.conflicts.is_empty(), "Should detect conflicts");
-    assert!(result.conflicts.iter().any(|c| c.contains("package1 and package2 are in conflict")));
+    assert!(result
+        .conflicts
+        .iter()
+        .any(|c| c.contains("package1 and package2 are in conflict")));
 }
 
 #[test]
@@ -35,5 +38,8 @@ Errors occurred, no packages were upgraded.
 "#;
     let result = SimulationEngine::parse_pacman_output(output);
     assert!(!result.conflicts.is_empty());
-    assert!(result.conflicts.iter().any(|c| c.contains("/usr/bin/file exists in filesystem")));
+    assert!(result
+        .conflicts
+        .iter()
+        .any(|c| c.contains("/usr/bin/file exists in filesystem")));
 }

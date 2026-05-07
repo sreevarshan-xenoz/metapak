@@ -1,11 +1,11 @@
-use crate::errors::{Result, AppError};
-use crate::traits::{SnapshotProvider, SnapshotInfo};
+use crate::errors::{AppError, Result};
+use crate::traits::{SnapshotInfo, SnapshotProvider};
 use crate::utils::validate_path;
 use async_trait::async_trait;
-use chrono::{Local, DateTime};
-use tokio::process::Command;
-use tokio::fs;
+use chrono::{DateTime, Local};
 use std::path::{Path, PathBuf};
+use tokio::fs;
+use tokio::process::Command;
 
 /// BTRFS-based snapshot provider.
 ///
@@ -30,10 +30,7 @@ impl BtrfsProvider {
 
     /// Helper to run a command and capture its output for better error reporting.
     async fn run_command(&self, prog: &str, args: &[&str]) -> Result<()> {
-        let output = Command::new(prog)
-            .args(args)
-            .output()
-            .await?;
+        let output = Command::new(prog).args(args).output().await?;
 
         if output.status.success() {
             Ok(())
@@ -53,37 +50,47 @@ impl BtrfsProvider {
 impl SnapshotProvider for BtrfsProvider {
     async fn create(&self, label: &str) -> Result<String> {
         if !validate_path(&self.snapshots_dir) {
-            return Err(AppError::Validation("Invalid snapshots directory path".to_string()));
+            return Err(AppError::Validation(
+                "Invalid snapshots directory path".to_string(),
+            ));
         }
 
         let id = format!("arch-tui-{}-{}", label, Local::now().format("%Y%m%d-%H%M"));
         let dest = self.snapshots_dir.join(&id);
-        
-        self.run_command("btrfs", &[
-            "subvolume", "snapshot", "-r", 
-            &self.root_path.to_string_lossy(),
-            &dest.to_string_lossy()
-        ]).await?;
-        
+
+        self.run_command(
+            "btrfs",
+            &[
+                "subvolume",
+                "snapshot",
+                "-r",
+                &self.root_path.to_string_lossy(),
+                &dest.to_string_lossy(),
+            ],
+        )
+        .await?;
+
         Ok(id)
     }
 
     async fn rollback(&self, id: &str) -> Result<()> {
         let source = self.snapshots_dir.join(id);
         if !validate_path(&source) {
-            return Err(AppError::Validation("Invalid snapshot path for rollback".to_string()));
+            return Err(AppError::Validation(
+                "Invalid snapshot path for rollback".to_string(),
+            ));
         }
 
-        self.run_command("btrfs", &[
-            "subvolume", "set-default", 
-            &source.to_string_lossy(), 
-            "/"
-        ]).await
+        self.run_command(
+            "btrfs",
+            &["subvolume", "set-default", &source.to_string_lossy(), "/"],
+        )
+        .await
     }
 
     async fn list(&self) -> Result<Vec<SnapshotInfo>> {
         let mut snapshots = Vec::new();
-        
+
         // Ensure snapshots_dir exists
         if !fs::try_exists(&self.snapshots_dir).await.unwrap_or(false) {
             return Ok(snapshots);
@@ -103,14 +110,16 @@ impl SnapshotProvider for BtrfsProvider {
                 if parts.len() >= 5 {
                     let date_idx = parts.len() - 2;
                     let time_idx = parts.len() - 1;
-                    
+
                     let label = parts[2..date_idx].join("-");
                     let date_str = parts[date_idx];
                     let time_str = parts[time_idx];
                     let datetime_str = format!("{}-{}", date_str, time_str);
-                    
+
                     // Try to parse the datetime (YYYYMMDD-HHMM)
-                    if let Ok(created_at) = DateTime::parse_from_str(&format!("{}+0000", datetime_str), "%Y%m%d-%H%M%z") {
+                    if let Ok(created_at) =
+                        DateTime::parse_from_str(&format!("{}+0000", datetime_str), "%Y%m%d-%H%M%z")
+                    {
                         snapshots.push(SnapshotInfo {
                             id: file_name,
                             label,
@@ -120,7 +129,7 @@ impl SnapshotProvider for BtrfsProvider {
                 }
             }
         }
-        
+
         // Sort by creation time descending (newest first)
         snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         Ok(snapshots)
@@ -134,10 +143,8 @@ impl SnapshotProvider for BtrfsProvider {
 
         for snapshot in snapshots.iter().skip(keep_count) {
             let path = self.snapshots_dir.join(&snapshot.id);
-            self.run_command("btrfs", &[
-                "subvolume", "delete", 
-                &path.to_string_lossy()
-            ]).await?;
+            self.run_command("btrfs", &["subvolume", "delete", &path.to_string_lossy()])
+                .await?;
         }
         Ok(())
     }

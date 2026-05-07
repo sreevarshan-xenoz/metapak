@@ -3,7 +3,7 @@
 //! Tests for circuit breaker, cache limits, path validation,
 //! search limits, and other robustness improvements.
 
-use arch_tui::utils::{validate_path, sanitize_filename, validate_search_query};
+use arch_tui::utils::{sanitize_filename, validate_path, validate_search_query};
 use std::path::Path;
 
 #[test]
@@ -14,7 +14,9 @@ fn test_path_validation_prevents_traversal() {
     assert!(!validate_path(Path::new("some/../../secret")));
 
     // These should be allowed
-    assert!(validate_path(Path::new("/home/user/.config/arch-tui/config.toml")));
+    assert!(validate_path(Path::new(
+        "/home/user/.config/arch-tui/config.toml"
+    )));
     assert!(validate_path(Path::new(".config/arch-tui/config.toml")));
     assert!(validate_path(Path::new("relative/path/file.txt")));
 }
