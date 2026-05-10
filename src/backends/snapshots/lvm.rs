@@ -16,7 +16,7 @@ impl LvmProvider {
         Self {
             volume_group: volume_group.to_string(),
             logical_volume: logical_volume.to_string(),
-            snapshot_prefix: "arch-tui-snap".to_string(),
+            snapshot_prefix: "metapak-snap".to_string(),
         }
     }
 
@@ -46,21 +46,17 @@ impl SnapshotProvider for LvmProvider {
     async fn create(&self, label: &str) -> Result<String> {
         let snap_name = self.snapshot_name(label);
         let full_lv = format!("{}/{}", self.volume_group, self.logical_volume);
-        let full_snap = format!("{}/{}", self.volume_group, snap_name);
+        let _full_snap = format!("{}/{}", self.volume_group, snap_name);
 
         self.run_command(&["-s", &full_lv, "-n", &snap_name, "-L", "1G"])
             .await?;
 
-        Ok(format!(
-            "arch-tui-{}-{}",
-            label,
-            Local::now().format("%Y%m%d-%H%M")
-        ))
+        Ok(snap_name)
     }
 
     async fn rollback(&self, id: &str) -> Result<()> {
         let full_snap = format!("{}/{}", self.volume_group, id);
-        let full_lv = format!("{}/{}", self.volume_group, self.logical_volume);
+        let _full_lv = format!("{}/{}", self.volume_group, self.logical_volume);
 
         Command::new("lvconvert")
             .args(["--merge", &full_snap])
@@ -85,12 +81,20 @@ impl SnapshotProvider for LvmProvider {
 
         for line in stdout.lines() {
             let line = line.trim();
-            if line.contains(&self.snapshot_prefix) {
+            let prefix = if line.contains("metapak-snap") {
+                Some("metapak-snap")
+            } else if line.contains("arch-tui-snap") {
+                Some("arch-tui-snap")
+            } else {
+                None
+            };
+
+            if let Some(p) = prefix {
                 let parts: Vec<&str> = line.split(',').collect();
                 if parts.len() >= 1 {
                     let id = parts[0].trim().to_string();
                     let label = id
-                        .strip_prefix(&format!("{}-", self.snapshot_prefix))
+                        .strip_prefix(&format!("{}-", p))
                         .unwrap_or(&id)
                         .split('-')
                         .next()

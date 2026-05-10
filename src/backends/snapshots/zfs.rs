@@ -37,8 +37,8 @@ impl ZfsProvider {
 #[async_trait]
 impl SnapshotProvider for ZfsProvider {
     async fn create(&self, label: &str) -> Result<String> {
-        let snapshot_name = format!("{}/{}@arch-tui-{}", self.pool, self.dataset, label);
-        let id = format!("arch-tui-{}-{}", label, Local::now().format("%Y%m%d-%H%M"));
+        let id = format!("metapak-{}-{}", label, Local::now().format("%Y%m%d-%H%M"));
+        let snapshot_name = format!("{}/{}@{}", self.pool, self.dataset, id);
 
         self.run_command(&["snapshot", &snapshot_name]).await?;
 
@@ -61,11 +61,19 @@ impl SnapshotProvider for ZfsProvider {
 
         for line in output.lines() {
             let name = line.trim();
-            if name.contains("@arch-tui-") {
+            let prefix = if name.contains("@metapak-") {
+                Some("metapak-")
+            } else if name.contains("@arch-tui-") {
+                Some("arch-tui-")
+            } else {
+                None
+            };
+
+            if let Some(p) = prefix {
                 if let Some(snapshot_part) = name.rsplit('@').next() {
-                    let id = snapshot_part.replace(&format!("{}/", self.dataset), "");
+                    let id = snapshot_part.to_string();
                     let label = id
-                        .strip_prefix("arch-tui-")
+                        .strip_prefix(p)
                         .unwrap_or(&id)
                         .split('-')
                         .next()

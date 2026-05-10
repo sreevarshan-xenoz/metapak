@@ -30,7 +30,7 @@ impl TimeshiftProvider {
 #[async_trait]
 impl SnapshotProvider for TimeshiftProvider {
     async fn create(&self, label: &str) -> Result<String> {
-        let comment = format!("arch-tui-{}", label);
+        let comment = format!("metapak-{}", label);
         let output = self
             .run_timeshift(&["--create", "--comments", &comment, "--tags", "O"])
             .await?;
@@ -62,7 +62,7 @@ impl SnapshotProvider for TimeshiftProvider {
 
         // Timeshift --list output parsing:
         // Index  Name                 Tags  Description
-        // 0      2026-05-07_12-00-00  O     arch-tui-operation
+        // 0      2026-05-07_12-00-00  O     metapak-operation
 
         for line in output.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -88,15 +88,15 @@ impl SnapshotProvider for TimeshiftProvider {
 
     async fn cleanup(&self, _keep_count: usize) -> Result<()> {
         // Implementation for cleanup if needed, timeshift has its own retention policy
-        // but we could implement manual deletion of oldest arch-tui snapshots.
+        // but we could implement manual deletion of oldest metapak/arch-tui snapshots.
         let snapshots = self.list().await?;
-        let arch_tui_snapshots: Vec<_> = snapshots
+        let managed_snapshots: Vec<_> = snapshots
             .iter()
-            .filter(|s| s.label.contains("arch-tui"))
+            .filter(|s| s.label.contains("metapak") || s.label.contains("arch-tui"))
             .collect();
 
-        if arch_tui_snapshots.len() > _keep_count {
-            for s in arch_tui_snapshots.iter().skip(_keep_count) {
+        if managed_snapshots.len() > _keep_count {
+            for s in managed_snapshots.iter().skip(_keep_count) {
                 let _ = self.run_timeshift(&["--delete", "--snapshot", &s.id]).await;
             }
         }

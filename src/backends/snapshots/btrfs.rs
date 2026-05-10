@@ -55,7 +55,7 @@ impl SnapshotProvider for BtrfsProvider {
             ));
         }
 
-        let id = format!("arch-tui-{}-{}", label, Local::now().format("%Y%m%d-%H%M"));
+        let id = format!("metapak-{}-{}", label, Local::now().format("%Y%m%d-%H%M"));
         let dest = self.snapshots_dir.join(&id);
 
         self.run_command(
@@ -103,15 +103,23 @@ impl SnapshotProvider for BtrfsProvider {
                 AppError::Backend("Invalid filename in snapshots directory".to_string())
             })?;
 
-            if file_name.starts_with("arch-tui-") {
-                // Expected Format: arch-tui-LABEL-YYYYMMDD-HHMM
+            let (is_metapak, is_arch_tui) = (
+                file_name.starts_with("metapak-"),
+                file_name.starts_with("arch-tui-"),
+            );
+
+            if is_metapak || is_arch_tui {
+                // Expected Format: metapak-LABEL-YYYYMMDD-HHMM or arch-tui-LABEL-YYYYMMDD-HHMM
                 // LABEL can contain dashes, so we split and take the last two parts as timestamp.
                 let parts: Vec<&str> = file_name.split('-').collect();
-                if parts.len() >= 5 {
+                let label_start = if is_metapak { 1 } else { 2 };
+                let min_parts = label_start + 3; // label + date + time
+
+                if parts.len() >= min_parts {
                     let date_idx = parts.len() - 2;
                     let time_idx = parts.len() - 1;
 
-                    let label = parts[2..date_idx].join("-");
+                    let label = parts[label_start..date_idx].join("-");
                     let date_str = parts[date_idx];
                     let time_str = parts[time_idx];
                     let datetime_str = format!("{}-{}", date_str, time_str);
