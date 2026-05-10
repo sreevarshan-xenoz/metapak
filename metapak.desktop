@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Arch TUI
+Name=metapak
 Comment=Unified Arch Linux Package Manager
-Exec=arch-tui
+Exec=metapak
 Icon=utilities-terminal
 Terminal=true
 Categories=System;TerminalEmulator;Filesystem;

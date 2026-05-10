@@ -14,20 +14,20 @@ BIN_DIR="${INSTALL_DIR}/bin"
 SHARE_DIR="${INSTALL_DIR}/share"
 
 usage() {
-    echo "Arch TUI Installer v${VERSION}"
+    echo "metapak Installer v${VERSION}"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -i, --install      Install arch-tui (default)"
-    echo "  -u, --uninstall    Uninstall arch-tui"
+    echo "  -i, --install      Install metapak (default)"
+    echo "  -u, --uninstall    Uninstall metapak"
     echo "  -U, --update       Update and rebuild"
     echo "  -h, --help         Show this help message"
     echo ""
 }
 
 install() {
-    echo -e "${BLUE}=== Arch TUI Installer ===${NC}"
+    echo -e "${BLUE}=== metapak Installer ===${NC}"
 
     # 1. Check dependencies
     echo -e "${GREEN}[1/6] Checking dependencies...${NC}"
@@ -64,27 +64,27 @@ install() {
     # 3. Install Binary
     echo -e "${GREEN}[3/6] Installing binary to ${BIN_DIR}...${NC}"
     mkdir -p "${BIN_DIR}"
-    cp target/release/arch-tui "${BIN_DIR}/"
-    chmod +x "${BIN_DIR}/arch-tui"
+    cp target/release/metapak "${BIN_DIR}/"
+    chmod +x "${BIN_DIR}/metapak"
 
     # 4. Install Config
     echo -e "${GREEN}[4/6] Installing default config...${NC}"
-    mkdir -p "${INSTALL_DIR}/config/arch-tui"
-    if [ ! -f "${INSTALL_DIR}/config/arch-tui/config.toml" ]; then
-        cp config.example.toml "${INSTALL_DIR}/config/arch-tui/config.toml"
+    mkdir -p "${INSTALL_DIR}/config/metapak"
+    if [ ! -f "${INSTALL_DIR}/config/metapak/config.toml" ]; then
+        cp config.example.toml "${INSTALL_DIR}/config/metapak/config.toml"
     fi
 
     # 5. Install Desktop Entry
     echo -e "${GREEN}[5/6] Installing desktop entry...${NC}"
     mkdir -p "${SHARE_DIR}/applications"
-    cp arch-tui.desktop "${SHARE_DIR}/applications/"
+    cp metapak.desktop "${SHARE_DIR}/applications/"
     update-desktop-database "${SHARE_DIR}/applications/" 2>/dev/null || true
 
     # 6. Finalize
     echo -e "${GREEN}[6/6] Installation Complete!${NC}"
     echo ""
-    echo -e "${GREEN}To run arch-tui:${NC}"
-    echo "  ${BIN_DIR}/arch-tui"
+    echo -e "${GREEN}To run metapak:${NC}"
+    echo "  ${BIN_DIR}/metapak"
     echo ""
     echo "Or add to PATH by adding to ~/.bashrc or ~/.zshrc:"
     echo "  export PATH=\"\${HOME}/.local/bin:\$PATH\""
@@ -93,20 +93,20 @@ install() {
 }
 
 uninstall() {
-    echo -e "${BLUE}=== Uninstalling Arch TUI ===${NC}"
+    echo -e "${BLUE}=== Uninstalling metapak ===${NC}"
     
-    if [ -f "${BIN_DIR}/arch-tui" ]; then
-        rm -f "${BIN_DIR}/arch-tui"
+    if [ -f "${BIN_DIR}/metapak" ]; then
+        rm -f "${BIN_DIR}/metapak"
         echo "Removed binary"
     fi
     
-    if [ -d "${INSTALL_DIR}/config/arch-tui" ]; then
-        rm -rf "${INSTALL_DIR}/config/arch-tui"
+    if [ -d "${INSTALL_DIR}/config/metapak" ]; then
+        rm -rf "${INSTALL_DIR}/config/metapak"
         echo "Removed config"
     fi
     
-    if [ -f "${SHARE_DIR}/applications/arch-tui.desktop" ]; then
-        rm -f "${SHARE_DIR}/applications/arch-tui.desktop"
+    if [ -f "${SHARE_DIR}/applications/metapak.desktop" ]; then
+        rm -f "${SHARE_DIR}/applications/metapak.desktop"
         echo "Removed desktop entry"
     fi
     
@@ -114,12 +114,12 @@ uninstall() {
 }
 
 update() {
-    echo -e "${BLUE}=== Updating Arch TUI ===${NC}"
+    echo -e "${BLUE}=== Updating metapak ===${NC}"
     cargo pull 2>/dev/null || true
     cargo build --release
     mkdir -p "${BIN_DIR}"
-    cp target/release/arch-tui "${BIN_DIR}/"
-    chmod +x "${BIN_DIR}/arch-tui"
+    cp target/release/metapak "${BIN_DIR}/"
+    chmod +x "${BIN_DIR}/metapak"
     echo -e "${GREEN}Update complete!${NC}"
 }
 

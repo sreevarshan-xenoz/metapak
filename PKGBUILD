@@ -1,10 +1,10 @@
 # Maintainer: sreevarshan <sreevarshan1511@gmail.com>
-pkgname=arch-tui
+pkgname=metapak
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="A unified TUI for Arch Linux package management (Pacman + AUR)"
 arch=('x86_64')
-url="https://github.com/sreevarshan-xenoz/arch-tui"
+url="https://github.com/sreevarshan-xenoz/metapak"
 license=('MIT')
 depends=('gcc-libs' 'openssl' 'pacman')
 makedepends=('cargo' 'git')
@@ -27,7 +27,7 @@ build() {
 
 package() {
     cd "$pkgname"
-    install -Dm755 target/release/arch-tui "$pkgdir/usr/bin/arch-tui"
-    install -Dm644 arch-tui.desktop "$pkgdir/usr/share/applications/arch-tui.desktop"
+    install -Dm755 target/release/metapak "$pkgdir/usr/bin/metapak"
+    install -Dm644 metapak.desktop "$pkgdir/usr/share/applications/metapak.desktop"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
