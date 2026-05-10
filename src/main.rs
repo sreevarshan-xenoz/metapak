@@ -492,6 +492,11 @@ async fn main() -> Result<()> {
     // Initialize tracing
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
+    // Migrate configuration if needed
+    if let Err(e) = crate::config::migrate_config() {
+        tracing::warn!("Failed to migrate configuration: {}", e);
+    }
+
     // Parse CLI arguments
     let cli = Cli::parse();
 

@@ -136,6 +136,28 @@ impl Default for AppConfig {
     }
 }
 
+pub fn get_config_dir() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("metapak")
+}
+
+pub fn migrate_config() -> std::io::Result<()> {
+    let old_dir = dirs::config_dir().map(|d| d.join("arch-tui"));
+    let new_dir = get_config_dir();
+
+    if let Some(old) = old_dir {
+        if old.exists() && !new_dir.exists() {
+            tracing::info!("Migrating configuration from arch-tui to metapak");
+            if let Some(parent) = new_dir.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&old, &new_dir);
+        }
+    }
+    Ok(())
+}
+
 impl AppConfig {
     const DEFAULT_CONFIG: &'static str = include_str!("../config/default.toml");
 
@@ -147,8 +169,7 @@ impl AppConfig {
             config::FileFormat::Toml,
         ));
 
-        let config_dir = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        let config_subdir = config_dir.join("arch-tui");
+        let config_subdir = get_config_dir();
         let config_path = config_subdir.join("config.toml");
 
         // Validate config path to prevent path traversal
@@ -170,7 +191,7 @@ impl AppConfig {
             cfg = cfg.add_source(File::with_name(path).required(false));
         }
 
-        cfg = cfg.add_source(config::Environment::with_prefix("ARCH_TUI"));
+        cfg = cfg.add_source(config::Environment::with_prefix("METAPAK"));
 
         let config: AppConfig = cfg.build()?.try_deserialize()?;
 
