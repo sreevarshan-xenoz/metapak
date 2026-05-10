@@ -18,7 +18,7 @@ pub fn export_installed(packages: &[crate::models::Package], path: &Path) -> std
 
     let mut file = File::create(path)?;
 
-    writeln!(file, "# Arch TUI - Exported Package List")?;
+    writeln!(file, "# metapak - Exported Package List")?;
     writeln!(file, "# Generated on: {}", chrono_lite())?;
     writeln!(file, "#")?;
 
@@ -40,7 +40,7 @@ pub fn export_all(packages: &[crate::models::Package], path: &Path) -> std::io::
 
     let mut file = File::create(path)?;
 
-    writeln!(file, "# Arch TUI - Exported Package List")?;
+    writeln!(file, "# metapak - Exported Package List")?;
     writeln!(file, "# Generated on: {}", chrono_lite())?;
     writeln!(file, "#")?;
     writeln!(file, "# Format: package_name [installed]")?;
@@ -122,18 +122,19 @@ mod tests {
         pkg.source = crate::models::PackageSource::Pacman;
         pkg.is_installed = true;
 
-        let path = "/tmp/arch_tui_test_export.txt";
-        export_installed(&[pkg], std::path::Path::new(path)).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("metapak_test_export.txt");
+        export_installed(&[pkg], &path).unwrap();
 
         let content = fs::read_to_string(path).unwrap();
         assert!(content.contains("test-pkg"));
-        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn test_import_list() {
-        let path = "/tmp/arch_tui_test_import.txt";
-        let mut file = fs::File::create(path).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("metapak_test_import.txt");
+        let mut file = fs::File::create(&path).unwrap();
         use std::io::Write;
         writeln!(file, "# Comment").unwrap();
         writeln!(file, "pkg1").unwrap();
@@ -141,11 +142,10 @@ mod tests {
         writeln!(file, "").unwrap();
         drop(file);
 
-        let packages = import_list(std::path::Path::new(path)).unwrap();
+        let packages = import_list(&path).unwrap();
         assert_eq!(packages.len(), 2);
         assert_eq!(packages[0], "pkg1");
         assert_eq!(packages[1], "pkg2");
-        let _ = fs::remove_file(path);
     }
 }
 

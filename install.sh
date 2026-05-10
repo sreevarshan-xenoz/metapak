@@ -12,6 +12,7 @@ VERSION="0.1.0"
 INSTALL_DIR="${HOME}/.local"
 BIN_DIR="${INSTALL_DIR}/bin"
 SHARE_DIR="${INSTALL_DIR}/share"
+CONFIG_DIR="${HOME}/.config/metapak"
 
 usage() {
     echo "metapak Installer v${VERSION}"
@@ -69,9 +70,9 @@ install() {
 
     # 4. Install Config
     echo -e "${GREEN}[4/6] Installing default config...${NC}"
-    mkdir -p "${INSTALL_DIR}/config/metapak"
-    if [ ! -f "${INSTALL_DIR}/config/metapak/config.toml" ]; then
-        cp config.example.toml "${INSTALL_DIR}/config/metapak/config.toml"
+    mkdir -p "${CONFIG_DIR}"
+    if [ ! -f "${CONFIG_DIR}/config.toml" ]; then
+        cp config.example.toml "${CONFIG_DIR}/config.toml"
     fi
 
     # 5. Install Desktop Entry
@@ -100,8 +101,8 @@ uninstall() {
         echo "Removed binary"
     fi
     
-    if [ -d "${INSTALL_DIR}/config/metapak" ]; then
-        rm -rf "${INSTALL_DIR}/config/metapak"
+    if [ -d "${CONFIG_DIR}" ]; then
+        rm -rf "${CONFIG_DIR}"
         echo "Removed config"
     fi
     
@@ -115,7 +116,7 @@ uninstall() {
 
 update() {
     echo -e "${BLUE}=== Updating metapak ===${NC}"
-    cargo pull 2>/dev/null || true
+    git pull 2>/dev/null || true
     cargo build --release
     mkdir -p "${BIN_DIR}"
     cp target/release/metapak "${BIN_DIR}/"

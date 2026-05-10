@@ -16,7 +16,7 @@ The project follows a modular architecture designed for extensibility and safety
 - **`src/app.rs`**: Contains the `App` struct, which holds the entire application state (results, selection, loading state, history, etc.).
 - **`src/backends/`**: Implements the `UniversalPackageManager` trait for different package managers (`pacman`, `apt`, `brew`, `winget`, etc.) and snapshot providers (`btrfs`).
 - **`src/transaction_manager.rs`**: Orchestrates safe system modifications, handling pre-operation snapshots and potential rollbacks.
-- **`src/ui/`**: Modularized UI components using Ratatui.
+- **`src/ui.rs`**: Modularized UI components using Ratatui.
 - **`src/action.rs` & `src/models.rs`**: Define the internal message passing (Actions) and data structures (Packages).
 
 ## 🏗️ Building and Running

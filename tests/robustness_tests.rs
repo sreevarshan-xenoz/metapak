@@ -3,7 +3,7 @@
 //! Tests for circuit breaker, cache limits, path validation,
 //! search limits, and other robustness improvements.
 
-use arch_tui::utils::{sanitize_filename, validate_path, validate_search_query};
+use metapak::utils::{sanitize_filename, validate_path, validate_search_query};
 use std::path::Path;
 
 #[test]
@@ -15,9 +15,9 @@ fn test_path_validation_prevents_traversal() {
 
     // These should be allowed
     assert!(validate_path(Path::new(
-        "/home/user/.config/arch-tui/config.toml"
+        "/home/user/.config/metapak/config.toml"
     )));
-    assert!(validate_path(Path::new(".config/arch-tui/config.toml")));
+    assert!(validate_path(Path::new(".config/metapak/config.toml")));
     assert!(validate_path(Path::new("relative/path/file.txt")));
 }
 
@@ -46,7 +46,7 @@ fn test_search_query_validation() {
 
 #[cfg(test)]
 mod circuit_breaker_tests {
-    use arch_tui::services::CircuitBreaker;
+    use metapak::services::CircuitBreaker;
 
     #[test]
     fn test_circuit_breaker_initial_state() {
@@ -87,7 +87,7 @@ mod circuit_breaker_tests {
 
 #[cfg(test)]
 mod error_type_tests {
-    use arch_tui::errors::AppError;
+    use metapak::errors::AppError;
 
     #[test]
     fn test_timeout_error() {
@@ -110,7 +110,7 @@ mod error_type_tests {
 
 #[cfg(test)]
 mod constants_tests {
-    use arch_tui::constants;
+    use metapak::constants;
 
     #[test]
     fn test_search_limits() {

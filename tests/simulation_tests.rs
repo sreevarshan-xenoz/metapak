@@ -1,4 +1,4 @@
-use arch_tui::simulation::SimulationEngine;
+use metapak::simulation::SimulationEngine;
 
 #[test]
 fn test_parse_pacman_output_with_sizes() {

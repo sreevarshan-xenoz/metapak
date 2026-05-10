@@ -74,7 +74,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "metapak")]
-#[command(about = "Arch Linux TUI Package Manager", long_about = None)]
+#[command(about = "metapak Package Manager", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -1101,7 +1101,7 @@ async fn main() -> Result<()> {
                     );
 
                     let notifier = DesktopNotifier::new();
-                    let _ = notifier.send("Arch TUI", "Operation completed successfully!");
+                    let _ = notifier.send("metapak", "Operation completed successfully!");
 
                     if let Some(mut tx) = app.current_transaction.take() {
                         tx.status = TransactionStatus::Success;
@@ -1177,7 +1177,7 @@ async fn main() -> Result<()> {
     }
 
     // Restore terminal
-    tracing::info!("Shutting down Arch TUI");
+    tracing::info!("Shutting down metapak");
     disable_raw_mode().map_err(crate::errors::AppError::Io)?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(crate::errors::AppError::Io)?;
     terminal

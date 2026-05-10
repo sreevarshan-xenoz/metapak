@@ -1,4 +1,4 @@
-//! Internationalization (i18n) support for Arch TUI
+//! Internationalization (i18n) support for metapak
 //!
 //! This module provides localization capabilities for the application,
 //! allowing it to display text in different languages based on user preference.
@@ -85,7 +85,7 @@ impl Localizer {
 
     fn load_english(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - Package Manager".into());
+        t.insert("app_title".into(), "metapak - Package Manager".into());
         t.insert("search_placeholder".into(), "Search packages...".into());
         t.insert("packages_label".into(), "Packages".into());
         t.insert("loading_label".into(), "Loading...".into());
@@ -150,7 +150,7 @@ impl Localizer {
 
     fn load_spanish(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - Gestor de Paquetes".into());
+        t.insert("app_title".into(), "metapak - Gestor de Paquetes".into());
         t.insert("search_placeholder".into(), "Buscar paquetes...".into());
         t.insert("packages_label".into(), "Paquetes".into());
         t.insert("loading_label".into(), "Cargando...".into());
@@ -224,7 +224,7 @@ impl Localizer {
         let mut t = HashMap::new();
         t.insert(
             "app_title".into(),
-            "Arch TUI - Gestionnaire de Paquets".into(),
+            "metapak - Gestionnaire de Paquets".into(),
         );
         t.insert(
             "search_placeholder".into(),
@@ -297,7 +297,7 @@ impl Localizer {
 
     fn load_german(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - Paketverwaltung".into());
+        t.insert("app_title".into(), "metapak - Paketverwaltung".into());
         t.insert("search_placeholder".into(), "Pakete suchen...".into());
         t.insert("packages_label".into(), "Pakete".into());
         t.insert("loading_label".into(), "Laden...".into());
@@ -362,7 +362,7 @@ impl Localizer {
 
     fn load_chinese(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - 软件包管理器".into());
+        t.insert("app_title".into(), "metapak - 软件包管理器".into());
         t.insert("search_placeholder".into(), "搜索软件包...".into());
         t.insert("packages_label".into(), "软件包".into());
         t.insert("loading_label".into(), "加载中...".into());
@@ -415,7 +415,7 @@ impl Localizer {
 
     fn load_japanese(&mut self) {
         let mut t = HashMap::new();
-        t.insert("app_title".into(), "Arch TUI - パッケージ管理".into());
+        t.insert("app_title".into(), "metapak - パッケージ管理".into());
         t.insert("search_placeholder".into(), "パッケージを検索...".into());
         t.insert("packages_label".into(), "パッケージ".into());
         t.insert("loading_label".into(), "読み込み中...".into());
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn test_get_translation() {
         let localizer = Localizer::new();
-        assert_eq!(localizer.t("app_title"), "Arch TUI - Package Manager");
+        assert_eq!(localizer.t("app_title"), "metapak - Package Manager");
     }
 
     #[test]
@@ -541,7 +541,7 @@ mod tests {
         // French will work now with full translations
         assert_eq!(
             localizer.t("app_title"),
-            "Arch TUI - Gestionnaire de Paquets"
+            "metapak - Gestionnaire de Paquets"
         );
     }
 
@@ -557,11 +557,11 @@ mod tests {
         let mut es_translations = HashMap::new();
         es_translations.insert(
             "app_title".to_string(),
-            "Gestor de Paquetes Arch TUI".to_string(),
+            "Gestor de Paquetes metapak".to_string(),
         );
         localizer.add_translations(Language::Spanish, es_translations);
         localizer.set_language(Language::Spanish);
-        assert_eq!(localizer.t("app_title"), "Gestor de Paquetes Arch TUI");
+        assert_eq!(localizer.t("app_title"), "Gestor de Paquetes metapak");
     }
 
     #[test]

@@ -72,13 +72,16 @@ impl SnapshotProvider for ZfsProvider {
             if let Some(p) = prefix {
                 if let Some(snapshot_part) = name.rsplit('@').next() {
                     let id = snapshot_part.to_string();
-                    let label = id
-                        .strip_prefix(p)
-                        .unwrap_or(&id)
-                        .split('-')
-                        .next()
-                        .unwrap_or("unknown")
-                        .to_string();
+                    let parts: Vec<&str> = id.split('-').collect();
+                    let label_start = if p == "metapak-" { 1 } else { 2 };
+                    let min_parts = label_start + 2; // label + timestamp (date-time or similar)
+
+                    let label = if parts.len() >= min_parts {
+                        let date_idx = parts.len() - 2;
+                        parts[label_start..date_idx].join("-")
+                    } else {
+                        id.strip_prefix(p).unwrap_or(&id).to_string()
+                    };
 
                     snapshots.push(SnapshotInfo {
                         id,

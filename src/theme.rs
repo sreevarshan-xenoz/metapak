@@ -1,4 +1,4 @@
-//! Dynamic theme system for Arch TUI
+//! Dynamic theme system for metapak
 //!
 //! This module provides comprehensive theming support with Catppuccin color palettes
 //! and customizable colors for all UI elements.

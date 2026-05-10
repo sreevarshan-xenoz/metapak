@@ -91,15 +91,20 @@ impl SnapshotProvider for LvmProvider {
 
             if let Some(p) = prefix {
                 let parts: Vec<&str> = line.split(',').collect();
-                if parts.len() >= 1 {
+                if !parts.is_empty() {
                     let id = parts[0].trim().to_string();
-                    let label = id
-                        .strip_prefix(&format!("{}-", p))
-                        .unwrap_or(&id)
-                        .split('-')
-                        .next()
-                        .unwrap_or("unknown")
-                        .to_string();
+                    let id_parts: Vec<&str> = id.split('-').collect();
+                    
+                    // prefix is metapak-snap (2 parts) or arch-tui-snap (3 parts)
+                    let label_start = if p == "metapak-snap" { 2 } else { 3 };
+                    let min_parts = label_start + 2; // label + timestamp
+
+                    let label = if id_parts.len() >= min_parts {
+                        let date_idx = id_parts.len() - 2;
+                        id_parts[label_start..date_idx].join("-")
+                    } else {
+                        id.strip_prefix(&format!("{}-", p)).unwrap_or(&id).to_string()
+                    };
 
                     snapshots.push(SnapshotInfo {
                         id,

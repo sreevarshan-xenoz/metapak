@@ -322,7 +322,7 @@ impl PackageProvider for AurProvider {
             match self
                 .client
                 .get(&url)
-                .header("User-Agent", "arch-tui/0.1.0")
+                .header("User-Agent", "metapak/0.1.0")
                 .send()
                 .await
             {
@@ -1290,8 +1290,9 @@ impl AurHelperCommand {
 
     fn detect_helper(configured: &str) -> HelperKind {
         match configured {
-            "paru" if Self::command_exists("paru") => HelperKind::Paru,
-            "yay" if Self::command_exists("yay") => HelperKind::Yay,
+            "paru" => HelperKind::Paru,
+            "yay" => HelperKind::Yay,
+            "pacman" => HelperKind::Pacman,
             "auto" | _ => {
                 if Self::command_exists("paru") {
                     HelperKind::Paru

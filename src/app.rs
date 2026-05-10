@@ -1,4 +1,4 @@
-//! Application state management for Arch TUI
+//! Application state management for metapak
 //!
 //! This module contains the main application state and logic for managing
 //! the TUI application's state, including search results, selections,
