@@ -17,6 +17,9 @@ pub enum AppError {
     #[error("AUR command failed: {0}")]
     Aur(String),
 
+    #[error("NPM command failed: {0}")]
+    Npm(String),
+
     #[error("Sudo authentication failed")]
     SudoAuthFailed,
 

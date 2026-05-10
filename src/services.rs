@@ -438,6 +438,115 @@ impl PackageProvider for AurProvider {
     }
 }
 
+/// NPM package provider implementation
+pub struct NpmProvider {
+    client: reqwest::Client,
+}
+
+impl NpmProvider {
+    pub fn new() -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("metapak/0.1.0")
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to create NPM HTTP client: {}, using default", e);
+                reqwest::Client::new()
+            });
+        Self { client }
+    }
+
+    fn parse_npm_response(npm_response: NpmResponse) -> Vec<Package> {
+        npm_response
+            .objects
+            .into_iter()
+            .map(|obj| {
+                let pkg = obj.package;
+                let mut keywords = pkg.keywords.unwrap_or_default();
+                keywords.push("npm".to_string());
+
+                let mut maintainers = Vec::new();
+                if let Some(publisher) = pkg.publisher {
+                    if let Some(user) = publisher.username {
+                        maintainers.push(user);
+                    }
+                }
+
+                if let Some(npm_maintainers) = pkg.maintainers {
+                    for m in npm_maintainers {
+                        if let Some(username) = m.username {
+                            if !maintainers.contains(&username) {
+                                maintainers.push(username);
+                            }
+                        }
+                    }
+                }
+
+                let licenses = pkg.license.map(|l| vec![l]).unwrap_or_default();
+
+                Package {
+                    name: pkg.name,
+                    version: pkg.version,
+                    description: pkg.description.unwrap_or_default(),
+                    source: PackageSource::Npm,
+                    is_installed: false,
+                    url: pkg.links.and_then(|l| l.npm),
+                    keywords,
+                    maintainers,
+                    licenses,
+                    ..Default::default()
+                }
+            })
+            .collect()
+    }
+}
+
+#[async_trait]
+impl PackageProvider for NpmProvider {
+    async fn search(&self, query: &str) -> Result<Vec<Package>> {
+        let url = format!(
+            "https://registry.npmjs.org/-/v1/search?text={}&size=50",
+            urlencoding::encode(query)
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| AppError::Npm(format!("NPM request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(AppError::Npm(format!(
+                "NPM request failed with status {}",
+                response.status()
+            )));
+        }
+
+        let npm_response: NpmResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Npm(format!("Failed to parse NPM response: {}", e)))?;
+
+        Ok(Self::parse_npm_response(npm_response))
+    }
+
+    async fn is_installed(&self, pkg_name: &str) -> bool {
+        let pkg_name = pkg_name.to_string();
+        match tokio::task::spawn_blocking(move || {
+            Command::new("npm")
+                .args(["list", "-g", "--depth=0", &pkg_name])
+                .output()
+                .map(|o| o.status.success())
+        })
+        .await
+        {
+            Ok(Ok(result)) => result,
+            _ => false,
+        }
+    }
+}
+
 /// Update provider implementation
 pub struct SystemUpdateProvider;
 
@@ -746,6 +855,7 @@ impl PackageService {
             providers: vec![
                 Arc::new(PacmanProvider::new()),
                 Arc::new(AurProvider::new()),
+                Arc::new(NpmProvider::new()),
             ],
             update_provider: Arc::new(SystemUpdateProvider::new()),
             cache: Arc::clone(&SEARCH_CACHE),
@@ -1197,6 +1307,39 @@ struct AurInfoResponse {
     results: Option<AurPackage>,
 }
 
+// NPM Response structures
+#[derive(serde::Deserialize, Debug)]
+struct NpmResponse {
+    objects: Vec<NpmResult>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct NpmResult {
+    package: NpmPackage,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct NpmPackage {
+    name: String,
+    version: String,
+    description: Option<String>,
+    keywords: Option<Vec<String>>,
+    links: Option<NpmLinks>,
+    publisher: Option<NpmUser>,
+    maintainers: Option<Vec<NpmUser>>,
+    license: Option<String>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct NpmLinks {
+    npm: Option<String>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct NpmUser {
+    username: Option<String>,
+}
+
 /// Command builder for safe command execution
 pub struct SafeCommandBuilder {
     program: String,
@@ -1622,6 +1765,46 @@ mod tests {
         assert!(cmd.args.contains(&"pacman".to_string()));
         assert!(cmd.args.contains(&"-U".to_string()));
         assert!(cmd.args.iter().any(|a| a.contains("archive.archlinux.org")));
+    }
+
+    #[test]
+    fn test_parse_npm_response() {
+        let json = r#"{
+            "objects": [
+                {
+                    "package": {
+                        "name": "express",
+                        "version": "5.2.1",
+                        "description": "Fast web framework",
+                        "keywords": ["web", "framework"],
+                        "links": {
+                            "npm": "https://www.npmjs.com/package/express"
+                        },
+                        "publisher": {
+                            "username": "jonchurch"
+                        },
+                        "license": "MIT"
+                    }
+                }
+            ]
+        }"#;
+
+        let response: NpmResponse = serde_json::from_str(json).unwrap();
+        let packages = NpmProvider::parse_npm_response(response);
+
+        assert_eq!(packages.len(), 1);
+        let pkg = &packages[0];
+        assert_eq!(pkg.name, "express");
+        assert_eq!(pkg.version, "5.2.1");
+        assert_eq!(pkg.description, "Fast web framework");
+        assert_eq!(pkg.source, PackageSource::Npm);
+        assert!(pkg.keywords.contains(&"web".to_string()));
+        assert!(pkg.maintainers.contains(&"jonchurch".to_string()));
+        assert_eq!(pkg.licenses, vec!["MIT".to_string()]);
+        assert_eq!(
+            pkg.url,
+            Some("https://www.npmjs.com/package/express".to_string())
+        );
     }
 }
 
