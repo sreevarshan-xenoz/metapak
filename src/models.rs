@@ -50,6 +50,31 @@ pub struct Package {
 pub enum PackageSource {
     Pacman,
     Aur,
+    Apt,
+    Dnf,
+    Zypper,
+    Brew,
+    Winget,
+    Chocolatey,
+    Flatpak,
+    Snap,
+}
+
+impl std::fmt::Display for PackageSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PackageSource::Pacman => write!(f, "pacman"),
+            PackageSource::Aur => write!(f, "aur"),
+            PackageSource::Apt => write!(f, "apt"),
+            PackageSource::Dnf => write!(f, "dnf"),
+            PackageSource::Zypper => write!(f, "zypper"),
+            PackageSource::Brew => write!(f, "brew"),
+            PackageSource::Winget => write!(f, "winget"),
+            PackageSource::Chocolatey => write!(f, "chocolatey"),
+            PackageSource::Flatpak => write!(f, "flatpak"),
+            PackageSource::Snap => write!(f, "snap"),
+        }
+    }
 }
 
 impl Default for PackageSource {
@@ -142,21 +167,36 @@ impl Package {
     }
 
     fn format_size_kb(kb: u64) -> String {
-        if kb >= 1024 * 1024 {
-            format!("{:.1}M", kb as f64 / (1024.0 * 1024.0))
-        } else if kb >= 1024 {
-            format!("{:.1}K", kb as f64 / 1024.0)
+        let bytes = kb * 1024;
+        Self::format_size_bytes(bytes)
+    }
+
+    pub fn format_size_bytes(bytes: u64) -> String {
+        let kib = bytes as f64 / 1024.0;
+        let mib = kib / 1024.0;
+        let gib = mib / 1024.0;
+        let tib = gib / 1024.0;
+
+        if tib >= 1.0 {
+            format!("{:.1} TiB", tib)
+        } else if gib >= 1.0 {
+            format!("{:.1} GiB", gib)
+        } else if mib >= 1.0 {
+            format!("{:.1} MiB", mib)
+        } else if kib >= 1.0 {
+            format!("{:.1} KiB", kib)
         } else {
-            format!("{}K", kb)
+            format!("{} B", bytes)
         }
     }
 
-    pub fn format_size(size: u64) -> String {
-        Self::format_size_kb(size)
+    pub fn format_size(size_kb: u64) -> String {
+        Self::format_size_kb(size_kb)
     }
 
     pub fn get_size(&self) -> u64 {
-        self.download_size.unwrap_or(self.installed_size.unwrap_or(0))
+        self.download_size
+            .unwrap_or(self.installed_size.unwrap_or(0))
     }
 }
 
@@ -182,13 +222,18 @@ pub struct OutdatedPackage {
 }
 
 impl OutdatedPackage {
-    pub fn new(name: String, current_version: String, new_version: String) -> Self {
+    pub fn new(
+        name: String,
+        current_version: String,
+        new_version: String,
+        repository: String,
+    ) -> Self {
         Self {
             name,
             current_version,
             new_version,
             download_size: 0,
-            repository: String::new(),
+            repository,
             is_security_update: false,
             cve_info: None,
             new_dependencies: Vec::new(),

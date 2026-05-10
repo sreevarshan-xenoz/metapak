@@ -4,8 +4,8 @@
 //! the TUI application's state, including search results, selections,
 //! and UI modes.
 
-use std::collections::{HashMap, VecDeque};
 use crate::constants::ui::CONSOLE_BUFFER_MAX_LINES;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -13,8 +13,8 @@ use crate::action::Action;
 use crate::animations::Toast;
 use crate::config::AppConfig;
 
-use crate::models::Package;
 use crate::models::OutdatedPackage;
+use crate::models::Package;
 use crate::services::CommandSpec;
 use crate::transaction_history::TransactionRecord;
 use crate::utils::PasswordInput;
@@ -24,24 +24,19 @@ pub enum InputMode {
     Normal,
     Editing,
 }
-
 /// Search filter options
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum FilterOption {
+    #[default]
     All,
     Installed,
     NotInstalled,
     RepoOnly,
     AurOnly,
+    Updates,
+    AUR,
     Group(String),
 }
-
-impl Default for FilterOption {
-    fn default() -> Self {
-        Self::All
-    }
-}
-
 /// Sort options
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortOption {
@@ -53,36 +48,28 @@ pub enum SortOption {
     Group,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum UpdatesSortOption {
     NameAsc,
     NameDesc,
     SizeAsc,
     SizeDesc,
     Repository,
+    #[default]
     SecurityFirst,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum UpdatesFilter {
+    #[default]
     All,
+    Security,
     SecurityOnly,
     Repository(String),
+    Official,
+    AUR,
     AurOnly,
 }
-
-impl Default for UpdatesSortOption {
-    fn default() -> Self {
-        Self::SecurityFirst
-    }
-}
-
-impl Default for UpdatesFilter {
-    fn default() -> Self {
-        Self::All
-    }
-}
-
 /// Main application state
 pub struct App {
     // Search
@@ -143,7 +130,7 @@ pub struct App {
 
     // Console
     pub show_console: bool,
-    pub console_buffer: Vec<String>,
+    pub console_buffer: VecDeque<String>,
     pub command_stdin_tx: Option<UnboundedSender<String>>,
     pub console_input: String,
     pub command_progress: Option<CommandProgress>,
@@ -160,13 +147,19 @@ pub struct App {
     // Views
     pub show_package_details: bool,
     pub show_dependency_visualization: bool,
-    pub dependency_tree_text: Option<String>,
+    pub interactive_dependency_tree:
+        Option<crate::dependency_visualization::InteractiveDependencyNode>,
+    pub dependency_tree_cursor: Option<usize>,
     pub show_help: bool,
     pub show_history: bool,
     pub show_diagnostics: bool,
     pub diagnostics: Vec<crate::diagnostics::DiagnosticItem>,
     pub show_system_info: bool,
     pub system_info: Vec<crate::diagnostics::DiagnosticItem>,
+    pub show_health_dashboard: bool,
+    pub health_disk_info: Vec<crate::watchdog::DiskHealth>,
+    pub health_mirror_info: Vec<crate::watchdog::MirrorHealth>,
+    pub health_pacman_status: Option<crate::watchdog::PacmanStatus>,
     pub show_orphans: bool,
     pub orphan_packages: Vec<crate::diagnostics::OrphanPackage>,
     pub show_package_sizes: bool,
@@ -182,6 +175,22 @@ pub struct App {
     pub changelog_content: Option<String>,
     pub changelog_package: Option<String>,
 
+    // Pacnew/Pacsave files
+    pub show_pacnew_pacsave: bool,
+    pub pacnew_pacsave_files: Vec<crate::services::PacnewPacsaveFile>,
+    pub pacnew_cursor: Option<usize>,
+
+    // Pacman Log Viewer
+    pub show_pacman_log: bool,
+    pub pacman_log_entries: Vec<crate::services::LogEntry>,
+    pub pacman_log_filter: Option<crate::services::LogOperation>,
+
+    // Package Downgrade
+    pub show_downgrade_modal: bool,
+    pub downgrade_package: Option<String>,
+    pub available_versions: Vec<crate::services::AvailableVersion>,
+    pub downgrade_cursor: Option<usize>,
+
     // Localization
     pub localizer: crate::i18n::Localizer,
 
@@ -193,6 +202,9 @@ pub struct App {
     pub transaction_history: VecDeque<TransactionRecord>,
     pub current_transaction: Option<TransactionRecord>,
 
+    // Operation queue for batch operations
+    pub operation_queue: crate::operation_queue::OperationQueue,
+
     // Visual overhaul - sidebar, animations, toasts, scroll states
     pub show_sidebar: bool,
     pub animation_state: crate::animations::AnimationState,
@@ -203,9 +215,23 @@ pub struct App {
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
 
+    // Overlay cursors for scrolling
+    pub history_cursor: Option<usize>,
+    pub console_cursor: Option<usize>,
+    pub diagnostics_cursor: Option<usize>,
+
     // Fuzzy search
     pub fuzzy_matcher: crate::search::FuzzySearch,
     pub fuzzy_scores: std::collections::HashMap<String, i64>,
+    pub fuzzy_indices: std::collections::HashMap<String, Vec<usize>>,
+
+    // Robustness & Safety
+    pub show_simulation: bool,
+    pub simulation_result: Option<crate::traits::SimulationResult>,
+    pub pending_simulation_commands: Vec<CommandSpec>,
+    pub pending_simulation_packages: Vec<Package>,
+    pub show_rollback_confirm: bool,
+    pub pending_rollback_id: Option<String>,
 }
 
 /// Represents a selection action for undo functionality
@@ -221,6 +247,9 @@ pub struct CommandProgress {
     pub current: usize,
     pub total: usize,
     pub current_package: String,
+    pub download_speed: Option<String>,
+    pub downloaded_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
 }
 
 impl App {
@@ -292,13 +321,18 @@ impl App {
 
             show_package_details: false,
             show_dependency_visualization: false,
-            dependency_tree_text: None,
+            interactive_dependency_tree: None,
+            dependency_tree_cursor: None,
             show_help: false,
             show_history: false,
             show_diagnostics: false,
             diagnostics: Vec::new(),
             show_system_info: false,
             system_info: Vec::new(),
+            show_health_dashboard: false,
+            health_disk_info: Vec::new(),
+            health_mirror_info: Vec::new(),
+            health_pacman_status: None,
             show_orphans: false,
             orphan_packages: Vec::new(),
             show_package_sizes: false,
@@ -314,6 +348,19 @@ impl App {
             changelog_content: None,
             changelog_package: None,
 
+            show_pacnew_pacsave: false,
+            pacnew_pacsave_files: Vec::new(),
+            pacnew_cursor: None,
+
+            show_pacman_log: false,
+            pacman_log_entries: Vec::new(),
+            pacman_log_filter: None,
+
+            show_downgrade_modal: false,
+            downgrade_package: None,
+            available_versions: Vec::new(),
+            downgrade_cursor: None,
+
             localizer: crate::i18n::Localizer::new(),
 
             current_filter: FilterOption::All,
@@ -321,6 +368,7 @@ impl App {
 
             transaction_history: VecDeque::new(),
             current_transaction: None,
+            operation_queue: crate::operation_queue::OperationQueue::new(),
 
             show_sidebar: false,
             animation_state: crate::animations::AnimationState::new(),
@@ -331,8 +379,21 @@ impl App {
             console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
 
+            history_cursor: Some(0),
+            console_cursor: Some(0),
+            diagnostics_cursor: Some(0),
+
             fuzzy_matcher: crate::search::FuzzySearch::new(),
             fuzzy_scores: std::collections::HashMap::new(),
+            fuzzy_indices: std::collections::HashMap::new(),
+
+            // Robustness & Safety
+            show_simulation: false,
+            simulation_result: None,
+            pending_simulation_commands: Vec::new(),
+            pending_simulation_packages: Vec::new(),
+            show_rollback_confirm: false,
+            pending_rollback_id: None,
         }
     }
 
@@ -416,7 +477,7 @@ impl App {
         if input.is_empty() {
             return self.search_history.iter().take(limit).cloned().collect();
         }
-        
+
         let input_lower = input.to_lowercase();
         self.search_history
             .iter()
@@ -578,11 +639,14 @@ impl App {
             FilterOption::NotInstalled => !pkg.is_installed,
             FilterOption::RepoOnly => matches!(pkg.source, crate::models::PackageSource::Pacman),
             FilterOption::AurOnly => matches!(pkg.source, crate::models::PackageSource::Aur),
+            FilterOption::Updates => pkg.is_installed && pkg.is_outdated,
+            FilterOption::AUR => matches!(pkg.source, crate::models::PackageSource::Aur),
             FilterOption::Group(ref g) => pkg.groups.iter().any(|gr| gr == g),
         });
 
         // Apply fuzzy scoring for search
         self.fuzzy_scores.clear();
+        self.fuzzy_indices.clear();
         if !self.search_input.is_empty() {
             let items: Vec<(String, String)> = filtered
                 .iter()
@@ -592,8 +656,9 @@ impl App {
             let results = self
                 .fuzzy_matcher
                 .filter_and_sort(&items, &self.search_input);
-            for (name, score, _) in results {
+            for (name, score, indices) in results {
                 self.fuzzy_scores.insert(name.to_string(), score);
+                self.fuzzy_indices.insert(name.to_string(), indices);
             }
         }
 
@@ -649,13 +714,39 @@ impl App {
             FilterOption::NotInstalled => FilterOption::RepoOnly,
             FilterOption::RepoOnly => FilterOption::AurOnly,
             FilterOption::AurOnly => FilterOption::All,
+            FilterOption::Updates => FilterOption::All,
+            FilterOption::AUR => FilterOption::All,
+            FilterOption::Group(_) => FilterOption::All,
+        };
+        self.apply_filter_and_sort();
+    }
+
+    pub fn set_filter(&mut self, filter: FilterOption) {
+        self.current_filter = filter;
+        self.apply_filter_and_sort();
+    }
+
+    pub fn next_filter(&mut self) {
+        self.cycle_filter();
+    }
+
+    pub fn previous_filter(&mut self) {
+        self.current_filter = match self.current_filter {
+            FilterOption::All => FilterOption::AurOnly,
+            FilterOption::Installed => FilterOption::All,
+            FilterOption::NotInstalled => FilterOption::Installed,
+            FilterOption::RepoOnly => FilterOption::NotInstalled,
+            FilterOption::AurOnly => FilterOption::RepoOnly,
+            FilterOption::Updates => FilterOption::All,
+            FilterOption::AUR => FilterOption::All,
             FilterOption::Group(_) => FilterOption::All,
         };
         self.apply_filter_and_sort();
     }
 
     pub fn get_available_groups(&self) -> Vec<String> {
-        let mut groups: Vec<String> = self.results
+        let mut groups: Vec<String> = self
+            .results
             .iter()
             .flat_map(|p| p.groups.clone())
             .collect::<std::collections::HashSet<_>>()
@@ -695,34 +786,44 @@ impl App {
 
     pub fn show_dependency_visualization(&mut self) {
         if let Some(pkg) = self.get_selected_package().cloned() {
-            let (tree, warnings) =
+            let (tree, _warnings) =
                 crate::dependency_visualization::DependencyVisualizationService::build_dependency_tree_safe(
-                    &pkg, 3,
+                    &pkg, 5,
                 );
-            let mut text =
-                crate::dependency_visualization::DependencyVisualizationService::format_tree(
-                    &tree, 0, true, true,
-                );
-            if !warnings.is_empty() {
-                text.push_str("\nWarnings:\n");
-                for warning in warnings.iter().take(5) {
-                    text.push_str(&format!("- {}\n", warning));
-                }
-                if warnings.len() > 5 {
-                    text.push_str(&format!(
-                        "- ...and {} more warning(s)\n",
-                        warnings.len() - 5
-                    ));
-                }
-            }
-            self.dependency_tree_text = Some(text);
+            let mut interactive_tree =
+                crate::dependency_visualization::InteractiveDependencyNode::from(tree);
+
+            // Perform visual orphan analysis
+            let orphans = crate::diagnostics::find_orphan_packages();
+            let orphan_names: std::collections::HashSet<String> =
+                orphans.into_iter().map(|o| o.name).collect();
+            crate::dependency_visualization::DependencyVisualizationService::mark_orphans(
+                &mut interactive_tree,
+                &orphan_names,
+            );
+
+            self.interactive_dependency_tree = Some(interactive_tree);
+            self.dependency_tree_cursor = Some(0);
             self.show_dependency_visualization = true;
         }
     }
 
     pub fn hide_dependency_visualization(&mut self) {
         self.show_dependency_visualization = false;
-        self.dependency_tree_text = None;
+        self.interactive_dependency_tree = None;
+        self.dependency_tree_cursor = None;
+    }
+
+    pub fn toggle_dependency_expansion(&mut self) {
+        let cursor = self.dependency_tree_cursor;
+        if let (Some(tree), Some(cursor)) = (self.interactive_dependency_tree.as_mut(), cursor) {
+            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+            if let Some(item) = flattened.get(cursor) {
+                crate::dependency_visualization::DependencyVisualizationService::toggle_node_expansion(
+                    tree, &item.name, item.depth, 0
+                );
+            }
+        }
     }
 
     pub fn toggle_help(&mut self) {
@@ -746,6 +847,15 @@ impl App {
             self.system_info = crate::diagnostics::get_system_info();
         }
         self.show_system_info = !self.show_system_info;
+    }
+
+    pub async fn toggle_health_dashboard(&mut self) {
+        if !self.show_health_dashboard {
+            let watchdog = crate::watchdog::HealthWatchdog::new(Duration::from_secs(5));
+            self.health_disk_info = watchdog.check_disk_space().await.unwrap_or_default();
+            self.health_pacman_status = watchdog.check_pacman_status().await.ok();
+        }
+        self.show_health_dashboard = !self.show_health_dashboard;
     }
 
     pub fn toggle_orphans(&mut self) {
@@ -804,6 +914,52 @@ impl App {
         }
     }
 
+    pub fn toggle_pacnew_pacsave(&mut self) {
+        if !self.show_pacnew_pacsave {
+            match crate::services::PackageService::scan_pacnew_pacsave() {
+                Ok(files) => self.pacnew_pacsave_files = files,
+                Err(e) => tracing::warn!("Failed to scan pacnew/pacsave: {}", e),
+            }
+            self.pacnew_cursor = Some(0);
+        }
+        self.show_pacnew_pacsave = !self.show_pacnew_pacsave;
+    }
+
+    pub fn toggle_pacman_log(&mut self) {
+        if !self.show_pacman_log {
+            match crate::services::PackageService::read_pacman_log(200) {
+                Ok(entries) => self.pacman_log_entries = entries,
+                Err(e) => tracing::warn!("Failed to read pacman log: {}", e),
+            }
+        }
+        self.show_pacman_log = !self.show_pacman_log;
+    }
+
+    pub fn set_pacman_log_filter(&mut self, filter: Option<crate::services::LogOperation>) {
+        self.pacman_log_filter = filter;
+    }
+
+    pub fn show_downgrade_modal(&mut self, pkg_name: String) {
+        self.downgrade_package = Some(pkg_name.clone());
+        self.show_downgrade_modal = true;
+        self.downgrade_cursor = Some(0);
+
+        match crate::services::PackageService::get_available_versions(&pkg_name) {
+            Ok(versions) => self.available_versions = versions,
+            Err(e) => {
+                tracing::warn!("Failed to get versions: {}", e);
+                self.available_versions = Vec::new();
+            }
+        }
+    }
+
+    pub fn hide_downgrade_modal(&mut self) {
+        self.show_downgrade_modal = false;
+        self.downgrade_package = None;
+        self.available_versions.clear();
+        self.downgrade_cursor = None;
+    }
+
     pub fn toggle_updates_view(&mut self) {
         self.show_updates_view = !self.show_updates_view;
         if self.show_updates_view {
@@ -820,27 +976,28 @@ impl App {
     pub fn get_filtered_outdated_packages(&self) -> Vec<&OutdatedPackage> {
         let mut packages = self.outdated_packages.iter().collect::<Vec<_>>();
 
-        packages.sort_by(|a, b| {
-            match self.updates_sort {
-                UpdatesSortOption::NameAsc => a.name.cmp(&b.name),
-                UpdatesSortOption::NameDesc => b.name.cmp(&a.name),
-                UpdatesSortOption::SizeAsc => a.download_size.cmp(&b.download_size),
-                UpdatesSortOption::SizeDesc => b.download_size.cmp(&a.download_size),
-                UpdatesSortOption::Repository => a.repository.cmp(&b.repository),
-                UpdatesSortOption::SecurityFirst => {
-                    match (a.is_security_update, b.is_security_update) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
-                        _ => a.name.cmp(&b.name),
-                    }
+        packages.sort_by(|a, b| match self.updates_sort {
+            UpdatesSortOption::NameAsc => a.name.cmp(&b.name),
+            UpdatesSortOption::NameDesc => b.name.cmp(&a.name),
+            UpdatesSortOption::SizeAsc => a.download_size.cmp(&b.download_size),
+            UpdatesSortOption::SizeDesc => b.download_size.cmp(&a.download_size),
+            UpdatesSortOption::Repository => a.repository.cmp(&b.repository),
+            UpdatesSortOption::SecurityFirst => {
+                match (a.is_security_update, b.is_security_update) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.cmp(&b.name),
                 }
             }
         });
 
         if !matches!(self.updates_filter, UpdatesFilter::All) {
             packages.retain(|p| match &self.updates_filter {
+                UpdatesFilter::Security => p.is_security_update,
                 UpdatesFilter::SecurityOnly => p.is_security_update,
                 UpdatesFilter::Repository(repo) => &p.repository == repo,
+                UpdatesFilter::Official => !p.is_aur,
+                UpdatesFilter::AUR => p.is_aur,
                 UpdatesFilter::AurOnly => p.is_aur,
                 UpdatesFilter::All => true,
             });
@@ -869,7 +1026,11 @@ impl App {
         for pkg in &mut self.outdated_packages {
             pkg.is_selected = true;
         }
-        self.selected_updates = self.outdated_packages.iter().map(|p| p.name.clone()).collect();
+        self.selected_updates = self
+            .outdated_packages
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
     }
 
     pub fn deselect_all_updates(&mut self) {
@@ -880,7 +1041,10 @@ impl App {
     }
 
     pub fn get_selected_outdated_packages(&self) -> Vec<&OutdatedPackage> {
-        self.outdated_packages.iter().filter(|p| p.is_selected).collect()
+        self.outdated_packages
+            .iter()
+            .filter(|p| p.is_selected)
+            .collect()
     }
 
     pub fn get_total_update_size(&self) -> u64 {
@@ -888,7 +1052,10 @@ impl App {
     }
 
     pub fn get_selected_update_size(&self) -> u64 {
-        self.get_selected_outdated_packages().iter().map(|p| p.download_size).sum()
+        self.get_selected_outdated_packages()
+            .iter()
+            .map(|p| p.download_size)
+            .sum()
     }
 
     pub fn has_aur_needing_rebuild(&self) -> bool {
@@ -896,7 +1063,10 @@ impl App {
     }
 
     pub fn get_security_updates_count(&self) -> usize {
-        self.outdated_packages.iter().filter(|p| p.is_security_update).count()
+        self.outdated_packages
+            .iter()
+            .filter(|p| p.is_security_update)
+            .count()
     }
 
     pub fn get_aur_updates_count(&self) -> usize {
@@ -904,7 +1074,10 @@ impl App {
     }
 
     pub fn get_repo_updates_count(&self, repo: &str) -> usize {
-        self.outdated_packages.iter().filter(|p| p.repository == repo).count()
+        self.outdated_packages
+            .iter()
+            .filter(|p| p.repository == repo)
+            .count()
     }
 
     pub fn show_changelog_for_package(&mut self, name: String) {
@@ -939,20 +1112,86 @@ impl App {
                             parts[0].trim().parse::<usize>(),
                             parts[1].trim().parse::<usize>(),
                         ) {
+                            // Try to extract package name and download info
+                            let package_name =
+                                line.split_whitespace().next().unwrap_or("").to_string();
+
+                            // Parse download speed (e.g., "5.2 MiB/s")
+                            let download_speed = line
+                                .split("downloading")
+                                .nth(1)
+                                .and_then(|s| s.split_whitespace().next())
+                                .map(|s| s.to_string());
+
+                            // Parse bytes downloaded (e.g., "5.2 MiB / 10.0 MiB")
+                            let (downloaded_bytes, total_bytes) = if line.contains("MiB")
+                                || line.contains("KiB")
+                                || line.contains("GiB")
+                            {
+                                Self::parse_download_size(line)
+                            } else {
+                                (None, None)
+                            };
+
                             self.command_progress = Some(CommandProgress {
                                 current,
                                 total,
-                                current_package: line
-                                    .split_whitespace()
-                                    .next()
-                                    .unwrap_or("")
-                                    .to_string(),
+                                current_package: package_name,
+                                download_speed,
+                                downloaded_bytes,
+                                total_bytes,
                             });
                         }
                     }
                 }
             }
         }
+    }
+
+    fn parse_download_size(line: &str) -> (Option<u64>, Option<u64>) {
+        let mut downloaded: Option<u64> = None;
+        let mut total: Option<u64> = None;
+
+        // Match pattern like "5.2 MiB / 10.0 MiB"
+        if let Some(slash_pos) = line.find('/') {
+            let after_slash = &line[slash_pos..];
+            total = Self::parse_size_string(after_slash);
+
+            if slash_pos > 0 {
+                let before_slash = &line[..slash_pos];
+                if let Some(last_space) = before_slash.rfind(' ') {
+                    downloaded = Self::parse_size_string(&before_slash[last_space..]);
+                }
+            }
+        }
+
+        (downloaded, total)
+    }
+
+    fn parse_size_string(s: &str) -> Option<u64> {
+        let s = s.trim();
+        let multiplier: u64 = if s.contains("GiB") || s.contains("G") {
+            1024 * 1024 * 1024
+        } else if s.contains("MiB") || s.contains("M") {
+            1024 * 1024
+        } else if s.contains("KiB") || s.contains("K") {
+            1024
+        } else {
+            1
+        };
+
+        let num: f64 = s
+            .replace("GiB", "")
+            .replace("MiB", "")
+            .replace("KiB", "")
+            .replace("G", "")
+            .replace("M", "")
+            .replace("K", "")
+            .trim()
+            .parse()
+            .ok()?;
+
+        Some((num * multiplier as f64) as u64)
     }
 
     pub fn clear_console(&mut self) {
@@ -1131,8 +1370,32 @@ impl App {
         self.animation_state.tick(delta_ms);
         self.expire_toasts();
 
+        // Update scroll state content positions
         self.results_scroll_state = self
             .results_scroll_state
-            .position(self.get_paginated_results().len());
+            .content_length(self.get_paginated_results().len());
+
+        if let Some(state) = self.history_scroll_state.as_mut() {
+            let len = self.transaction_history.len().min(30).saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.history_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.console_scroll_state.as_mut() {
+            *state = state.content_length(self.console_buffer.len());
+            if let Some(cursor) = self.console_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.diagnostics_scroll_state.as_mut() {
+            let len = self.diagnostics.len().saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.diagnostics_cursor {
+                *state = state.position(cursor);
+            }
+        }
     }
 }

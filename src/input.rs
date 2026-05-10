@@ -22,13 +22,12 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
-        // Global: Updates View
+        // Updates View
         if app.show_updates_view {
             match key.code {
                 KeyCode::Esc => app.hide_updates_view(),
                 KeyCode::Char('a') => app.select_all_updates(),
                 KeyCode::Char('n') => app.deselect_all_updates(),
-                KeyCode::Char('U') => app.toggle_updates_view(),
                 KeyCode::Enter => {
                     if app.selected_updates.is_empty() {
                         app.error_message = Some("No packages selected".to_string());
@@ -70,14 +69,49 @@ pub fn handle_event(app: &mut App, event: Event) {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('t') => app.show_history = false,
                 KeyCode::Char('R') => trigger_rollback(app),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.history_cursor {
+                        if current > 0 {
+                            app.history_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app
+                        .transaction_history
+                        .len()
+                        .saturating_add(2)
+                        .saturating_sub(1);
+                    if let Some(current) = app.history_cursor {
+                        if current < max {
+                            app.history_cursor = Some(current + 1);
+                        }
+                    }
+                }
                 _ => {}
             }
             return;
         }
 
         if app.show_diagnostics {
-            if key.code == KeyCode::Esc || key.code == KeyCode::Char('h') {
-                app.show_diagnostics = false;
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('h') => app.show_diagnostics = false,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.diagnostics_cursor {
+                        if current > 0 {
+                            app.diagnostics_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.diagnostics.len().saturating_add(3).saturating_sub(1);
+                    if let Some(current) = app.diagnostics_cursor {
+                        if current < max {
+                            app.diagnostics_cursor = Some(current + 1);
+                        }
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -125,6 +159,131 @@ pub fn handle_event(app: &mut App, event: Event) {
             return;
         }
 
+        if app.show_pacnew_pacsave {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('N') => {
+                    app.show_pacnew_pacsave = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if cursor > 0 {
+                            app.pacnew_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.pacnew_pacsave_files.len().saturating_sub(1);
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if cursor < max {
+                            app.pacnew_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                KeyCode::Char('d') => {
+                    if let Some(cursor) = app.pacnew_cursor {
+                        if let Some(file) = app.pacnew_pacsave_files.get(cursor) {
+                            if let Err(e) = std::fs::remove_file(&file.path) {
+                                app.add_toast(
+                                    format!("Failed to delete: {}", e),
+                                    crate::animations::ToastStyle::Error,
+                                );
+                            } else {
+                                app.pacnew_pacsave_files.remove(cursor);
+                                if app.pacnew_pacsave_files.is_empty() {
+                                    app.show_pacnew_pacsave = false;
+                                } else {
+                                    let max = app.pacnew_pacsave_files.len().saturating_sub(1);
+                                    app.pacnew_cursor = Some(cursor.min(max));
+                                }
+                                app.add_toast(
+                                    "File deleted".to_string(),
+                                    crate::animations::ToastStyle::Success,
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if app.show_pacman_log {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('L') => {
+                    app.show_pacman_log = false;
+                }
+                KeyCode::Char('1') => {
+                    app.set_pacman_log_filter(None);
+                }
+                KeyCode::Char('2') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Installed));
+                }
+                KeyCode::Char('3') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Removed));
+                }
+                KeyCode::Char('4') => {
+                    app.set_pacman_log_filter(Some(crate::services::LogOperation::Upgraded));
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.diagnostics_cursor {
+                        if cursor > 0 {
+                            app.diagnostics_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.pacman_log_entries.len().saturating_sub(1);
+                    if let Some(cursor) = app.diagnostics_cursor {
+                        if cursor < max {
+                            app.diagnostics_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if app.show_downgrade_modal {
+            match key.code {
+                KeyCode::Esc => {
+                    app.hide_downgrade_modal();
+                }
+                KeyCode::Enter => {
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if let Some(version) = app.available_versions.get(cursor) {
+                            if let Some(pkg_name) = &app.downgrade_package {
+                                let cmd = crate::services::PackageService::build_downgrade_command(
+                                    pkg_name,
+                                    &version.version,
+                                );
+                                app.pending_command = Some((cmd.prog.clone(), cmd.args.clone()));
+                                app.hide_downgrade_modal();
+                            }
+                        }
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if cursor > 0 {
+                            app.downgrade_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.available_versions.len().saturating_sub(1);
+                    if let Some(cursor) = app.downgrade_cursor {
+                        if cursor < max {
+                            app.downgrade_cursor = Some(cursor + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Global: Password Prompt Handling
         if app.show_password_prompt {
             match key.code {
@@ -133,8 +292,8 @@ pub fn handle_event(app: &mut App, event: Event) {
                         let password = crate::utils::PasswordInput::from_string(
                             app.password_input.expose_secret().to_string(),
                         );
-                        let _ = tx.send(crate::action::Action::InitSudo(
-                            password.get_secret().clone(),
+                        let _ = tx.send(crate::action::Action::new(
+                            crate::action::ActionInner::InitSudo(password.get_secret().clone()),
                         ));
                     }
                     app.is_loading = true;
@@ -161,6 +320,21 @@ pub fn handle_event(app: &mut App, event: Event) {
                 }
                 KeyCode::Char('q') if app.command_stdin_tx.is_none() => {
                     app.show_console = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(current) = app.console_cursor {
+                        if current > 0 {
+                            app.console_cursor = Some(current - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = app.console_buffer.len().saturating_sub(1);
+                    if let Some(current) = app.console_cursor {
+                        if current < max {
+                            app.console_cursor = Some(current + 1);
+                        }
+                    }
                 }
                 KeyCode::Enter => {
                     if let Some(tx) = &app.command_stdin_tx {
@@ -197,8 +371,26 @@ pub fn handle_event(app: &mut App, event: Event) {
         if app.show_dependency_visualization {
             match key.code {
                 KeyCode::Esc => app.hide_dependency_visualization(),
-                KeyCode::Char('j') | KeyCode::Down => {} // Could add scrolling
-                KeyCode::Char('k') | KeyCode::Up => {}
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(cursor) = app.dependency_tree_cursor {
+                        if cursor > 0 {
+                            app.dependency_tree_cursor = Some(cursor - 1);
+                        }
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(cursor) = app.dependency_tree_cursor {
+                        if let Some(tree) = &app.interactive_dependency_tree {
+                            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+                            if cursor < flattened.len().saturating_sub(1) {
+                                app.dependency_tree_cursor = Some(cursor + 1);
+                            }
+                        }
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Right | KeyCode::Left => {
+                    app.toggle_dependency_expansion();
+                }
                 _ => {}
             }
             return;
@@ -207,7 +399,7 @@ pub fn handle_event(app: &mut App, event: Event) {
         // Confirmation Popup
         if app.show_confirm_prompt {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                     app.show_confirm_prompt = false;
                     app.show_console = true;
                     app.clear_console();
@@ -217,10 +409,79 @@ pub fn handle_event(app: &mut App, event: Event) {
                         execute_confirmation_action(app, &packages);
                     }
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     app.show_confirm_prompt = false;
                     app.packages_pending_confirmation.clear();
                     app.confirmation_commands.clear();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Robustness: Simulation Modal
+        if app.show_simulation {
+            match key.code {
+                KeyCode::Enter => {
+                    app.show_simulation = false;
+                    app.show_console = true;
+                    app.clear_console();
+
+                    let commands = std::mem::take(&mut app.pending_simulation_commands);
+                    let packages = std::mem::take(&mut app.pending_simulation_packages);
+
+                    if !commands.is_empty() {
+                        let installed_packages = packages
+                            .iter()
+                            .filter(|p| !p.is_installed)
+                            .map(|p| p.name.clone())
+                            .collect();
+                        let removed_packages = packages
+                            .iter()
+                            .filter(|p| p.is_installed)
+                            .map(|p| p.name.clone())
+                            .collect();
+                        app.current_transaction = Some(crate::transaction_history::new_record(
+                            installed_packages,
+                            removed_packages,
+                            &commands,
+                        ));
+                        app.is_operation_running = true;
+
+                        if let Some(tx) = &app.action_tx {
+                            let _ = tx.send(crate::action::Action::new(
+                                crate::action::ActionInner::RunCommands(commands),
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    app.show_simulation = false;
+                    app.simulation_result = None;
+                    app.pending_simulation_commands.clear();
+                    app.pending_simulation_packages.clear();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Robustness: Rollback Dialog
+        if app.show_rollback_confirm {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    if let Some(rollback_id) = app.pending_rollback_id.take() {
+                        if let Some(tx) = &app.action_tx {
+                            let _ = tx.send(crate::action::Action::new(
+                                crate::action::ActionInner::Rollback(rollback_id),
+                            ));
+                        }
+                    }
+                    app.show_rollback_confirm = false;
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    app.show_rollback_confirm = false;
+                    app.pending_rollback_id = None;
                 }
                 _ => {}
             }
@@ -248,11 +509,48 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.toggle_diagnostics();
         }
         KeyCode::Char('I') => app.toggle_system_info(),
+        KeyCode::Char('H') => {
+            // Toggle health dashboard - simple sync check
+            use std::process::Command;
+            let df_output = Command::new("df").args(["-B1", "-T"]).output();
+            if let Ok(output) = df_output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines().skip(1) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 7 {
+                        let mount = parts[6].to_string();
+                        if mount == "/" || mount == "/home" {
+                            if let (Ok(total), Ok(used), Ok(available)) = (
+                                parts[2].parse::<u64>(),
+                                parts[3].parse::<u64>(),
+                                parts[4].parse::<u64>(),
+                            ) {
+                                let usage = if total > 0 {
+                                    (used as f64 / total as f64) * 100.0
+                                } else {
+                                    0.0
+                                };
+                                app.health_disk_info.push(crate::watchdog::DiskHealth {
+                                    mount_point: mount,
+                                    total_bytes: total,
+                                    used_bytes: used,
+                                    available_bytes: available,
+                                    usage_percent: usage,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            app.show_health_dashboard = !app.show_health_dashboard;
+        }
         KeyCode::Char('O') => app.toggle_orphans(),
         KeyCode::Char('P') => app.toggle_package_sizes(),
         KeyCode::Char('C') => app.toggle_cache(),
         KeyCode::Char('F') => app.toggle_foreign(),
         KeyCode::Char('G') => app.toggle_groups(),
+        KeyCode::Char('N') => app.toggle_pacnew_pacsave(),
+        KeyCode::Char('l') => app.toggle_pacman_log(),
 
         // Search
         KeyCode::Char('/') | KeyCode::Char('i') => {
@@ -282,6 +580,13 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Filter and Sort
         KeyCode::Char('f') => app.cycle_filter(),
         KeyCode::Char('s') => app.cycle_sort(),
+        KeyCode::Char('1') => app.set_filter(crate::app::FilterOption::All),
+        KeyCode::Char('2') => app.set_filter(crate::app::FilterOption::Installed),
+        KeyCode::Char('3') => app.set_filter(crate::app::FilterOption::NotInstalled),
+        KeyCode::Char('4') => app.set_filter(crate::app::FilterOption::RepoOnly),
+        KeyCode::Char('5') => app.set_filter(crate::app::FilterOption::AurOnly),
+        KeyCode::Char('[') => app.previous_filter(),
+        KeyCode::Char(']') => app.next_filter(),
 
         // Actions
         KeyCode::Enter => {
@@ -317,7 +622,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             app.clear_console();
             app.is_operation_running = true;
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::SystemUpdate);
+                let _ = tx.send(crate::action::Action::new(
+                    crate::action::ActionInner::SystemUpdate,
+                ));
             }
         }
 
@@ -326,25 +633,53 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
             trigger_rollback(app);
         }
 
-        // Package Details
-        KeyCode::Char('d') => app.show_package_details(),
-
-        // Updates View
-        KeyCode::Char('U') => app.toggle_updates_view(),
+        // Package Details / Downgrade (if installed)
+        KeyCode::Char('d') => {
+            if let Some(pkg) = app.get_selected_package() {
+                if pkg.is_installed {
+                    app.show_downgrade_modal(pkg.name.clone());
+                } else {
+                    app.show_package_details();
+                }
+            }
+        }
 
         // Dependency Visualization
         KeyCode::Char('v') => app.show_dependency_visualization(),
+
+        // Copy to clipboard
+        KeyCode::Char('y') => {
+            if let Some(pkg) = app.get_selected_package() {
+                let text = if matches!(pkg.source, crate::models::PackageSource::Aur) {
+                    crate::services::get_aur_clone_command(&pkg.name)
+                } else {
+                    pkg.name.clone()
+                };
+                if crate::services::copy_to_clipboard(&text) {
+                    app.add_toast(
+                        "Copied to clipboard".to_string(),
+                        crate::animations::ToastStyle::Success,
+                    );
+                } else {
+                    app.add_toast(
+                        "Failed to copy".to_string(),
+                        crate::animations::ToastStyle::Error,
+                    );
+                }
+            }
+        }
 
         // Open in browser
         KeyCode::Char('o') => {
             if let Some(pkg) = app.get_selected_package() {
                 let url = match pkg.source {
                     crate::models::PackageSource::Pacman => {
-                        format!("https://archlinux.org/packages/search/{}", pkg.name)
+                        format!("https://archlinux.org/packages/?q={}", pkg.name)
                     }
                     crate::models::PackageSource::Aur => {
-                        format!("https://aur.archlinux.org/packages/{}", pkg.name)
+                        format!("https://aur.archlinux.org/packages/{}/", pkg.name)
                     }
+                    _ => "https://archlinux.org/".to_string(),
                 };
                 if let Err(e) = open::that(&url) {
                     app.error_message = Some(format!("Failed to open browser: {}", e));
@@ -364,7 +699,9 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         // Cancel operation
         KeyCode::Char('c') if key == KeyCode::Char('c') => {
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(crate::action::Action::CancelOperation);
+                let _ = tx.send(crate::action::Action::new(
+                    crate::action::ActionInner::CancelOperation,
+                ));
             }
         }
 
@@ -397,7 +734,9 @@ fn trigger_rollback(app: &mut App) {
         app.clear_console();
         app.is_operation_running = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::RunCommands(commands));
+            let _ = tx.send(crate::action::Action::new(
+                crate::action::ActionInner::RunCommands(commands),
+            ));
         }
     } else {
         app.error_message = Some("No successful transaction found to rollback.".to_string());
@@ -451,28 +790,14 @@ fn execute_confirmation_action(app: &mut App, packages: &[crate::models::Package
     let commands = crate::services::plan_package_transaction(packages, &app.config);
     app.confirmation_commands.clear();
 
-    // Execute commands
     if !commands.is_empty() {
-        let installed_packages = packages
-            .iter()
-            .filter(|p| !p.is_installed)
-            .map(|p| p.name.clone())
-            .collect();
-        let removed_packages = packages
-            .iter()
-            .filter(|p| p.is_installed)
-            .map(|p| p.name.clone())
-            .collect();
-        app.current_transaction = Some(crate::transaction_history::new_record(
-            installed_packages,
-            removed_packages,
-            &commands,
-        ));
-        app.selected_packages.clear();
-        app.is_operation_running = true;
-
+        app.pending_simulation_commands = commands.clone();
+        app.pending_simulation_packages = packages.to_vec();
+        app.is_loading = true;
         if let Some(tx) = &app.action_tx {
-            let _ = tx.send(crate::action::Action::RunCommands(commands));
+            let _ = tx.send(crate::action::Action::new(
+                crate::action::ActionInner::Simulate(commands),
+            ));
         }
     }
 }

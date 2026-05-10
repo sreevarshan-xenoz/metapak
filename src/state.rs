@@ -75,8 +75,9 @@ pub fn load_state() -> Result<ApplicationState> {
     let data = fs::read_to_string(&path).map_err(|e| {
         AppError::Other(format!("Failed to read state '{}': {}", path.display(), e))
     })?;
-    let parsed = serde_json::from_str::<ApplicationState>(&data)
-        .map_err(|e| AppError::Other(format!("Failed to parse state '{}': {}", path.display(), e)))?;
+    let parsed = serde_json::from_str::<ApplicationState>(&data).map_err(|e| {
+        AppError::Other(format!("Failed to parse state '{}': {}", path.display(), e))
+    })?;
     Ok(parsed)
 }
 
@@ -95,10 +96,15 @@ pub fn save_state(state: &ApplicationState) -> Result<()> {
     let payload = serde_json::to_string_pretty(state)
         .map_err(|e| AppError::Other(format!("Failed to serialize state: {}", e)))?;
     let mut file = File::create(&path).map_err(|e| {
-        AppError::Other(format!("Failed to create state '{}': {}", path.display(), e))
+        AppError::Other(format!(
+            "Failed to create state '{}': {}",
+            path.display(),
+            e
+        ))
     })?;
-    file.write_all(payload.as_bytes())
-        .map_err(|e| AppError::Other(format!("Failed to write state '{}': {}", path.display(), e)))?;
+    file.write_all(payload.as_bytes()).map_err(|e| {
+        AppError::Other(format!("Failed to write state '{}': {}", path.display(), e))
+    })?;
     Ok(())
 }
 
@@ -106,7 +112,11 @@ pub fn clear_state() -> Result<()> {
     let path = state_path();
     if path.exists() {
         fs::remove_file(&path).map_err(|e| {
-            AppError::Other(format!("Failed to remove state '{}': {}", path.display(), e))
+            AppError::Other(format!(
+                "Failed to remove state '{}': {}",
+                path.display(),
+                e
+            ))
         })?;
     }
     Ok(())

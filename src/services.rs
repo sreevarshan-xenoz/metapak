@@ -4,25 +4,18 @@
 //! following the provider traits pattern for better testability and organization.
 
 use async_trait::async_trait;
-use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::Command;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
-use crate::models::{Package, PackageSource, OutdatedPackage};
+use crate::models::{OutdatedPackage, Package, PackageSource};
+use crate::search::EnhancedSearch;
 use crate::traits::{PackageProvider, UpdateProvider};
-
-/// Cache search results to avoid repeated queries
-static PACKAGE_CACHE: Lazy<DashMap<String, CachedSearch>> = Lazy::new(|| DashMap::new());
-
-/// Configurable cache TTL in seconds
-static CACHE_TTL_SECS: Lazy<std::sync::atomic::AtomicU64> =
-    Lazy::new(|| std::sync::atomic::AtomicU64::new(300));
 
 /// Circuit breaker for AUR API
 static AUR_CIRCUIT_BREAKER: Lazy<CircuitBreaker> = Lazy::new(|| CircuitBreaker::new());
@@ -35,11 +28,11 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    const FAILURE_THRESHOLD: u32 = 5;
-    const RECOVERY_SECS: u64 = 30;
-    const STATE_CLOSED: u32 = 0;
-    const STATE_OPEN: u32 = 1;
-    const STATE_HALF_OPEN: u32 = 2;
+    pub const FAILURE_THRESHOLD: u32 = 5;
+    pub const RECOVERY_SECS: u64 = 30;
+    pub const STATE_CLOSED: u32 = 0;
+    pub const STATE_OPEN: u32 = 1;
+    pub const STATE_HALF_OPEN: u32 = 2;
 
     pub fn new() -> Self {
         Self {
@@ -61,7 +54,8 @@ impl CircuitBreaker {
                     .as_secs()
                     - last_fail;
                 if elapsed > Self::RECOVERY_SECS {
-                    self.state.store(Self::STATE_HALF_OPEN, std::sync::atomic::Ordering::SeqCst);
+                    self.state
+                        .store(Self::STATE_HALF_OPEN, std::sync::atomic::Ordering::SeqCst);
                     true
                 } else {
                     false
@@ -73,21 +67,31 @@ impl CircuitBreaker {
     }
 
     pub fn record_success(&self) {
-        self.failure_count.store(0, std::sync::atomic::Ordering::SeqCst);
-        self.state.store(Self::STATE_CLOSED, std::sync::atomic::Ordering::SeqCst);
+        self.failure_count
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        self.state
+            .store(Self::STATE_CLOSED, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn record_failure(&self) {
-        let count = self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let count = self
+            .failure_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        self.last_failure.store(now, std::sync::atomic::Ordering::SeqCst);
+        self.last_failure
+            .store(now, std::sync::atomic::Ordering::SeqCst);
 
         if count >= Self::FAILURE_THRESHOLD {
-            self.state.store(Self::STATE_OPEN, std::sync::atomic::Ordering::SeqCst);
-            tracing::warn!("Circuit breaker opened due to {} consecutive failures", count);
+            self.state
+                .store(Self::STATE_OPEN, std::sync::atomic::Ordering::SeqCst);
+            tracing::warn!(
+                "Circuit breaker opened due to {} consecutive failures",
+                count
+            );
         }
     }
 }
@@ -98,74 +102,44 @@ impl Default for CircuitBreaker {
     }
 }
 
-/// Get the current cache TTL
-pub fn get_cache_ttl() -> u64 {
-    CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst)
+/// Thread-safe search result cache
+pub struct SearchCache {
+    map: RwLock<HashMap<String, (Vec<Package>, Instant)>>,
 }
 
-/// Set the cache TTL (in seconds)
-pub fn set_cache_ttl(seconds: u64) {
-    CACHE_TTL_SECS.store(seconds, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Clear the search cache
-pub fn clear_cache() {
-    PACKAGE_CACHE.clear();
-}
-
-/// Get cache statistics
-pub fn get_cache_stats() -> (usize, usize) {
-    let total = PACKAGE_CACHE.len();
-    let expired = PACKAGE_CACHE.iter().filter(|r| r.is_expired()).count();
-    (total, expired)
-}
-
-/// Enforce cache size limit to prevent memory exhaustion
-pub fn enforce_cache_limit() {
-    use crate::constants::cache::{CLEANUP_BATCH_SIZE, MAX_CACHE_ENTRIES};
-
-    if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
-        tracing::warn!("Cache size {} exceeds limit {}, cleaning up", PACKAGE_CACHE.len(), MAX_CACHE_ENTRIES);
-
-        // Remove expired entries first
-        let keys_to_remove: Vec<String> = PACKAGE_CACHE
-            .iter()
-            .filter(|r| r.is_expired())
-            .take(CLEANUP_BATCH_SIZE)
-            .map(|r| r.key().to_string())
-            .collect();
-
-        for key in keys_to_remove {
-            PACKAGE_CACHE.remove(&key);
+impl SearchCache {
+    pub fn new() -> Self {
+        Self {
+            map: RwLock::new(HashMap::new()),
         }
+    }
 
-        // If still over limit, remove oldest entries
-        if PACKAGE_CACHE.len() > MAX_CACHE_ENTRIES {
-            // Note: DashMap doesn't maintain insertion order, so we just clear expired again
-            let remaining_keys: Vec<String> = PACKAGE_CACHE
-                .iter()
-                .take(PACKAGE_CACHE.len() - MAX_CACHE_ENTRIES + CLEANUP_BATCH_SIZE)
-                .map(|r| r.key().to_string())
-                .collect();
-
-            for key in remaining_keys {
-                PACKAGE_CACHE.remove(&key);
+    pub fn get_cached(&self, query: &str, ttl: Duration) -> Option<Vec<Package>> {
+        let map = self.map.read().ok()?;
+        if let Some((results, timestamp)) = map.get(query) {
+            if timestamp.elapsed() < ttl {
+                return Some(results.clone());
             }
+        }
+        None
+    }
+
+    pub fn put_cached(&self, query: &str, results: Vec<Package>) {
+        if let Ok(mut map) = self.map.write() {
+            map.insert(query.to_string(), (results, Instant::now()));
+        }
+    }
+
+    pub fn clear(&self) {
+        if let Ok(mut map) = self.map.write() {
+            map.clear();
         }
     }
 }
 
-/// Cached search entry with timestamp
-#[derive(Clone)]
-struct CachedSearch {
-    packages: Vec<Package>,
-    cached_at: std::time::Instant,
-}
-
-impl CachedSearch {
-    fn is_expired(&self) -> bool {
-        let ttl = CACHE_TTL_SECS.load(std::sync::atomic::Ordering::SeqCst);
-        self.cached_at.elapsed() > std::time::Duration::from_secs(ttl)
+impl Default for SearchCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -180,24 +154,13 @@ impl PacmanProvider {
 
 #[async_trait]
 impl PackageProvider for PacmanProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
-        // Check cache first
-        let cache_key = format!("pacman:{}", query);
-        if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
-            if !cached.is_expired() {
-                tracing::debug!("Cache hit for pacman search: {}", query);
-                return Ok(cached.packages.clone());
-            }
-        }
-
         let query = query.to_string();
         tokio::task::spawn_blocking(move || Self::search_blocking(&query))
             .await
             .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
-    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -257,15 +220,6 @@ impl PacmanProvider {
             }
         }
 
-        let cache_key = format!("pacman:{}", query);
-        PACKAGE_CACHE.insert(
-            cache_key,
-            CachedSearch {
-                packages: packages.clone(),
-                cached_at: std::time::Instant::now(),
-            },
-        );
-
         Ok(packages)
     }
 
@@ -321,7 +275,10 @@ pub struct AurProvider {
 
 impl AurProvider {
     pub fn new() -> Self {
-        use crate::constants::network::{AUR_CONNECT_TIMEOUT_SECS, AUR_REQUEST_TIMEOUT_SECS, HTTP_IDLE_TIMEOUT_SECS, HTTP_MAX_CONNECTIONS};
+        use crate::constants::network::{
+            AUR_CONNECT_TIMEOUT_SECS, AUR_REQUEST_TIMEOUT_SECS, HTTP_IDLE_TIMEOUT_SECS,
+            HTTP_MAX_CONNECTIONS,
+        };
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(AUR_REQUEST_TIMEOUT_SECS))
@@ -332,7 +289,10 @@ impl AurProvider {
             .tcp_nodelay(true)
             .build()
             .unwrap_or_else(|e| {
-                tracing::warn!("Failed to create optimized HTTP client: {}, using default", e);
+                tracing::warn!(
+                    "Failed to create optimized HTTP client: {}, using default",
+                    e
+                );
                 reqwest::Client::new()
             });
         Self { client }
@@ -341,21 +301,13 @@ impl AurProvider {
 
 #[async_trait]
 impl PackageProvider for AurProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Check circuit breaker first
         if !AUR_CIRCUIT_BREAKER.is_available() {
             tracing::warn!("AUR circuit breaker is open, skipping request");
-            return Err(AppError::Aur("AUR service temporarily unavailable (circuit breaker open)".to_string()));
-        }
-
-        // Check cache first
-        let cache_key = format!("aur:{}", query);
-        if let Some(cached) = PACKAGE_CACHE.get(&cache_key) {
-            if !cached.is_expired() {
-                tracing::debug!("Cache hit for AUR search: {}", query);
-                return Ok(cached.packages.clone());
-            }
+            return Err(AppError::Aur(
+                "AUR service temporarily unavailable (circuit breaker open)".to_string(),
+            ));
         }
 
         let url = format!(
@@ -459,18 +411,9 @@ impl PackageProvider for AurProvider {
             })
             .collect();
 
-        PACKAGE_CACHE.insert(
-            cache_key,
-            CachedSearch {
-                packages: packages.clone(),
-                cached_at: std::time::Instant::now(),
-            },
-        );
-
         Ok(packages)
     }
 
-    #[must_use = "this async method should be .await'd"]
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -506,7 +449,6 @@ impl SystemUpdateProvider {
 
 #[async_trait]
 impl UpdateProvider for SystemUpdateProvider {
-    #[must_use = "this async method should be .await'd"]
     async fn check_updates(&self) -> Result<usize> {
         tokio::task::spawn_blocking(move || {
             // Try checkupdates first (from pacman-contrib) - doesn't require sudo
@@ -563,14 +505,11 @@ impl UpdateProvider for SystemUpdateProvider {
                             name.clone(),
                             "?".to_string(),
                             version,
+                            "unknown".to_string(),
                         );
 
                         // Get package info
-                        if let Ok(info) = Command::new("pacman")
-                            .arg("-Qi")
-                            .arg(&name)
-                            .output()
-                        {
+                        if let Ok(info) = Command::new("pacman").arg("-Qi").arg(&name).output() {
                             if info.status.success() {
                                 let info_str = String::from_utf8_lossy(&info.stdout);
                                 for info_line in info_str.lines() {
@@ -629,6 +568,8 @@ impl UpdateProvider for SystemUpdateProvider {
 pub struct PackageService {
     providers: Vec<Arc<dyn PackageProvider>>,
     update_provider: Arc<dyn UpdateProvider>,
+    cache: Arc<SearchCache>,
+    config: AppConfig,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -796,20 +737,31 @@ pub fn plan_rollback_transaction(
     commands
 }
 
+/// Global search cache shared across PackageService instances
+static SEARCH_CACHE: Lazy<Arc<SearchCache>> = Lazy::new(|| Arc::new(SearchCache::new()));
+
 impl PackageService {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         Self {
             providers: vec![
                 Arc::new(PacmanProvider::new()),
                 Arc::new(AurProvider::new()),
             ],
             update_provider: Arc::new(SystemUpdateProvider::new()),
+            cache: Arc::clone(&SEARCH_CACHE),
+            config,
         }
     }
 
     /// Search across all providers concurrently
-    #[must_use = "this async method should be .await'd"]
     pub async fn search_all(&self, query: &str) -> Result<Vec<Package>> {
+        // Check cache first
+        let ttl = Duration::from_secs(self.config.search.cache_ttl_seconds);
+        if let Some(cached) = self.cache.get_cached(query, ttl) {
+            tracing::debug!("Cache hit for search_all: {}", query);
+            return Ok(cached);
+        }
+
         let spec = QuerySpec::parse(query);
         if spec.text.trim().is_empty()
             && spec.installed.is_none()
@@ -862,6 +814,14 @@ impl PackageService {
             let source = match pkg.source {
                 PackageSource::Pacman => "pacman".to_string(),
                 PackageSource::Aur => "aur".to_string(),
+                PackageSource::Apt => "apt".to_string(),
+                PackageSource::Dnf => "dnf".to_string(),
+                PackageSource::Zypper => "zypper".to_string(),
+                PackageSource::Brew => "brew".to_string(),
+                PackageSource::Winget => "winget".to_string(),
+                PackageSource::Chocolatey => "chocolatey".to_string(),
+                PackageSource::Flatpak => "flatpak".to_string(),
+                PackageSource::Snap => "snap".to_string(),
             };
             let key = (source, pkg.name.clone());
             deduped
@@ -877,15 +837,28 @@ impl PackageService {
                 .or_insert(pkg);
         }
 
-        let query_lc = base_query.to_lowercase();
-        let mut results: Vec<Package> = deduped.into_values().filter(|p| spec.matches(p)).collect();
+        let results: Vec<Package> = deduped.into_values().collect();
+
+        // Use EnhancedSearch for filtering and ranking
+        let search_engine = EnhancedSearch::new();
+        let filtered = search_engine.filter_packages(&results, base_query);
+        let mut results: Vec<Package> = filtered.into_iter().cloned().collect();
+
         results.sort_by(|a, b| {
             let a_name = a.name.to_lowercase();
             let b_name = b.name.to_lowercase();
-            let a_rank = relevance_rank(&a_name, &query_lc);
-            let b_rank = relevance_rank(&b_name, &query_lc);
-            a_rank
-                .cmp(&b_rank)
+
+            let a_score = search_engine
+                .match_with_score(&a_name, base_query)
+                .map(|(s, _)| s)
+                .unwrap_or(0);
+            let b_score = search_engine
+                .match_with_score(&b_name, base_query)
+                .map(|(s, _)| s)
+                .unwrap_or(0);
+
+            b_score
+                .cmp(&a_score) // Higher score first
                 .then_with(|| a_name.cmp(&b_name))
                 .then_with(|| match (&a.source, &b.source) {
                     (PackageSource::Pacman, PackageSource::Aur) => std::cmp::Ordering::Less,
@@ -904,6 +877,8 @@ impl PackageService {
             results.truncate(MAX_TOTAL_RESULTS);
         }
 
+        self.cache.put_cached(query, results.clone());
+
         Ok(results)
     }
 
@@ -917,27 +892,244 @@ impl PackageService {
         self.update_provider.get_outdated_packages().await
     }
 
-    /// Clear expired cache entries
-    pub fn clear_expired_cache() {
-        PACKAGE_CACHE.retain(|_, v| !v.is_expired());
+    pub async fn get_orphans(&self) -> Result<Vec<String>> {
+        tokio::task::spawn_blocking(move || {
+            let output = Command::new("pacman")
+                .args(["-Qdtq"])
+                .output()
+                .map_err(|e| AppError::Pacman(format!("Failed to get orphans: {}", e)))?;
+
+            if !output.status.success() {
+                return Ok(Vec::new());
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let orphans: Vec<String> = stdout
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
+
+            Ok(orphans)
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+    }
+
+    pub async fn remove_orphans(&self, packages: &[String]) -> Result<Vec<CommandSpec>> {
+        if packages.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let names: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+        let helper = AurHelperCommand::new(&self.config);
+        Ok(vec![helper.remove_command(&names)])
+    }
+
+    pub fn scan_pacnew_pacsave() -> Result<Vec<PacnewPacsaveFile>> {
+        let mut files = Vec::new();
+        let etc_dir = std::path::Path::new("/etc");
+
+        if !etc_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let entries = std::fs::read_dir(etc_dir)
+            .map_err(|e| AppError::Other(format!("Failed to read /etc: {}", e)))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            let file_type = if let Some(ext) = path.extension() {
+                if ext == "pacnew" {
+                    Some(PacnewType::New)
+                } else if ext == "pacsave" {
+                    Some(PacnewType::Save)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(ft) = file_type {
+                let original_name = file_name
+                    .strip_suffix(".pacnew")
+                    .or_else(|| file_name.strip_suffix(".pacsave"))
+                    .unwrap_or(file_name)
+                    .to_string();
+
+                let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+
+                files.push(PacnewPacsaveFile {
+                    path: path.to_string_lossy().to_string(),
+                    original_name,
+                    file_type: ft,
+                    modified,
+                });
+            }
+        }
+
+        files.sort_by(|a, b| a.original_name.cmp(&b.original_name));
+        Ok(files)
+    }
+
+    pub fn read_pacman_log(limit: usize) -> Result<Vec<LogEntry>> {
+        let log_path = std::path::Path::new("/var/log/pacman.log");
+        if !log_path.exists() {
+            return Err(AppError::Other("Pacman log not found".to_string()));
+        }
+
+        let content = std::fs::read_to_string(log_path)
+            .map_err(|e| AppError::Other(format!("Failed to read log: {}", e)))?;
+
+        let entries: Vec<LogEntry> = content
+            .lines()
+            .rev()
+            .take(limit)
+            .filter_map(|line| Self::parse_log_line(line))
+            .collect();
+
+        Ok(entries)
+    }
+
+    fn parse_log_line(line: &str) -> Option<LogEntry> {
+        // Format: [2026-05-07T10:30:45+0000] [ALPM] info: installed foo
+        let line = line.trim();
+        if !line.starts_with('[') {
+            return None;
+        }
+
+        let mut parts = line.splitn(4, ']');
+        let timestamp = parts.next()?.trim_start_matches('[').to_string();
+        let rest = parts.next()?.trim();
+
+        let operation = if rest.contains("installed") {
+            LogOperation::Installed
+        } else if rest.contains("removed") {
+            LogOperation::Removed
+        } else if rest.contains("upgraded") {
+            LogOperation::Upgraded
+        } else if rest.contains("downgraded") {
+            LogOperation::Downgraded
+        } else {
+            return None;
+        };
+
+        // Extract package name from message like "installed foo"
+        let msg = parts.next()?.trim();
+        let package = msg.split_whitespace().last()?.to_string();
+
+        Some(LogEntry {
+            timestamp,
+            operation,
+            package,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PacnewPacsaveFile {
+    pub path: String,
+    pub original_name: String,
+    pub file_type: PacnewType,
+    pub modified: Option<std::time::SystemTime>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PacnewType {
+    New,
+    Save,
+}
+
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub operation: LogOperation,
+    pub package: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LogOperation {
+    Installed,
+    Removed,
+    Upgraded,
+    Downgraded,
+}
+
+#[derive(Debug, Clone)]
+pub struct AvailableVersion {
+    pub version: String,
+    pub date: String,
+    pub repo: String,
+}
+
+impl PackageService {
+    pub fn get_available_versions(pkg_name: &str) -> Result<Vec<AvailableVersion>> {
+        let output = Command::new("curl")
+            .args([
+                "-s",
+                &format!(
+                    "https://archive.archlinux.org/packages/{}/{}/",
+                    &pkg_name[0..1],
+                    pkg_name
+                ),
+            ])
+            .output();
+
+        if output.is_err() {
+            return Err(AppError::Other(
+                "Failed to fetch package versions".to_string(),
+            ));
+        }
+
+        let output = output.unwrap();
+        let html = String::from_utf8_lossy(&output.stdout);
+        let mut versions = Vec::new();
+
+        let re = regex::Regex::new(r#"href="(\d{4}/\d{2}/\d{2})/([^"]+/)""#).unwrap();
+        for cap in re.captures_iter(&html) {
+            if let (Some(date), Some(ver)) = (cap.get(1), cap.get(2)) {
+                let version = ver.as_str().trim_end_matches('/').to_string();
+                if !version.is_empty() {
+                    versions.push(AvailableVersion {
+                        version,
+                        date: date.as_str().to_string(),
+                        repo: "unknown".to_string(),
+                    });
+                }
+            }
+        }
+
+        versions.sort_by(|a, b| b.version.cmp(&a.version));
+        versions.truncate(20);
+
+        Ok(versions)
+    }
+
+    pub fn build_downgrade_command(pkg_name: &str, version: &str) -> CommandSpec {
+        CommandSpec {
+            prog: "sudo".to_string(),
+            args: vec![
+                "pacman".to_string(),
+                "-U".to_string(),
+                "--noconfirm".to_string(),
+                format!(
+                    "https://archive.archlinux.org/packages/{}/{}/{}-{}.pkg.tar.zst",
+                    &pkg_name[0..1],
+                    pkg_name,
+                    pkg_name,
+                    version
+                ),
+            ],
+        }
     }
 }
 
 impl Default for PackageService {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn relevance_rank(name: &str, query: &str) -> u8 {
-    if name == query {
-        0
-    } else if name.starts_with(query) {
-        1
-    } else if name.contains(query) {
-        2
-    } else {
-        3
+        Self::new(AppConfig::default())
     }
 }
 
@@ -1077,7 +1269,6 @@ enum HelperKind {
 
 impl AurHelperCommand {
     const NOCONFIRM: &'static str = "--noconfirm";
-    static ref PACKAGE_NAME_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9@._+-]+$").unwrap();
 
     pub fn new(config: &AppConfig) -> Self {
         let helper = Self::detect_helper(&config.aur_helper);
@@ -1085,11 +1276,16 @@ impl AurHelperCommand {
     }
 
     fn sanitize_package_name(name: &str) -> String {
-        name.chars().filter(|c| c.is_alphanumeric() || "@._+-".contains(*c)).collect()
+        name.chars()
+            .filter(|c| c.is_alphanumeric() || "@._+-".contains(*c))
+            .collect()
     }
 
     fn is_valid_package_name(name: &str) -> bool {
-        !name.is_empty() && Self::PACKAGE_NAME_REGEX.is_match(name)
+        !name.is_empty()
+            && regex::Regex::new(r"^[a-z0-9@._+-]+$")
+                .unwrap()
+                .is_match(name)
     }
 
     fn detect_helper(configured: &str) -> HelperKind {
@@ -1144,7 +1340,10 @@ impl AurHelperCommand {
     }
 
     /// Build install command with validation
-    pub fn install_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+    pub fn install_command_validated(
+        &self,
+        packages: &[&str],
+    ) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1154,7 +1353,10 @@ impl AurHelperCommand {
     }
 
     /// Build remove command with validation
-    pub fn remove_command_validated(&self, packages: &[&str]) -> Result<CommandSpec, String> {
+    pub fn remove_command_validated(
+        &self,
+        packages: &[&str],
+    ) -> std::result::Result<CommandSpec, String> {
         for pkg in packages {
             if !Self::is_valid_package_name(pkg) {
                 return Err(format!("Invalid package name: {}", pkg));
@@ -1199,11 +1401,26 @@ mod tests {
 
     #[test]
     fn test_package_name_sanitization() {
-        assert_eq!(AurHelperCommand::sanitize_package_name("firefox"), "firefox");
-        assert_eq!(AurHelperCommand::sanitize_package_name("linux-headers"), "linux-headers");
-        assert_eq!(AurHelperCommand::sanitize_package_name("python-pytest"), "python-pytest");
-        assert_eq!(AurHelperCommand::sanitize_package_name("pkg+name@test"), "pkgname@test");
-        assert_eq!(AurHelperCommand::sanitize_package_name("test; rm -rf /"), "testrm-rf-");
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("firefox"),
+            "firefox"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("linux-headers"),
+            "linux-headers"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("python-pytest"),
+            "python-pytest"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("pkg+name@test"),
+            "pkg+name@test"
+        );
+        assert_eq!(
+            AurHelperCommand::sanitize_package_name("test; rm -rf /"),
+            "testrm-rf"
+        );
     }
 
     #[test]
@@ -1211,7 +1428,9 @@ mod tests {
         assert!(AurHelperCommand::is_valid_package_name("firefox"));
         assert!(AurHelperCommand::is_valid_package_name("linux-headers"));
         assert!(AurHelperCommand::is_valid_package_name("python3"));
-        assert!(AurHelperCommand::is_valid_package_name("nodejs-lts-hydrogen"));
+        assert!(AurHelperCommand::is_valid_package_name(
+            "nodejs-lts-hydrogen"
+        ));
         assert!(!AurHelperCommand::is_valid_package_name(""));
         assert!(!AurHelperCommand::is_valid_package_name("test; rm"));
         assert!(!AurHelperCommand::is_valid_package_name("test|grep"));
@@ -1263,4 +1482,145 @@ mod tests {
 
         assert_eq!(cmd.build_display(), "pacman -S firefox vlc");
     }
+
+    #[test]
+    fn test_search_cache_hit_miss() {
+        let cache = SearchCache::new();
+        let query = "test-query";
+        let pkg = Package::new("test-pkg", "1.0");
+        let results = vec![pkg];
+        let ttl = Duration::from_secs(60);
+
+        // Miss initially
+        assert!(cache.get_cached(query, ttl).is_none());
+
+        // Put and Hit
+        cache.put_cached(query, results.clone());
+        let cached = cache.get_cached(query, ttl);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap()[0].name, "test-pkg");
+
+        // Different query miss
+        assert!(cache.get_cached("other", ttl).is_none());
+    }
+
+    #[test]
+    fn test_search_cache_expiry() {
+        let cache = SearchCache::new();
+        let query = "expiry-query";
+        let pkg = Package::new("test-pkg", "1.0");
+        let results = vec![pkg];
+
+        // Put with very short TTL
+        cache.put_cached(query, results);
+
+        // Immediate hit
+        assert!(cache.get_cached(query, Duration::from_secs(10)).is_some());
+
+        // Expired hit (using 0 TTL)
+        assert!(cache.get_cached(query, Duration::from_secs(0)).is_none());
+    }
+
+    #[test]
+    fn test_search_cache_clear() {
+        let cache = SearchCache::new();
+        let query = "clear-query";
+        cache.put_cached(query, vec![Package::new("p", "1")]);
+
+        cache.clear();
+        assert!(cache.get_cached(query, Duration::from_secs(60)).is_none());
+    }
+
+    #[test]
+    fn test_get_aur_clone_command() {
+        let cmd = get_aur_clone_command("firefox");
+        assert_eq!(cmd, "git clone https://aur.archlinux.org/firefox.git");
+
+        let cmd = get_aur_clone_command("polybar");
+        assert_eq!(cmd, "git clone https://aur.archlinux.org/polybar.git");
+    }
+
+    #[test]
+    fn test_log_operation_enum() {
+        assert_eq!(LogOperation::Installed, LogOperation::Installed);
+        assert_eq!(LogOperation::Removed, LogOperation::Removed);
+        assert_eq!(LogOperation::Upgraded, LogOperation::Upgraded);
+        assert_eq!(LogOperation::Downgraded, LogOperation::Downgraded);
+    }
+
+    #[test]
+    fn test_log_entry_creation() {
+        let entry = LogEntry {
+            timestamp: "2026-05-07T10:30:45+0000".to_string(),
+            operation: LogOperation::Installed,
+            package: "firefox".to_string(),
+        };
+        assert_eq!(entry.package, "firefox");
+        assert_eq!(entry.operation, LogOperation::Installed);
+    }
+
+    #[test]
+    fn test_pacnew_type_enum() {
+        assert_eq!(PacnewType::New, PacnewType::New);
+        assert_eq!(PacnewType::Save, PacnewType::Save);
+    }
+
+    #[test]
+    fn test_command_spec_display() {
+        let spec = CommandSpec {
+            prog: "sudo".to_string(),
+            args: vec!["pacman".to_string(), "-S".to_string(), "firefox".to_string()],
+        };
+        assert_eq!(command_display(&spec), "sudo pacman -S firefox");
+    }
+
+    #[test]
+    fn test_aur_helper_install_command_paru() {
+        let config = AppConfig {
+            aur_helper: "paru".to_string(),
+            ..Default::default()
+        };
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.install_command(&["firefox"]);
+        assert_eq!(cmd.prog, "paru");
+    }
+
+    #[test]
+    fn test_aur_helper_install_command_yay() {
+        let config = AppConfig {
+            aur_helper: "yay".to_string(),
+            ..Default::default()
+        };
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.install_command(&["vlc"]);
+        assert_eq!(cmd.prog, "yay");
+    }
+
+    #[test]
+    fn test_aur_helper_remove_command() {
+        let config = AppConfig::default();
+        let helper = AurHelperCommand::new(&config);
+        let cmd = helper.remove_command(&["firefox"]);
+        assert!(cmd.args.contains(&"-Rns".to_string()));
+    }
+
+    #[test]
+    fn test_downgrade_command_builder() {
+        let cmd = PackageService::build_downgrade_command("firefox", "120.0-1");
+        assert_eq!(cmd.prog, "sudo");
+        assert!(cmd.args.contains(&"pacman".to_string()));
+        assert!(cmd.args.contains(&"-U".to_string()));
+        assert!(cmd.args.iter().any(|a| a.contains("archive.archlinux.org")));
+    }
+}
+
+pub fn copy_to_clipboard(text: &str) -> bool {
+    match arboard::Clipboard::new() {
+        Ok(mut clipboard) => clipboard.set_text(text).is_ok(),
+        Err(_) => false,
+    }
+}
+
+pub fn get_aur_clone_command(pkg_name: &str) -> String {
+    format!("git clone https://aur.archlinux.org/{}.git", pkg_name)
 }

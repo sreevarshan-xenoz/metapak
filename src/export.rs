@@ -12,7 +12,7 @@ pub fn export_installed(packages: &[crate::models::Package], path: &Path) -> std
     if !crate::utils::validate_path(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Invalid path: potential path traversal detected"
+            "Invalid path: potential path traversal detected",
         ));
     }
 
@@ -34,7 +34,7 @@ pub fn export_all(packages: &[crate::models::Package], path: &Path) -> std::io::
     if !crate::utils::validate_path(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Invalid path: potential path traversal detected"
+            "Invalid path: potential path traversal detected",
         ));
     }
 
@@ -63,7 +63,7 @@ pub fn import_list(path: &Path) -> std::io::Result<Vec<String>> {
     if !crate::utils::validate_path(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Invalid path: potential path traversal detected"
+            "Invalid path: potential path traversal detected",
         ));
     }
 
@@ -88,7 +88,7 @@ pub fn import_list(path: &Path) -> std::io::Result<Vec<String>> {
     Ok(packages)
 }
 
-fn chrono_lite() -> String {
+pub fn chrono_lite() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -156,7 +156,7 @@ pub fn export_system_backup(path: &Path) -> std::io::Result<()> {
     if !crate::utils::validate_path(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Invalid path: potential path traversal detected"
+            "Invalid path: potential path traversal detected",
         ));
     }
 
@@ -168,7 +168,7 @@ pub fn export_system_backup(path: &Path) -> std::io::Result<()> {
     if !output.status.success() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "Failed to get package list"
+            "Failed to get package list",
         ));
     }
 
@@ -178,7 +178,10 @@ pub fn export_system_backup(path: &Path) -> std::io::Result<()> {
 
     writeln!(file, "# Arch Linux System Backup")?;
     writeln!(file, "# Generated on: {}", chrono_lite())?;
-    writeln!(file, "# This file contains all explicitly installed packages")?;
+    writeln!(
+        file,
+        "# This file contains all explicitly installed packages"
+    )?;
     writeln!(file, "# To restore: pacman -S --needed < package_list.txt")?;
     writeln!(file, "#")?;
     writeln!(file)?;

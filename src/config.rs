@@ -8,6 +8,27 @@ pub struct AppConfig {
     pub theme: ThemeConfig,
     pub keyboard: KeyboardConfig,
     pub ui: UiConfig,
+    pub search: SearchConfig,
+    pub robustness: RobustnessConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SearchConfig {
+    pub cache_ttl_seconds: u64,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            cache_ttl_seconds: 300,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct RobustnessConfig {
+    pub snapshot_keep_count: usize,
+    pub simulation_backend: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -16,6 +37,17 @@ pub struct ThemeConfig {
     pub primary_color: Option<ColorDef>,
     pub secondary_color: Option<ColorDef>,
     pub accent_color: Option<ColorDef>,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            preset: "mocha".to_string(),
+            primary_color: None,
+            secondary_color: None,
+            accent_color: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,16 +85,20 @@ pub struct UiConfig {
     pub auto_update_on_startup: bool,
 }
 
+impl Default for RobustnessConfig {
+    fn default() -> Self {
+        Self {
+            snapshot_keep_count: 5,
+            simulation_backend: "auto".to_string(),
+        }
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             aur_helper: "auto".to_string(),
-            theme: ThemeConfig {
-                preset: "mocha".to_string(),
-                primary_color: None,
-                secondary_color: None,
-                accent_color: None,
-            },
+            theme: ThemeConfig::default(),
             keyboard: KeyboardConfig {
                 quit: "q".to_string(),
                 search: "/".to_string(),
@@ -94,12 +130,14 @@ impl Default for AppConfig {
                 update_check_interval_minutes: 60,
                 auto_update_on_startup: false,
             },
+            search: SearchConfig::default(),
+            robustness: RobustnessConfig::default(),
         }
     }
 }
 
 impl AppConfig {
-    const DEFAULT_CONFIG: &'static str = include_str!("../../config/default.toml");
+    const DEFAULT_CONFIG: &'static str = include_str!("../config/default.toml");
 
     pub fn load() -> Result<Self, config::ConfigError> {
         let mut cfg = Config::builder();
@@ -199,9 +237,9 @@ impl AppConfig {
 
     /// Get the theme based on configuration
     pub fn get_theme(&self) -> Theme {
-        let mut theme = match self.theme.preset.as_str() {
+        let mut theme = match self.theme.preset.to_lowercase().as_str() {
             "latte" | "light" => Theme::catppuccin_latte(),
-            "dark" | "mocha" => Theme::catppuccin_mocha(),
+            "mocha" | "dark" | "default" | "custom" => Theme::catppuccin_mocha(),
             _ => Theme::default(),
         };
 
@@ -218,12 +256,11 @@ impl AppConfig {
         }
         theme
     }
-}
 
-/// Reload configuration from file
-pub fn reload() -> Result<Self, config::ConfigError> {
-    Self::load()
-}
+    /// Reload configuration from file
+    pub fn reload() -> Result<Self, config::ConfigError> {
+        Self::load()
+    }
 }
 
 /// Configuration validation errors

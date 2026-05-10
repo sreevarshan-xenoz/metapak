@@ -12,8 +12,8 @@ pub mod ui {
     pub const CAPTURED_OUTPUT_MAX_LINES: usize = 200;
     pub const MAX_TOASTS: usize = 3;
     pub const TOAST_MESSAGE_MAX_CHARS: usize = 60;
-    pub const TICK_INTERVAL_MS: u64 = 33;
-    pub const INPUT_POLL_TIMEOUT_MS: u64 = 50;
+    pub const TICK_INTERVAL_MS: u64 = 16;
+    pub const INPUT_POLL_TIMEOUT_MS: u64 = 16;
     pub const CLEANUP_INTERVAL_SECS: u64 = 30;
     pub const UPDATE_CHECK_INTERVAL_SECS: u64 = 900;
     pub const MIN_SIDEBAR_WIDTH: u16 = 100;
@@ -58,6 +58,8 @@ pub mod shutdown {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_search_constants() {
         assert!(search::DEBOUNCE_MS_DEFAULT >= search::DEBOUNCE_MS_MIN);

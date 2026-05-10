@@ -1,30 +1,36 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 use crate::app::{App, FilterOption, InputMode};
-use crate::ui_utils::{centered_rect, truncate_with_ellipsis, visible_height};
+use crate::ui_utils::{
+    centered_rect, create_highlighted_line, render_scrollbar, truncate_with_ellipsis,
+    visible_height,
+};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph, Scrollbar,
-        ScrollbarOrientation,
+        Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Tabs,
     },
     Frame,
 };
 use std::cmp::min;
 
-pub fn render(app: &mut App, f: &mut Frame) {
-    app.tick(33);
+const CYAN: Color = Color::Rgb(0, 255, 255);
 
+pub fn render(app: &mut App, f: &mut Frame) {
     let theme = &app.theme;
     let area = f.size();
 
+    // Check terminal size constraints
     let sidebar_allowed = area.width >= 100;
     let search_bar_height = if area.height >= 20 { 3 } else { 2 };
 
+    // Build layout
     let main_chunks = if app.show_sidebar && sidebar_allowed && app.get_selected_package().is_some()
     {
+        // Split-pane mode
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -39,6 +45,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
             .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(chunks[1]);
 
+        // Return: search, results, sidebar, status
         RenderChunks {
             search: chunks[0],
             results: sub_chunks[0],
@@ -46,6 +53,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
             status: chunks[2],
         }
     } else {
+        // Normal mode
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -63,15 +71,22 @@ pub fn render(app: &mut App, f: &mut Frame) {
         }
     };
 
+    // Render components
     render_search_bar(app, f, main_chunks.search, theme);
     render_results_list(app, f, main_chunks.results, theme);
     render_status_bar(app, f, main_chunks.status, theme);
 
+    // Render sidebar if active
     if let (true, Some(sidebar_area)) = (app.show_sidebar, main_chunks.sidebar) {
         render_details_sidebar(app, f, sidebar_area, theme);
     }
 
-    if app.show_help {
+    // Render overlays (in priority order)
+    if app.show_rollback_confirm {
+        render_rollback_dialog(app, f, theme);
+    } else if app.show_simulation {
+        render_simulation_modal(app, f, theme);
+    } else if app.show_help {
         render_help_overlay(f, area, theme);
     } else if app.show_updates_view {
         render_updates_view(app, f, area, theme);
@@ -89,6 +104,14 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_foreign_overlay(app, f, area, theme);
     } else if app.show_groups {
         render_groups_overlay(app, f, area, theme);
+    } else if app.show_pacnew_pacsave {
+        render_pacnew_pacsave_overlay(app, f, area, theme);
+    } else if app.show_pacman_log {
+        render_pacman_log_overlay(app, f, area, theme);
+    } else if app.show_downgrade_modal {
+        render_downgrade_modal(app, f, area, theme);
+    } else if app.show_health_dashboard {
+        render_health_dashboard_overlay(app, f, area, theme);
     } else if app.show_history {
         render_history_overlay(app, f, area, theme);
     } else if app.show_package_details && !app.show_sidebar {
@@ -103,6 +126,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_confirmation(app, f, theme);
     }
 
+    // Render toasts (always on top if no overlay)
     if !app.show_help
         && !app.show_diagnostics
         && !app.show_system_info
@@ -111,12 +135,17 @@ pub fn render(app: &mut App, f: &mut Frame) {
         && !app.show_cache
         && !app.show_foreign
         && !app.show_groups
+        && !app.show_pacnew_pacsave
+        && !app.show_pacman_log
+        && !app.show_health_dashboard
         && !app.show_history
         && !app.show_package_details
         && !app.show_dependency_visualization
         && !app.show_console
         && !app.show_password_prompt
         && !app.show_confirm_prompt
+        && !app.show_simulation
+        && !app.show_rollback_confirm
     {
         render_toasts(app, f, area, theme);
     }
@@ -212,13 +241,22 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
 
     let items: Vec<ListItem> = page_items
         .iter()
-        .map(|pkg| {
+        .enumerate()
+        .map(|(idx, pkg)| {
             let color = if pkg.is_installed {
                 theme.success()
             } else {
                 match pkg.source {
                     crate::models::PackageSource::Pacman => theme.repo_color(),
                     crate::models::PackageSource::Aur => theme.aur_color(),
+                    crate::models::PackageSource::Apt => theme.info(),
+                    crate::models::PackageSource::Dnf => theme.warning(),
+                    crate::models::PackageSource::Zypper => theme.secondary(),
+                    crate::models::PackageSource::Brew => theme.primary(),
+                    crate::models::PackageSource::Winget => theme.info(),
+                    crate::models::PackageSource::Chocolatey => theme.warning(),
+                    crate::models::PackageSource::Flatpak => theme.secondary(),
+                    crate::models::PackageSource::Snap => theme.primary(),
                 }
             };
 
@@ -240,23 +278,68 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             let source_indicator = match pkg.source {
                 crate::models::PackageSource::Pacman => "📦",
                 crate::models::PackageSource::Aur => " ↑",
+                crate::models::PackageSource::Apt => " apt",
+                crate::models::PackageSource::Dnf => " dnf",
+                crate::models::PackageSource::Zypper => " zyp",
+                crate::models::PackageSource::Brew => " brew",
+                crate::models::PackageSource::Winget => " wing",
+                crate::models::PackageSource::Chocolatey => " choco",
+                crate::models::PackageSource::Flatpak => " flat",
+                crate::models::PackageSource::Snap => " snap",
             };
 
             let size_str = pkg.format_download_size();
-            let max_name_width = vis_height.saturating_sub(28).max(10);
+            let max_name_width = (area.width as usize).saturating_sub(35).max(10);
             let truncated_name = truncate_with_ellipsis(&pkg.name, max_name_width);
 
-            let line = format!(
-                "{} {} {:<width$} {:>6} {}",
-                status_mark,
-                source_indicator,
-                truncated_name,
-                size_str,
-                pkg.version,
-                width = max_name_width
-            );
+            let is_selected = Some(idx) == app.selected_index;
+            let base_style = if is_selected {
+                Style::default().fg(theme.highlight_fg())
+            } else {
+                Style::default().fg(color)
+            };
 
-            ListItem::new(line).style(Style::default().fg(color))
+            let highlight_style = if is_selected {
+                Style::default()
+                    .fg(theme.warning())
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(theme.primary())
+                    .add_modifier(Modifier::BOLD)
+            };
+
+            let mut spans = Vec::new();
+            spans.push(Span::styled(
+                format!("{} {} ", status_mark, source_indicator),
+                base_style,
+            ));
+
+            if let Some(indices) = app.fuzzy_indices.get(&pkg.name) {
+                let highlighted_line =
+                    create_highlighted_line(&truncated_name, indices, base_style, highlight_style);
+                spans.extend(highlighted_line.spans);
+
+                let name_len = truncated_name.chars().count();
+                if name_len < max_name_width {
+                    spans.push(Span::styled(
+                        " ".repeat(max_name_width - name_len),
+                        base_style,
+                    ));
+                }
+            } else {
+                spans.push(Span::styled(
+                    format!("{:<width$}", truncated_name, width = max_name_width),
+                    base_style,
+                ));
+            }
+
+            spans.push(Span::styled(
+                format!(" {:>6} {}", size_str, pkg.version),
+                base_style,
+            ));
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -273,6 +356,8 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             FilterOption::NotInstalled => " [Not Installed]".to_string(),
             FilterOption::RepoOnly => " [Repo]".to_string(),
             FilterOption::AurOnly => " [AUR]".to_string(),
+            FilterOption::Updates => " [Updates]".to_string(),
+            FilterOption::AUR => " [AUR]".to_string(),
             FilterOption::Group(ref g) => format!(" [{}]", g),
         };
 
@@ -357,7 +442,11 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
         let empty_msg = if app.search_input.is_empty() {
             app.localizer.t("no_results_found")
         } else {
-            format!("{}: '{}'", app.localizer.t("no_results_found"), app.search_input)
+            format!(
+                "{}: '{}'",
+                app.localizer.t("no_results_found"),
+                app.search_input
+            )
         };
         let empty_block = Paragraph::new(empty_msg)
             .style(Style::default().fg(theme.secondary()))
@@ -435,10 +524,6 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
             .gauge_style(Style::default().fg(theme.primary()))
             .label(progress_label)
             .percent(progress_pct);
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.primary()));
 
         f.render_widget(progress_gauge, area);
     } else {
@@ -616,10 +701,7 @@ fn render_details_sidebar(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
                     Span::styled("Votes: ", Style::default().fg(theme.muted())),
-                    Span::styled(
-                        pkg.format_votes(),
-                        Style::default().fg(theme.primary()),
-                    ),
+                    Span::styled(pkg.format_votes(), Style::default().fg(theme.primary())),
                 ]));
             }
             if pkg.popularity.is_some() {
@@ -759,7 +841,8 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         .split(area);
 
     let text = if is_multi {
-        let total_size: u64 = app.packages_pending_confirmation
+        let total_size: u64 = app
+            .packages_pending_confirmation
             .iter()
             .map(|p| p.get_size())
             .sum();
@@ -769,7 +852,11 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
             app.localizer.t("confirm_multiple"),
             action_str.to_lowercase(),
             pkg_count,
-            if pkg_count == 1 { "package" } else { "packages" },
+            if pkg_count == 1 {
+                "package"
+            } else {
+                "packages"
+            },
             app.localizer.t("total_size"),
             size_str
         )
@@ -813,8 +900,10 @@ fn render_confirmation(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
 }
 
 fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
-    use ratatui::widgets::{Borders, BorderType, List, ListItem, ListState, Scrollbar, ScrollbarState};
     use ratatui::layout::{Constraint, Direction, Layout, Rect};
+    use ratatui::widgets::{
+        BorderType, Borders, List, ListItem, ListState, Scrollbar, ScrollbarState,
+    };
 
     if app.outdated_packages.is_empty() {
         let block = Block::default()
@@ -835,7 +924,10 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
     }
 
     let main_block = Block::default()
-        .title(format!("⚠️  Available Updates ({})", app.outdated_packages.len()))
+        .title(format!(
+            "⚠️  Available Updates ({})",
+            app.outdated_packages.len()
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
         .style(
@@ -862,12 +954,18 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
     let filtered = app.get_filtered_outdated_packages();
 
     if app.get_security_updates_count() > 0 {
-        items.push(ListItem::new(
-            Span::styled("🚨 SECURITY CRITICAL UPDATES", Style::default().fg(theme.error()).add_modifier(Modifier::BOLD))
-        ).style(Style::default().bg(Color::Rgb(50, 0, 0))));
+        items.push(
+            ListItem::new(Span::styled(
+                "🚨 SECURITY CRITICAL UPDATES",
+                Style::default()
+                    .fg(theme.error())
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .style(Style::default().bg(Color::Rgb(50, 0, 0))),
+        );
     }
 
-    for (idx, pkg) in filtered.iter().enumerate() {
+    for (_idx, pkg) in filtered.iter().enumerate() {
         let checkbox = if pkg.is_selected { "☑" } else { "☐" };
         let security_flag = if pkg.is_security_update {
             format!(" 🔴 {}", pkg.cve_info.as_deref().unwrap_or("CVE"))
@@ -887,20 +985,13 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             ""
         };
 
-        let line = format!(
-            "{} {:18} {:12} {:>8}{}{}{}{}{}",
-            checkbox,
-            pkg.name,
-            pkg.version_change(),
-            pkg.formatted_size(),
-            repo,
-            aur_flag,
-            dep_info,
-            rebuild_flag,
-            security_flag
-        );
+        let has_security_header = app.get_security_updates_count() > 0;
+        let item_idx = if has_security_header { _idx + 1 } else { _idx };
+        let is_selected = Some(item_idx) == app.updates_cursor;
 
-        let style = if pkg.is_security_update {
+        let base_style = if is_selected {
+            Style::default().fg(theme.highlight_fg())
+        } else if pkg.is_security_update {
             Style::default().fg(theme.error())
         } else if pkg.is_selected {
             Style::default().fg(theme.success())
@@ -908,16 +999,55 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             Style::default().fg(theme.foreground())
         };
 
-        items.push(ListItem::new(line).style(style));
+        let mut spans = Vec::new();
+        spans.push(Span::styled(format!("{} ", checkbox), base_style));
+
+        let highlight_style = if is_selected {
+            Style::default()
+                .fg(theme.warning())
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(theme.primary())
+                .add_modifier(Modifier::BOLD)
+        };
+
+        if let Some(indices) = app.fuzzy_indices.get(&pkg.name) {
+            let highlighted_line =
+                create_highlighted_line(&pkg.name, indices, base_style, highlight_style);
+            spans.extend(highlighted_line.spans);
+
+            let name_len = pkg.name.chars().count();
+            if name_len < 18 {
+                spans.push(Span::styled(" ".repeat(18 - name_len), base_style));
+            }
+        } else {
+            spans.push(Span::styled(format!("{:18}", pkg.name), base_style));
+        }
+
+        spans.push(Span::styled(
+            format!(
+                " {:12} {:>8}{}{}{}{}{}",
+                pkg.version_change(),
+                pkg.formatted_size(),
+                repo,
+                aur_flag,
+                dep_info,
+                rebuild_flag,
+                security_flag
+            ),
+            base_style,
+        ));
+
+        let line = Line::from(spans);
+        items.push(ListItem::new(line));
     }
 
-    let list = List::new(items)
-        .block(Block::default())
-        .highlight_style(
-            Style::default()
-                .fg(theme.highlight_fg())
-                .bg(theme.highlight_bg())
-        );
+    let list = List::new(items).block(Block::default()).highlight_style(
+        Style::default()
+            .fg(theme.highlight_fg())
+            .bg(theme.highlight_bg()),
+    );
 
     let mut state = ListState::default();
     if let Some(cursor) = app.updates_cursor {
@@ -931,17 +1061,28 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
     let selected_size = app.get_selected_update_size();
 
     let mut status_parts = Vec::new();
-    status_parts.push(format!("Total: {} ({})", filtered.len(), crate::models::Package::format_size(total_size)));
+    status_parts.push(format!(
+        "Total: {} ({})",
+        filtered.len(),
+        crate::models::Package::format_size(total_size)
+    ));
 
     if selected_count > 0 {
-        status_parts.push(format!("Selected: {} ({})", selected_count, crate::models::Package::format_size(selected_size)));
+        status_parts.push(format!(
+            "Selected: {} ({})",
+            selected_count,
+            crate::models::Package::format_size(selected_size)
+        ));
     }
 
     if app.has_aur_needing_rebuild() {
         status_parts.push("⚠️ AUR rebuild needed".to_string());
     }
 
-    let warn_line = if !app.partial_update_warning_shown && selected_count > 0 && selected_count < filtered.len() {
+    let warn_line = if !app.partial_update_warning_shown
+        && selected_count > 0
+        && selected_count < filtered.len()
+    {
         "⚠️ Partial updates not recommended. Consider updating all."
     } else {
         ""
@@ -965,25 +1106,20 @@ fn render_updates_view(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
 }
 
 fn render_history_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
-    let mut lines = vec![Line::from(vec![Span::styled(
-        "Transaction History (latest first)",
-        Style::default()
-            .fg(theme.primary())
-            .add_modifier(Modifier::BOLD),
-    )])];
-    lines.push(Line::from(""));
+    let mut items = Vec::new();
 
     if app.transaction_history.is_empty() {
-        lines.push(Line::from("No transactions recorded yet."));
+        items.push(ListItem::new(Line::from("No transactions recorded yet.")));
     } else {
-        for tx in app.transaction_history.iter().take(15) {
+        // Show up to 30 items in the history list (if available)
+        for tx in app.transaction_history.iter().take(30) {
             let status_color = match tx.status {
                 crate::transaction_history::TransactionStatus::Success => theme.success(),
                 crate::transaction_history::TransactionStatus::Failed => theme.error(),
                 crate::transaction_history::TransactionStatus::Cancelled => theme.warning(),
                 crate::transaction_history::TransactionStatus::Pending => theme.info(),
             };
-            lines.push(Line::from(vec![
+            items.push(ListItem::new(Line::from(vec![
                 Span::styled(
                     format!(
                         "{} | +{} -{} | {}",
@@ -1001,50 +1137,87 @@ fn render_history_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
                         .fg(status_color)
                         .add_modifier(Modifier::BOLD),
                 ),
-            ]));
+            ])));
         }
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from(
+    items.push(ListItem::new(Line::from("")));
+    items.push(ListItem::new(Line::from(Span::styled(
         "Press 'R' to rollback latest successful transaction",
-    ));
-    lines.push(Line::from("Press 'Esc' to close"));
+        Style::default().fg(theme.primary()),
+    ))));
+    items.push(ListItem::new(Line::from(Span::styled(
+        "Press 'Esc' to close",
+        Style::default().fg(theme.muted()),
+    ))));
 
-    let widget = Paragraph::new(lines)
+    let list = List::new(items.clone())
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Thick)
-                .title("History")
+                .title("Transaction History")
                 .border_style(Style::default().fg(theme.primary())),
         )
-        .wrap(ratatui::widgets::Wrap { trim: true });
+        .highlight_style(
+            Style::default()
+                .fg(theme.highlight_fg())
+                .bg(theme.highlight_bg())
+                .add_modifier(Modifier::BOLD),
+        );
 
     let popup = centered_rect(80, 70, area);
     f.render_widget(Clear, popup);
-    f.render_widget(widget, popup);
+
+    let mut state = ListState::default();
+    state.select(app.history_cursor);
+    f.render_stateful_widget(list, popup, &mut state);
+
+    if let Some(mut scroll_state) = app.history_scroll_state {
+        let scrollbar_area = Rect {
+            x: popup.x + popup.width - 1,
+            y: popup.y + 1,
+            width: 1,
+            height: popup.height.saturating_sub(2),
+        };
+
+        let items_len = items.len();
+        scroll_state = scroll_state.content_length(items_len);
+        if let Some(cursor) = app.history_cursor {
+            scroll_state = scroll_state.position(cursor);
+        }
+
+        render_scrollbar(f, scrollbar_area, &mut scroll_state, theme.primary());
+    }
 }
 
 fn render_diagnostics_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
-    let mut lines = vec![Line::from(vec![Span::styled(
+    let mut items = vec![ListItem::new(Line::from(vec![Span::styled(
         "System Diagnostics",
         Style::default()
             .fg(theme.primary())
             .add_modifier(Modifier::BOLD),
-    )])];
-    lines.push(Line::from(""));
+    )]))];
+    items.push(ListItem::new(Line::from("")));
+
     if app.diagnostics.is_empty() {
-        lines.push(Line::from("No diagnostics available."));
+        items.push(ListItem::new(Line::from("No diagnostics available.")));
     } else {
         for item in &app.diagnostics {
-            lines.push(Line::from(format!("{}: {}", item.label, item.status)));
+            items.push(ListItem::new(Line::from(format!(
+                "{}: {}",
+                item.label, item.status
+            ))));
         }
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from("Press 'Esc' to close"));
 
-    let para = Paragraph::new(lines)
+    items.push(ListItem::new(Line::from("")));
+    items.push(ListItem::new(Line::from(Span::styled(
+        "Press 'Esc' to close",
+        Style::default().fg(theme.muted()),
+    ))));
+
+    let list = List::new(items.clone())
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1052,11 +1225,36 @@ fn render_diagnostics_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crat
                 .title("Diagnostics")
                 .border_style(Style::default().fg(theme.primary())),
         )
-        .wrap(ratatui::widgets::Wrap { trim: true });
+        .highlight_style(
+            Style::default()
+                .fg(theme.highlight_fg())
+                .bg(theme.highlight_bg())
+                .add_modifier(Modifier::BOLD),
+        );
 
     let popup = centered_rect(70, 50, area);
     f.render_widget(Clear, popup);
-    f.render_widget(para, popup);
+
+    let mut state = ListState::default();
+    state.select(app.diagnostics_cursor);
+    f.render_stateful_widget(list, popup, &mut state);
+
+    if let Some(mut scroll_state) = app.diagnostics_scroll_state {
+        let scrollbar_area = Rect {
+            x: popup.x + popup.width - 1,
+            y: popup.y + 1,
+            width: 1,
+            height: popup.height.saturating_sub(2),
+        };
+
+        let items_len = items.len();
+        scroll_state = scroll_state.content_length(items_len);
+        if let Some(cursor) = app.diagnostics_cursor {
+            scroll_state = scroll_state.position(cursor);
+        }
+
+        render_scrollbar(f, scrollbar_area, &mut scroll_state, theme.primary());
+    }
 }
 
 fn render_system_info_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -1083,7 +1281,7 @@ fn render_system_info_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crat
                 .borders(Borders::ALL)
                 .border_type(BorderType::Thick)
                 .title("System Info")
-                .border_style(Style::default().fg(theme.aur())),
+                .border_style(Style::default().fg(theme.aur_color())),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
@@ -1101,19 +1299,33 @@ fn render_orphans_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     )])];
     lines.push(Line::from(""));
     if app.orphan_packages.is_empty() {
-        lines.push(Line::from("No orphan packages found. All packages are required by something."));
+        lines.push(Line::from(
+            "No orphan packages found. All packages are required by something.",
+        ));
     } else {
-        lines.push(Line::from(format!("Found {} orphan package(s):", app.orphan_packages.len())));
+        lines.push(Line::from(format!(
+            "Found {} orphan package(s):",
+            app.orphan_packages.len()
+        )));
         lines.push(Line::from(""));
         for pkg in &app.orphan_packages {
             lines.push(Line::from(vec![
                 Span::raw("  • "),
-                Span::styled(&pkg.name, Style::default().fg(theme.warning()).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &pkg.name,
+                    Style::default()
+                        .fg(theme.warning())
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]));
         }
         lines.push(Line::from(""));
-        lines.push(Line::from("These packages are explicitly installed but not required by any other package."));
-        lines.push(Line::from("You can remove them with: sudo pacman -Rcs <package_name>"));
+        lines.push(Line::from(
+            "These packages are explicitly installed but not required by any other package.",
+        ));
+        lines.push(Line::from(
+            "You can remove them with: sudo pacman -Rcs <package_name>",
+        ));
     }
     lines.push(Line::from(""));
     lines.push(Line::from("Press 'Esc' to close"));
@@ -1145,9 +1357,12 @@ fn render_package_sizes_overlay(app: &App, f: &mut Frame, area: Rect, theme: &cr
         lines.push(Line::from("No package size data available."));
     } else {
         // Calculate total size
-        let total_kb: u64 = app.package_sizes.iter().map(|p| p.size_kb).sum();
-        let total_mb = total_kb as f64 / 1024.0;
-        lines.push(Line::from(format!("Top 30 largest packages (Total: {:.1} MB):", total_mb)));
+        let total_bytes: u64 = app.package_sizes.iter().map(|p| p.size_kb * 1024).sum();
+        let total_size = crate::models::Package::format_size_bytes(total_bytes);
+        lines.push(Line::from(format!(
+            "Top 30 largest packages (Total: {}):",
+            total_size
+        )));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("Package", Style::default().add_modifier(Modifier::BOLD)),
@@ -1203,7 +1418,10 @@ fn render_cache_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::the
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("Cache Location", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Cache Location",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw("                    "),
             Span::styled("Size", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw("  "),
@@ -1219,16 +1437,18 @@ fn render_cache_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::the
             };
             lines.push(Line::from(format!(
                 "{:<28} {:>10} {:>8} files",
-                path,
-                cache.size_formatted,
-                cache.file_count
+                path, cache.size_formatted, cache.file_count
             )));
         }
 
         lines.push(Line::from(""));
         lines.push(Line::from("To clean cache, run:"));
-        lines.push(Line::from("  sudo pacman -Scc          # Clean all pacman cache"));
-        lines.push(Line::from("  rm -rf ~/.cache/paru     # Clean AUR helper cache"));
+        lines.push(Line::from(
+            "  sudo pacman -Scc          # Clean all pacman cache",
+        ));
+        lines.push(Line::from(
+            "  rm -rf ~/.cache/paru     # Clean AUR helper cache",
+        ));
     }
     lines.push(Line::from(""));
     lines.push(Line::from("Press 'Esc' to close"));
@@ -1249,17 +1469,7 @@ fn render_cache_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::the
 }
 
 fn format_cache_size(bytes: u64) -> String {
-    let kb = bytes as f64 / 1024.0;
-    let mb = kb / 1024.0;
-    let gb = mb / 1024.0;
-
-    if gb >= 1.0 {
-        format!("{:.2} GB", gb)
-    } else if mb >= 1.0 {
-        format!("{:.2} MB", mb)
-    } else {
-        format!("{:.2} KB", kb)
-    }
+    crate::models::Package::format_size_bytes(bytes)
 }
 
 fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -1270,7 +1480,7 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     let mut lines = vec![Line::from(vec![Span::styled(
         "Foreign Packages (AUR/Other)",
         Style::default()
-            .fg(theme.aur())
+            .fg(theme.aur_color())
             .add_modifier(Modifier::BOLD),
     )])];
     lines.push(Line::from(""));
@@ -1282,7 +1492,9 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
     lines.push(Line::from(""));
 
     if app.foreign_packages.is_empty() {
-        lines.push(Line::from("No foreign packages found. All packages are from official repositories."));
+        lines.push(Line::from(
+            "No foreign packages found. All packages are from official repositories.",
+        ));
     } else {
         lines.push(Line::from(format!("{} foreign package(s):", foreign_count)));
         lines.push(Line::from(""));
@@ -1303,9 +1515,7 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
             };
             lines.push(Line::from(format!(
                 "{:<22} {:<15} {}",
-                name,
-                pkg.version,
-                pkg.source
+                name, pkg.version, pkg.source
             )));
         }
     }
@@ -1319,7 +1529,7 @@ fn render_foreign_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::t
                 .borders(Borders::ALL)
                 .border_type(BorderType::Thick)
                 .title("Foreign Packages")
-                .border_style(Style::default().fg(theme.aur())),
+                .border_style(Style::default().fg(theme.aur_color())),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
@@ -1340,7 +1550,10 @@ fn render_groups_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::th
     if app.package_groups.is_empty() {
         lines.push(Line::from("No package groups available."));
     } else {
-        lines.push(Line::from(format!("Available groups: {}", app.package_groups.len())));
+        lines.push(Line::from(format!(
+            "Available groups: {}",
+            app.package_groups.len()
+        )));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("Group", Style::default().add_modifier(Modifier::BOLD)),
@@ -1375,6 +1588,307 @@ fn render_groups_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::th
     f.render_widget(para, popup);
 }
 
+fn render_pacnew_pacsave_overlay(
+    app: &App,
+    f: &mut Frame,
+    area: Rect,
+    theme: &crate::theme::Theme,
+) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Config Files (.pacnew / .pacsave)",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if app.pacnew_pacsave_files.is_empty() {
+        lines.push(Line::from("No .pacnew or .pacsave files found in /etc."));
+    } else {
+        lines.push(Line::from(format!(
+            "Found {} file(s):",
+            app.pacnew_pacsave_files.len()
+        )));
+        lines.push(Line::from(""));
+        for (idx, file) in app.pacnew_pacsave_files.iter().enumerate() {
+            let indicator = if idx == app.pacnew_cursor.unwrap_or(0) {
+                "▶"
+            } else {
+                " "
+            };
+            let file_type_str = match file.file_type {
+                crate::services::PacnewType::New => ".pacnew",
+                crate::services::PacnewType::Save => ".pacsave",
+            };
+            lines.push(Line::from(vec![
+                Span::raw(indicator),
+                Span::raw(" "),
+                Span::styled(&file.original_name, Style::default().fg(CYAN)),
+                Span::raw(file_type_str),
+            ]));
+            if idx == app.pacnew_cursor.unwrap_or(0) {
+                lines.push(Line::from(vec![
+                    Span::raw("   "),
+                    Span::styled(
+                        &file.path,
+                        Style::default()
+                            .fg(theme.muted())
+                            .add_modifier(Modifier::DIM),
+                    ),
+                ]));
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(
+            "Keys: [↑/↓ or j/k] Navigate  [d] Delete  [Esc] Close",
+        ));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'N' to toggle this view"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Config Files")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_pacman_log_overlay(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Pacman Log",
+        Style::default()
+            .fg(theme.info())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "[1] All  [2] Installed  [3] Removed  [4] Upgraded",
+    ));
+
+    let filtered: Vec<_> = if let Some(filter) = &app.pacman_log_filter {
+        app.pacman_log_entries
+            .iter()
+            .filter(|e| &e.operation == filter)
+            .collect()
+    } else {
+        app.pacman_log_entries.iter().collect()
+    };
+
+    lines.push(Line::from(""));
+    if filtered.is_empty() {
+        lines.push(Line::from("No log entries found."));
+    } else {
+        lines.push(Line::from(format!("Showing {} entries:", filtered.len())));
+        lines.push(Line::from(""));
+        for entry in filtered.iter().take(30) {
+            let op_str = match &entry.operation {
+                crate::services::LogOperation::Installed => "[INSTALLED]",
+                crate::services::LogOperation::Removed => "[REMOVED]",
+                crate::services::LogOperation::Upgraded => "[UPGRADED]",
+                crate::services::LogOperation::Downgraded => "[DOWNGRADED]",
+            };
+            let color = match &entry.operation {
+                crate::services::LogOperation::Installed => theme.success(),
+                crate::services::LogOperation::Removed => theme.error(),
+                crate::services::LogOperation::Upgraded => theme.info(),
+                crate::services::LogOperation::Downgraded => theme.warning(),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(op_str, Style::default().fg(color)),
+                Span::raw(" "),
+                Span::styled(&entry.package, Style::default().fg(CYAN)),
+                Span::raw(" "),
+                Span::raw(&entry.timestamp),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "Keys: [↑/↓ or j/k] Scroll  [1-4] Filter  [Esc/L] Close",
+    ));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Pacman Log")
+                .border_style(Style::default().fg(theme.info())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(75, 70, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_downgrade_modal(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let pkg_name = app.downgrade_package.as_deref().unwrap_or("Unknown");
+
+    let mut lines = vec![Line::from(vec![Span::styled(
+        format!("Downgrade: {}", pkg_name),
+        Style::default()
+            .fg(theme.warning())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    lines.push(Line::from("Select a version to downgrade:"));
+    lines.push(Line::from(""));
+
+    if app.available_versions.is_empty() {
+        lines.push(Line::from("No older versions available."));
+    } else {
+        for (idx, version) in app.available_versions.iter().enumerate() {
+            let indicator = if idx == app.downgrade_cursor.unwrap_or(0) {
+                "▶"
+            } else {
+                " "
+            };
+            lines.push(Line::from(vec![
+                Span::raw(indicator),
+                Span::raw(" "),
+                Span::styled(&version.version, Style::default().fg(CYAN)),
+                Span::raw(" ("),
+                Span::raw(&version.date),
+                Span::raw(")"),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "Keys: [↑/↓ or j/k] Navigate  [Enter] Select  [Esc] Cancel",
+    ));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Package Downgrade")
+                .border_style(Style::default().fg(theme.warning())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(60, 60, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
+fn render_health_dashboard_overlay(
+    app: &App,
+    f: &mut Frame,
+    area: Rect,
+    theme: &crate::theme::Theme,
+) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "System Health Dashboard",
+        Style::default()
+            .fg(theme.success())
+            .add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    // Disk Space
+    lines.push(Line::from(vec![Span::styled(
+        "Disk Space:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )]));
+    if app.health_disk_info.is_empty() {
+        lines.push(Line::from("  No disk data available"));
+    } else {
+        for disk in &app.health_disk_info {
+            let used_mb = disk.used_bytes as f64 / 1024.0 / 1024.0;
+            let total_mb = disk.total_bytes as f64 / 1024.0 / 1024.0;
+            let color = if disk.usage_percent > 90.0 {
+                theme.error()
+            } else if disk.usage_percent > 75.0 {
+                theme.warning()
+            } else {
+                theme.success()
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(&disk.mount_point, Style::default().fg(CYAN)),
+                Span::raw(": "),
+                Span::styled(
+                    format!(
+                        "{:.1} / {:.1} MB ({:.1}%)",
+                        used_mb, total_mb, disk.usage_percent
+                    ),
+                    Style::default().fg(color),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "Pacman Status:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )]));
+    if let Some(status) = &app.health_pacman_status {
+        let db_color = if status.db_locked {
+            theme.error()
+        } else {
+            theme.success()
+        };
+        let gpg_color = if status.gpg_valid {
+            theme.success()
+        } else {
+            theme.error()
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  Database lock: "),
+            Span::styled(
+                if status.db_locked {
+                    "LOCKED"
+                } else {
+                    "Available"
+                },
+                Style::default().fg(db_color),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("  GPG keys: "),
+            Span::styled(
+                if status.gpg_valid {
+                    "Valid"
+                } else {
+                    "Invalid/Expired"
+                },
+                Style::default().fg(gpg_color),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from("  Status unknown"));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press 'H' to toggle this view"));
+
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .title("Health Dashboard")
+                .border_style(Style::default().fg(theme.success())),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let popup = centered_rect(65, 50, area);
+    f.render_widget(Clear, popup);
+    f.render_widget(para, popup);
+}
+
 fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
     let console_title = if app.command_stdin_tx.is_some() {
         "Console Output (interactive)"
@@ -1389,9 +1903,9 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
         .style(Style::default().bg(Color::Black).fg(theme.foreground()))
         .border_style(Style::default().fg(theme.info()));
 
-    // Show last 25 lines with progress bar if available
-    let start_index = app.console_buffer.len().saturating_sub(25);
-    let logs: Vec<ListItem> = app.console_buffer[start_index..]
+    // Show the full buffer with scrolling support
+    let logs: Vec<ListItem> = app
+        .console_buffer
         .iter()
         .map(|l| {
             let style = if l.contains("[stderr]")
@@ -1407,15 +1921,39 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
             } else {
                 Style::default().fg(theme.foreground())
             };
-            ListItem::new(l.clone()).style(style)
+            ListItem::new(Line::from(vec![Span::styled(l.clone(), style)]))
         })
         .collect();
 
-    let list = List::new(logs).block(console_block);
+    let list = List::new(logs).block(console_block).highlight_style(
+        Style::default()
+            .fg(theme.highlight_fg())
+            .bg(theme.highlight_bg()),
+    );
 
     let chunk = centered_rect(85, 85, f.size());
     f.render_widget(Clear, chunk);
-    f.render_widget(list, chunk);
+
+    let mut state = ListState::default();
+    state.select(app.console_cursor);
+    f.render_stateful_widget(list, chunk, &mut state);
+
+    if let Some(mut scroll_state) = app.console_scroll_state {
+        let scrollbar_area = Rect {
+            x: chunk.x + chunk.width - 1,
+            y: chunk.y + 1,
+            width: 1,
+            height: chunk.height.saturating_sub(2),
+        };
+
+        let items_len = app.console_buffer.len();
+        scroll_state = scroll_state.content_length(items_len);
+        if let Some(cursor) = app.console_cursor {
+            scroll_state = scroll_state.position(cursor);
+        }
+
+        render_scrollbar(f, scrollbar_area, &mut scroll_state, theme.info());
+    }
 
     if app.command_stdin_tx.is_some() {
         let input_area = Rect {
@@ -1435,25 +1973,55 @@ fn render_console(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
 
     // Render progress bar if available
     if let Some(progress) = &app.command_progress {
+        let progress_y = if app.command_stdin_tx.is_some() {
+            chunk.y + chunk.height.saturating_sub(5)
+        } else {
+            chunk.y + chunk.height.saturating_sub(4)
+        };
+
+        // Package progress bar
         let progress_area = Rect {
             x: chunk.x + 2,
-            y: if app.command_stdin_tx.is_some() {
-                chunk.y + chunk.height.saturating_sub(4)
-            } else {
-                chunk.y + chunk.height.saturating_sub(3)
-            },
+            y: progress_y,
             width: chunk.width - 4,
             height: 1,
         };
 
         let ratio = progress.current as f64 / progress.total as f64;
+
+        // Build label with download info if available
+        let label = if let Some(speed) = &progress.download_speed {
+            if let (Some(downloaded), Some(total)) =
+                (progress.downloaded_bytes, progress.total_bytes)
+            {
+                let downloaded_mb = downloaded as f64 / 1024.0 / 1024.0;
+                let total_mb = total as f64 / 1024.0 / 1024.0;
+                format!(
+                    "{} ({}/{}) {} - {:.1}/{:.1} MB",
+                    progress.current_package,
+                    progress.current,
+                    progress.total,
+                    speed,
+                    downloaded_mb,
+                    total_mb
+                )
+            } else {
+                format!(
+                    "{} ({}/{}) {}",
+                    progress.current_package, progress.current, progress.total, speed
+                )
+            }
+        } else {
+            format!(
+                " {} {}/{} ",
+                progress.current_package, progress.current, progress.total
+            )
+        };
+
         let gauge = Gauge::default()
             .ratio(ratio.min(1.0))
-            .label(format!(
-                "{} {}/{}",
-                progress.current_package, progress.current, progress.total
-            ))
-            .style(Style::default().fg(theme.primary()).bg(theme.border()));
+            .label(&label)
+            .style(Style::default().fg(theme.success()).bg(theme.muted()));
 
         f.render_widget(gauge, progress_area);
     }
@@ -1698,16 +2266,41 @@ fn render_dependency_visualization(app: &App, f: &mut Frame, theme: &crate::them
         .alignment(Alignment::Center);
         f.render_widget(title, chunks[0]);
 
-        let tree_text = app
-            .dependency_tree_text
-            .clone()
-            .unwrap_or_else(|| "No dependency information available.".to_string());
+        if let Some(tree) = &app.interactive_dependency_tree {
+            let flattened = crate::dependency_visualization::DependencyVisualizationService::flatten_interactive_tree(tree);
+            let items: Vec<ListItem> = flattened
+                .iter()
+                .map(|item| {
+                    let style = if item.is_orphan {
+                        Style::default().fg(theme.warning())
+                    } else if item.is_installed {
+                        Style::default().fg(theme.success())
+                    } else {
+                        Style::default().fg(theme.foreground())
+                    };
+                    ListItem::new(item.full_display_name.clone()).style(style)
+                })
+                .collect();
 
-        let tree_para = Paragraph::new(tree_text)
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .scroll((0, 0))
-            .style(Style::default().fg(theme.foreground()));
-        f.render_widget(tree_para, chunks[1]);
+            let mut state = ratatui::widgets::ListState::default();
+            state.select(app.dependency_tree_cursor);
+
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::NONE))
+                .highlight_style(
+                    Style::default()
+                        .fg(theme.highlight_fg())
+                        .bg(theme.highlight_bg())
+                        .add_modifier(Modifier::BOLD),
+                );
+
+            f.render_stateful_widget(list, chunks[1], &mut state);
+        } else {
+            let empty = Paragraph::new("No dependency information available.")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.muted()));
+            f.render_widget(empty, chunks[1]);
+        }
 
         // Footer
         let footer = Paragraph::new("Press 'Esc' to return")
@@ -1803,4 +2396,136 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
     let help_area = centered_rect(70, 80, area);
     f.render_widget(Clear, help_area);
     f.render_widget(help_para, help_area);
+}
+
+fn render_simulation_modal(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
+    let area = centered_rect(60, 60, f.size());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title("🔍 Operation Simulation")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(theme.primary()));
+
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .margin(2)
+        .split(area);
+
+    if let Some(result) = &app.simulation_result {
+        // Summary
+        let download_size = crate::models::Package::format_size_bytes(result.total_download_bytes);
+        let disk_change = if result.disk_change_bytes >= 0 {
+            format!(
+                "+{}",
+                crate::models::Package::format_size_bytes(result.disk_change_bytes as u64)
+            )
+        } else {
+            format!(
+                "-{}",
+                crate::models::Package::format_size_bytes(result.disk_change_bytes.abs() as u64)
+            )
+        };
+
+        let summary = Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("Download Size: ", Style::default().fg(theme.muted())),
+                Span::styled(download_size, Style::default().fg(theme.foreground())),
+            ]),
+            Line::from(vec![
+                Span::styled("Disk Change:   ", Style::default().fg(theme.muted())),
+                Span::styled(disk_change, Style::default().fg(theme.foreground())),
+            ]),
+        ]);
+        f.render_widget(summary, chunks[0]);
+
+        // Conflicts and Config Changes
+        let mut lines = Vec::new();
+        if !result.conflicts.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Conflicts Found:",
+                Style::default()
+                    .fg(theme.error())
+                    .add_modifier(Modifier::BOLD),
+            )]));
+            for conflict in &result.conflicts {
+                lines.push(Line::from(format!("  • {}", conflict)));
+            }
+            lines.push(Line::from(""));
+        }
+
+        if !result.config_changes.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Configuration Changes:",
+                Style::default()
+                    .fg(theme.warning())
+                    .add_modifier(Modifier::BOLD),
+            )]));
+            for config in &result.config_changes {
+                lines.push(Line::from(format!("  • {}", config)));
+            }
+        }
+
+        if result.conflicts.is_empty() && result.config_changes.is_empty() {
+            lines.push(Line::from("No conflicts or major config changes detected."));
+        }
+
+        let details = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(details, chunks[1]);
+    } else {
+        let loading = Paragraph::new("Simulating operation...")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme.muted()));
+        f.render_widget(loading, chunks[1]);
+    }
+
+    let footer = Paragraph::new("Press 'Enter' to Proceed | 'Esc' to Cancel")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme.muted()));
+    f.render_widget(footer, chunks[2]);
+}
+
+fn render_rollback_dialog(app: &App, f: &mut Frame, theme: &crate::theme::Theme) {
+    let area = centered_rect(50, 30, f.size());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title("🛡️  Rollback Recommended")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(theme.error()));
+
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .margin(2)
+        .split(area);
+
+    let msg = Paragraph::new(vec![
+        Line::from("The operation failed. Would you like to rollback to the snapshot created before this operation?"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Snapshot ID: ", Style::default().fg(theme.muted())),
+            Span::styled(
+                app.pending_rollback_id.as_deref().unwrap_or("Unknown"),
+                Style::default().fg(theme.foreground()),
+            ),
+        ]),
+    ]).wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(msg, chunks[0]);
+
+    let footer = Paragraph::new("Press 'y' to Rollback | 'n' to Dismiss")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme.muted()));
+    f.render_widget(footer, chunks[1]);
 }

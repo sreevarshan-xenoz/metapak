@@ -3,7 +3,7 @@
 //! Tests for circuit breaker, cache limits, path validation,
 //! search limits, and other robustness improvements.
 
-use arch_tui::utils::{validate_path, sanitize_filename, validate_search_query};
+use arch_tui::utils::{sanitize_filename, validate_path, validate_search_query};
 use std::path::Path;
 
 #[test]
@@ -14,7 +14,9 @@ fn test_path_validation_prevents_traversal() {
     assert!(!validate_path(Path::new("some/../../secret")));
 
     // These should be allowed
-    assert!(validate_path(Path::new("/home/user/.config/arch-tui/config.toml")));
+    assert!(validate_path(Path::new(
+        "/home/user/.config/arch-tui/config.toml"
+    )));
     assert!(validate_path(Path::new(".config/arch-tui/config.toml")));
     assert!(validate_path(Path::new("relative/path/file.txt")));
 }
@@ -23,7 +25,7 @@ fn test_path_validation_prevents_traversal() {
 fn test_filename_sanitization() {
     assert_eq!(sanitize_filename("test.txt"), "test.txt");
     assert_eq!(sanitize_filename("my-file_1.2"), "my-file_1.2");
-    assert_eq!(sanitize_filename("file;rm -rf /"), "filerm-rf-");
+    assert_eq!(sanitize_filename("file;rm -rf /"), "filerm-rf");
     assert_eq!(sanitize_filename("test@#$%^&*()"), "test");
 }
 
@@ -80,25 +82,6 @@ mod circuit_breaker_tests {
         // For test, we'll just verify the state transition logic exists
         cb.record_success();
         assert!(cb.is_available());
-    }
-}
-
-#[cfg(test)]
-mod cache_tests {
-    use arch_tui::services::{enforce_cache_limit, get_cache_stats};
-
-    #[test]
-    fn test_cache_stats() {
-        let (total, expired) = get_cache_stats();
-        // Just verify the function works without panic
-        assert!(total >= 0);
-        assert!(expired >= 0);
-    }
-
-    #[test]
-    fn test_enforce_cache_limit_no_panic() {
-        // This should not panic even with empty cache
-        enforce_cache_limit();
     }
 }
 

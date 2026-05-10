@@ -1,0 +1,48 @@
+<h2>Implementation Approaches</h2>
+<p class="subtitle">How should we integrate the Robustness Suite into arch-tui?</p>
+
+<div class="options">
+  <div class="option" data-choice="middleware" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Transaction Middleware (Recommended)</h3>
+      <p><b>Mechanism:</b> A centralized <code>TransactionManager</code> that wraps all actions.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <ul>
+            <li>Strongest safety guarantees</li>
+            <li>Atomic "Snapshot -> Run -> Notify" flow</li>
+            <li>Easy to add global rollback button</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <ul>
+            <li>Requires refactoring current action logic</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="hooks" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Action Hooks</h3>
+      <p><b>Mechanism:</b> Add <code>pre_exec</code> and <code>post_exec</code> hooks to each individual action.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <ul>
+            <li>Least intrusive to existing code</li>
+            <li>Flexible: turn snapshots on/off per action</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <ul>
+            <li>State management is scattered</li>
+            <li>Harder to maintain consistency</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

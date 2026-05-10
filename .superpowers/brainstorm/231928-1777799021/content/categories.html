@@ -1,0 +1,43 @@
+<h2>Choose a Direction</h2>
+<p class="subtitle">Where should we focus our energy to make arch-tui more advanced?</p>
+
+<div class="options">
+  <div class="option" data-choice="robustness" onclick="toggleSelect(this)">
+    <div class="letter">R</div>
+    <div class="content">
+      <h3>Robustness & Safety</h3>
+      <p><b>Focus:</b> System stability and "Never Break" philosophy.</p>
+      <ul>
+        <li>Transaction Rollbacks (BTRFS/LVM)</li>
+        <li>Predictive Dry-Run Verification</li>
+        <li>Mirror & Source Health Monitoring</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="advanced" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Advanced Power Tools</h3>
+      <p><b>Focus:</b> Deep system management and flexibility.</p>
+      <ul>
+        <li>In-TUI Config File Editing</li>
+        <li>Remote System Management (SSH)</li>
+        <li>Advanced "Deep Clean" Suite</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="uiux" onclick="toggleSelect(this)">
+    <div class="letter">U</div>
+    <div class="content">
+      <h3>UI/UX & Extensibility</h3>
+      <p><b>Focus:</b> Developer experience and visual mastery.</p>
+      <ul>
+        <li>Live Performance Metrics Overlay</li>
+        <li>Interactive Dependency Graphs</li>
+        <li>Lua/WASM Plugin System</li>
+      </ul>
+    </div>
+  </div>
+</div>

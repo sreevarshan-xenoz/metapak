@@ -1,0 +1,40 @@
+<h2>The Transaction Lifecycle</h2>
+<p class="subtitle">Ensuring 100% safety from start to finish</p>
+
+<div class="mockup">
+  <div class="mockup-header">Pipeline Flow</div>
+  <div class="mockup-body">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="background: #313244; padding: 10px; border-left: 4px solid #f9e2af;">
+        <b>Step 1: Health Check</b><br>
+        <span style="font-size: 12px; color: #a6adc8;">Ping mirrors, verify GPG signatures, check database locks.</span>
+      </div>
+      <div style="background: #313244; padding: 10px; border-left: 4px solid #fab387;">
+        <b>Step 2: Simulation</b><br>
+        <span style="font-size: 12px; color: #a6adc8;">Run dry-run. Calculate disk usage. Parse conflict warnings.</span>
+      </div>
+      <div style="background: #313244; padding: 10px; border-left: 4px solid #89b4fa;">
+        <b>Step 3: Atomic Snapshot</b><br>
+        <span style="font-size: 12px; color: #a6adc8;">Create system restore point (e.g., <code>arch-tui-pre-install-firefox</code>).</span>
+      </div>
+      <div style="background: #313244; padding: 10px; border-left: 4px solid #a6e3a1;">
+        <b>Step 4: Execution</b><br>
+        <span style="font-size: 12px; color: #a6adc8;">Run the actual command (pacman, apt, etc.).</span>
+      </div>
+      <div style="background: #313244; padding: 10px; border-left: 4px solid #f38ba8;">
+        <b>Step 5: Failure Handling</b><br>
+        <span style="font-size: 12px; color: #a6adc8;">If <code>exit != 0</code>, show the Rollback Dialog.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Safety Checkpoints</h3>
+  <p>The system will automatically cancel if:</p>
+  <ul>
+    <li>Mirror latency exceeds 2000ms.</li>
+    <li>GPG keys are invalid/expired.</li>
+    <li>Available disk space &lt; Package size + 500MB buffer.</li>
+  </ul>
+</div>

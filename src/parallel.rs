@@ -34,10 +34,7 @@ impl ParallelInstaller {
         self.max_concurrent = max.max(1).min(10);
     }
 
-    pub fn install_packages(
-        &self,
-        packages: &[String],
-    ) -> Vec<InstallProgress> {
+    pub fn install_packages(&self, packages: &[String]) -> Vec<InstallProgress> {
         packages
             .iter()
             .map(|pkg| {

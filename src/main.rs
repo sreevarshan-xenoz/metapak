@@ -1,24 +1,36 @@
 mod action;
 mod animations;
 mod app;
+mod backends;
 mod command;
 mod config;
+mod constants;
 mod dependency_visualization;
 mod diagnostics;
 mod errors;
 mod export;
+mod hooks;
 mod i18n;
 mod input;
 mod models;
+mod notifications;
+mod operation_queue;
+mod parallel;
+mod platform;
 mod search;
+mod security;
 mod services;
+mod simulation;
+mod state;
 mod telemetry;
 mod theme;
 mod traits;
 mod transaction_history;
+mod transaction_manager;
 mod ui;
 mod ui_utils;
 mod utils;
+mod watchdog;
 
 // CLI arguments disabled - cargo not available for testing
 // use clap::{Arg, Command as ClapCommand};
@@ -30,31 +42,74 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use secrecy::ExposeSecret;
+use std::collections::VecDeque;
+use std::io;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::{io, time::Duration};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::Mutex;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use crate::constants::shutdown::{FORCE_KILL_TIMEOUT_SECS, GRACEFUL_TIMEOUT_SECS};
-
-use crate::constants::ui::{CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS, UPDATE_CHECK_INTERVAL_SECS};
+use crate::constants::retry::{
+    GENERAL_RETRY_DELAY_SECS, LOCK_RETRY_DELAY_SECS, MAX_ATTEMPTS, NETWORK_RETRY_DELAY_SECS,
+};
+use crate::constants::ui::{
+    CAPTURED_OUTPUT_MAX_LINES, CLEANUP_INTERVAL_SECS, INPUT_POLL_TIMEOUT_MS,
+    UPDATE_CHECK_INTERVAL_SECS,
+};
 
 use crate::action::{Action, ActionInner, ActionResult};
 use crate::app::App;
-use crate::command::{CommandExecutor, CommandRunResult};
+use crate::command::CommandRunResult;
 use crate::errors::Result;
+use crate::notifications::DesktopNotifier;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
+use crate::traits::PackageSimulator;
 use crate::transaction_history::{save_history, TransactionStatus};
-    Cancelled,
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "arch-tui")]
+#[command(about = "Arch Linux TUI Package Manager", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Initial search query (opens TUI with search pre-filled)
+    #[arg(short, long)]
+    search: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Search for packages
+    Search {
+        /// Package name to search for
+        query: String,
+    },
+    /// Check for updates
+    Check,
+    /// Install a package
+    Install {
+        /// Package name(s) to install
+        package: Vec<String>,
+    },
+    /// Remove a package
+    Remove {
+        /// Package name(s) to remove
+        package: Vec<String>,
+    },
 }
 
 async fn read_output_lines<R>(
     reader: R,
     is_stderr: bool,
     tx: tokio::sync::mpsc::UnboundedSender<ActionResult>,
-    captured: Arc<Mutex<Vec<String>>>,
+    captured: Arc<Mutex<VecDeque<String>>>,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -178,7 +233,8 @@ async fn run_single_command(
     if status.success() {
         Ok(CommandRunResult::Finished)
     } else {
-        let output = captured_output.lock().await.clone();
+        let output_deque = captured_output.lock().await;
+        let output: Vec<String> = output_deque.iter().cloned().collect();
         let mut context = format!(
             "Command exited with status: {}",
             status
@@ -201,13 +257,12 @@ async fn run_command_sequence(
     tx: tokio::sync::mpsc::UnboundedSender<ActionResult>,
     active_pid: Arc<Mutex<Option<u32>>>,
     cancel_requested: Arc<AtomicBool>,
-) -> CommandRunResult {
+) -> Result<CommandRunResult> {
     let _ = tx.send(ActionResult::CommandStarted);
 
     for command in &commands {
         let mut attempts = 0usize;
-        let max_attempts = 3;
-        
+
         loop {
             attempts += 1;
             match run_single_command(
@@ -219,22 +274,30 @@ async fn run_command_sequence(
             .await
             {
                 Ok(CommandRunResult::Finished) => break,
-                Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                Ok(CommandRunResult::Cancelled) => return Ok(CommandRunResult::Cancelled),
                 Err(err) => {
                     let error_lower = err.to_lowercase();
-                    let is_dependency_error = error_lower.contains("dependency") || error_lower.contains("[dependency-error]");
-                    let is_lock_error = error_lower.contains("lock") || error_lower.contains("[db-lock-error]");
-                    let is_conflict_error = error_lower.contains("conflict") || error_lower.contains("::");
-                    let is_signature_error = error_lower.contains("signature") || error_lower.contains("pgp");
-                    let is_disk_space_error = error_lower.contains("disk") || error_lower.contains("space");
-                    let is_network_error = error_lower.contains("network") || error_lower.contains("connection");
-                    let is_cache_error = error_lower.contains("cache") || error_lower.contains("invalid");
+                    let is_dependency_error = error_lower.contains("dependency")
+                        || error_lower.contains("[dependency-error]");
+                    let is_lock_error =
+                        error_lower.contains("lock") || error_lower.contains("[db-lock-error]");
+                    let is_conflict_error =
+                        error_lower.contains("conflict") || error_lower.contains("::");
+                    let is_signature_error =
+                        error_lower.contains("signature") || error_lower.contains("pgp");
+                    let is_disk_space_error =
+                        error_lower.contains("disk") || error_lower.contains("space");
+                    let is_network_error =
+                        error_lower.contains("network") || error_lower.contains("connection");
+                    let is_cache_error =
+                        error_lower.contains("cache") || error_lower.contains("invalid");
 
                     // Handle database lock - retry with backoff
                     if is_lock_error && attempts < MAX_ATTEMPTS {
-                        let _ = tx.send(ActionResult::CommandOutput(
-                            format!("Detected pacman DB lock. Attempt {}/3. Waiting {}s...", attempts, LOCK_RETRY_DELAY_SECS),
-                        ));
+                        let _ = tx.send(ActionResult::CommandOutput(format!(
+                            "Detected pacman DB lock. Attempt {}/3. Waiting {}s...",
+                            attempts, LOCK_RETRY_DELAY_SECS
+                        )));
                         tokio::time::sleep(Duration::from_secs(LOCK_RETRY_DELAY_SECS)).await;
                         continue;
                     }
@@ -246,17 +309,36 @@ async fn run_command_sequence(
                         ));
                         let fix = CommandSpec {
                             prog: "sudo".to_string(),
-                            args: vec!["pacman".to_string(), "-Syu".to_string(), "--noconfirm".to_string()],
+                            args: vec![
+                                "pacman".to_string(),
+                                "-Syu".to_string(),
+                                "--noconfirm".to_string(),
+                            ],
                         };
-                        match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
+                        match run_single_command(
+                            &fix,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await
+                        {
                             Ok(CommandRunResult::Finished) => {
-                                let _ = tx.send(ActionResult::CommandOutput("System upgrade complete. Retrying...".to_string()));
-                                if attempts < max_attempts { continue; }
+                                let _ = tx.send(ActionResult::CommandOutput(
+                                    "System upgrade complete. Retrying...".to_string(),
+                                ));
+                                if attempts < MAX_ATTEMPTS {
+                                    continue;
+                                }
                             }
-                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Ok(CommandRunResult::Cancelled) => {
+                                return Ok(CommandRunResult::Cancelled)
+                            }
                             Err(fix_err) => {
-                                let _ = tx.send(ActionResult::Error(format!("System upgrade failed: {}", fix_err)));
-                                return CommandRunResult::Finished;
+                                return Err(crate::errors::AppError::Backend(format!(
+                                    "System upgrade failed: {}",
+                                    fix_err
+                                )));
                             }
                         }
                     }
@@ -268,17 +350,38 @@ async fn run_command_sequence(
                         ));
                         let fix = CommandSpec {
                             prog: "sudo".to_string(),
-                            args: vec!["pacman".to_string(), "-Syu".to_string(), "--overwrite".to_string(), "*".to_string(), "--noconfirm".to_string()],
+                            args: vec![
+                                "pacman".to_string(),
+                                "-Syu".to_string(),
+                                "--overwrite".to_string(),
+                                "*".to_string(),
+                                "--noconfirm".to_string(),
+                            ],
                         };
-                        match run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
+                        match run_single_command(
+                            &fix,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await
+                        {
                             Ok(CommandRunResult::Finished) => {
-                                let _ = tx.send(ActionResult::CommandOutput("Conflicts resolved.".to_string()));
-                                if attempts < max_attempts { continue; }
+                                let _ = tx.send(ActionResult::CommandOutput(
+                                    "Conflicts resolved.".to_string(),
+                                ));
+                                if attempts < MAX_ATTEMPTS {
+                                    continue;
+                                }
                             }
-                            Ok(CommandRunResult::Cancelled) => return CommandRunResult::Cancelled,
+                            Ok(CommandRunResult::Cancelled) => {
+                                return Ok(CommandRunResult::Cancelled)
+                            }
                             Err(fix_err) => {
-                                let _ = tx.send(ActionResult::Error(format!("Conflict resolution failed: {}", fix_err)));
-                                return CommandRunResult::Finished;
+                                return Err(crate::errors::AppError::Backend(format!(
+                                    "Conflict resolution failed: {}",
+                                    fix_err
+                                )));
                             }
                         }
                     }
@@ -286,22 +389,44 @@ async fn run_command_sequence(
                     // Handle signature errors - refresh keys
                     if is_signature_error {
                         let _ = tx.send(ActionResult::CommandOutput(
-                            "PGP signature issue detected. Attempting to refresh keys...".to_string(),
+                            "PGP signature issue detected. Attempting to refresh keys..."
+                                .to_string(),
                         ));
                         let fix = CommandSpec {
                             prog: "sudo".to_string(),
                             args: vec!["pacman-key".to_string(), "--init".to_string()],
                         };
-                        let _ = run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await;
-                        
+                        let _ = run_single_command(
+                            &fix,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await;
+
                         let fix2 = CommandSpec {
                             prog: "sudo".to_string(),
-                            args: vec!["pacman".to_string(), "-Sy".to_string(), "--noconfirm".to_string()],
+                            args: vec![
+                                "pacman".to_string(),
+                                "-Sy".to_string(),
+                                "--noconfirm".to_string(),
+                            ],
                         };
-                        if let Ok(CommandRunResult::Finished) = run_single_command(&fix2, tx.clone(), active_pid.clone(), cancel_requested.clone()).await {
-                                let _ = tx.send(ActionResult::CommandOutput("Keys refreshed. Retrying...".to_string()));
-                                if attempts < max_attempts { continue; }
+                        if let Ok(CommandRunResult::Finished) = run_single_command(
+                            &fix2,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await
+                        {
+                            let _ = tx.send(ActionResult::CommandOutput(
+                                "Keys refreshed. Retrying...".to_string(),
+                            ));
+                            if attempts < MAX_ATTEMPTS {
+                                continue;
                             }
+                        }
                     }
 
                     // Handle disk space errors
@@ -309,40 +434,57 @@ async fn run_command_sequence(
                         let _ = tx.send(ActionResult::CommandOutput(
                             "Disk space issue. Try: sudo pacman -Scc to clean cache".to_string(),
                         ));
+                        return Err(crate::errors::AppError::ResourceExhausted(err));
                     }
 
                     // Handle network errors - retry
                     if is_network_error && attempts < 2 {
-                        let _ = tx.send(ActionResult::CommandOutput(format!("Network error. Retrying in {}s...", NETWORK_RETRY_DELAY_SECS)));
+                        let _ = tx.send(ActionResult::CommandOutput(format!(
+                            "Network error. Retrying in {}s...",
+                            NETWORK_RETRY_DELAY_SECS
+                        )));
                         tokio::time::sleep(Duration::from_secs(NETWORK_RETRY_DELAY_SECS)).await;
                         continue;
                     }
 
                     // Handle cache errors
                     if is_cache_error {
-                        let _ = tx.send(ActionResult::CommandOutput("Cache issue. Cleaning local cache...".to_string()));
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Cache issue. Cleaning local cache...".to_string(),
+                        ));
                         let fix = CommandSpec {
                             prog: "rm".to_string(),
                             args: vec!["-rf".to_string(), "/var/cache/pacman/pkg/*".to_string()],
                         };
-                        let _ = run_single_command(&fix, tx.clone(), active_pid.clone(), cancel_requested.clone()).await;
+                        let _ = run_single_command(
+                            &fix,
+                            tx.clone(),
+                            active_pid.clone(),
+                            cancel_requested.clone(),
+                        )
+                        .await;
                     }
 
                     // Max attempts reached
-                    if attempts >= max_attempts {
-                        let _ = tx.send(ActionResult::Error(format!("Failed after {} attempts: {}", attempts, err)));
-                        return CommandRunResult::Finished;
+                    if attempts >= MAX_ATTEMPTS {
+                        return Err(crate::errors::AppError::Backend(format!(
+                            "Failed after {} attempts: {}",
+                            attempts, err
+                        )));
                     }
 
                     // Retry other errors
-                    let _ = tx.send(ActionResult::CommandOutput(format!("Error (attempt {}/{}): {}. Retrying...", attempts, MAX_ATTEMPTS, err)));
+                    let _ = tx.send(ActionResult::CommandOutput(format!(
+                        "Error (attempt {}/{}): {}. Retrying...",
+                        attempts, MAX_ATTEMPTS, err
+                    )));
                     tokio::time::sleep(Duration::from_secs(GENERAL_RETRY_DELAY_SECS)).await;
                 }
             }
         }
     }
 
-    CommandRunResult::Finished
+    Ok(CommandRunResult::Finished)
 }
 
 #[tokio::main]
@@ -350,19 +492,86 @@ async fn main() -> Result<()> {
     // Initialize tracing
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-    tracing::info!("Starting Arch TUI");
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
+    // Handle CLI-only commands (non-interactive)
+    if let Some(command) = cli.command {
+        match command {
+            Commands::Search { query } => {
+                eprintln!("Searching for: {}", query);
+                let config = crate::config::AppConfig::default();
+                let service = PackageService::new(config);
+                match tokio::runtime::Runtime::new()?.block_on(service.search_all(&query)) {
+                    Ok(results) => {
+                        eprintln!("Found {} packages:", results.len());
+                        for pkg in results.iter().take(20) {
+                            eprintln!("  {} - {}", pkg.name, pkg.version);
+                        }
+                        if results.len() > 20 {
+                            eprintln!("  ... and {} more", results.len() - 20);
+                        }
+                    }
+                    Err(e) => eprintln!("Search failed: {}", e),
+                }
+                return Ok(());
+            }
+            Commands::Check => {
+                let config = crate::config::AppConfig::default();
+                let service = PackageService::new(config);
+                match tokio::runtime::Runtime::new()?.block_on(service.check_updates()) {
+                    Ok(count) => {
+                        if count > 0 {
+                            eprintln!("{} updates available", count);
+                        } else {
+                            eprintln!("System is up to date");
+                        }
+                    }
+                    Err(e) => eprintln!("Check failed: {}", e),
+                }
+                return Ok(());
+            }
+            Commands::Install { package } => {
+                eprintln!("Installing: {:?}", package);
+                let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
+                let cmd =
+                    helper.install_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                return Ok(());
+            }
+            Commands::Remove { package } => {
+                eprintln!("Removing: {:?}", package);
+                let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
+                let cmd =
+                    helper.remove_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                return Ok(());
+            }
+        }
+    }
+
+    // Handle --search flag (pre-fill search in TUI)
+    let initial_search = cli.search;
+
+    // Display platform and package manager info
+    let platform_info = crate::platform::get_platform_info();
+    tracing::info!("Starting Universal TUI on {}", platform_info);
+    eprintln!("Platform: {}", platform_info);
 
     // Load configuration
-    let app_config =
-        crate::config::AppConfig::load().map_err(crate::errors::AppError::Config)?;
+    let app_config = crate::config::AppConfig::load().map_err(crate::errors::AppError::Config)?;
 
     tracing::info!("Configuration loaded successfully");
 
     // Setup terminal
     enable_raw_mode().map_err(crate::errors::AppError::Io)?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)
-        .map_err(crate::errors::AppError::Io)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture
+    )
+    .map_err(crate::errors::AppError::Io)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(crate::errors::AppError::Io)?;
 
@@ -373,10 +582,50 @@ async fn main() -> Result<()> {
     let cancel_requested = Arc::new(AtomicBool::new(false));
     let shutdown_requested = Arc::new(AtomicBool::new(false));
 
+    // Initialize robustness suite
+    let watchdog = Arc::new(crate::watchdog::HealthWatchdog::new(Duration::from_secs(5)));
+
+    let sim_backend = if app_config.robustness.simulation_backend == "auto" {
+        crate::platform::get_default_package_manager()
+            .name()
+            .to_string()
+    } else {
+        app_config.robustness.simulation_backend.clone()
+    };
+    let simulator = Arc::new(crate::simulation::SimulationEngine::new(sim_backend));
+
+    // Detect and initialize snapshot provider
+    let root_path = "/";
+    let snapshots_dir = "/.snapshots";
+    let snapshot_provider: Option<Arc<dyn crate::traits::SnapshotProvider>> =
+        if std::path::Path::new("/usr/bin/btrfs").exists() {
+            tracing::info!("Detected btrfs, using BtrfsProvider");
+            Some(Arc::new(
+                crate::backends::snapshots::btrfs::BtrfsProvider::new(root_path, snapshots_dir),
+            ))
+        } else if std::path::Path::new("/usr/bin/timeshift").exists() {
+            tracing::info!("Detected timeshift, using TimeshiftProvider");
+            Some(Arc::new(
+                crate::backends::snapshots::timeshift::TimeshiftProvider::new(),
+            ))
+        } else {
+            tracing::warn!("No supported snapshot provider (btrfs, timeshift) detected");
+            None
+        };
+
+    let transaction_manager = Arc::new(crate::transaction_manager::TransactionManager::new(
+        snapshot_provider,
+        simulator.clone(),
+        watchdog.clone(),
+        app_config.robustness.snapshot_keep_count,
+    ));
+
     // Create app
     let aur_helper = app_config.aur_helper.clone();
     let mut app = App::new();
-    app.config = app_config;
+    app.config = app_config.clone();
+    app.operation_queue =
+        crate::operation_queue::OperationQueue::with_manager(transaction_manager.clone());
     app.items_per_page = app.config.ui.items_per_page;
     app.search_debounce_duration = Duration::from_millis(app.config.ui.search_debounce_ms);
     app.max_history_size = app.config.ui.max_search_history;
@@ -398,9 +647,7 @@ async fn main() -> Result<()> {
     if auto_check_enabled {
         let action_tx_clone = action_tx.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                Duration::from_secs(update_interval * 60)
-            );
+            let mut interval = tokio::time::interval(Duration::from_secs(update_interval * 60));
             loop {
                 interval.tick().await;
                 let _ = action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
@@ -412,17 +659,21 @@ async fn main() -> Result<()> {
     let aur_helper_for_spawn = aur_helper.clone();
     let active_pid_for_spawn = active_pid.clone();
     let cancel_requested_for_spawn = cancel_requested.clone();
+    let transaction_manager_for_spawn = transaction_manager.clone();
+    let app_config_for_spawn = app_config.clone();
     tokio::spawn(async move {
         while let Some(action) = action_rx.recv().await {
             let action_id = action.id();
+            let config = app_config_for_spawn.clone();
             match &action.inner {
                 ActionInner::Search(query) => {
                     tracing::info!(action_id, "Processing Search action");
                     let result_tx_clone = result_tx.clone();
                     let query = query.clone();
+                    let config = config.clone();
 
                     tokio::spawn(async move {
-                        let package_service = PackageService::new();
+                        let package_service = PackageService::new(config);
                         match package_service.search_all(&query).await {
                             Ok(results) => {
                                 let _ = result_tx_clone.send(ActionResult::SearchResults(results));
@@ -453,22 +704,39 @@ async fn main() -> Result<()> {
                     let active_pid_clone = active_pid_for_spawn.clone();
                     let cancel_requested_clone = cancel_requested_for_spawn.clone();
                     let commands = commands.clone();
+                    let tm = transaction_manager_for_spawn.clone();
 
                     tokio::spawn(async move {
-                        let sequence_result = run_command_sequence(
-                            commands,
-                            result_tx_clone.clone(),
-                            active_pid_clone,
-                            cancel_requested_clone,
-                        )
-                        .await;
+                        let res = tm
+                            .run_safe_transaction("operation", Some(&commands.clone()), || async {
+                                run_command_sequence(
+                                    commands,
+                                    result_tx_clone.clone(),
+                                    active_pid_clone,
+                                    cancel_requested_clone,
+                                )
+                                .await
+                            })
+                            .await;
 
-                        match sequence_result {
-                            CommandRunResult::Finished => {
+                        match res {
+                            Ok(CommandRunResult::Finished) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandFinished);
                             }
-                            CommandRunResult::Cancelled => {
+                            Ok(CommandRunResult::Cancelled) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
+                            }
+                            Err(e) => {
+                                if let crate::errors::AppError::TransactionFailed(msg, Some(id)) = e
+                                {
+                                    let _ = result_tx_clone
+                                        .send(ActionResult::TransactionFailedWithRollback(msg, id));
+                                } else {
+                                    let _ = result_tx_clone.send(ActionResult::Error(format!(
+                                        "Transaction failed: {}",
+                                        e
+                                    )));
+                                }
                             }
                         }
                     });
@@ -476,9 +744,10 @@ async fn main() -> Result<()> {
                 ActionInner::CheckUpdates => {
                     tracing::info!(action_id, "Processing CheckUpdates action");
                     let result_tx_clone = result_tx.clone();
+                    let config = config.clone();
 
                     tokio::spawn(async move {
-                        let package_service = PackageService::new();
+                        let package_service = PackageService::new(config);
                         match package_service.check_updates().await {
                             Ok(count) => {
                                 let _ = result_tx_clone.send(ActionResult::UpdateCount(count));
@@ -497,29 +766,111 @@ async fn main() -> Result<()> {
                     let aur_helper_value = aur_helper_for_spawn.clone();
                     let active_pid_clone = active_pid_for_spawn.clone();
                     let cancel_requested_clone = cancel_requested_for_spawn.clone();
+                    let tm = transaction_manager_for_spawn.clone();
 
                     tokio::spawn(async move {
                         let helper_cmd = AurHelperCommand::new(&crate::config::AppConfig {
                             aur_helper: aur_helper_value,
                             ..Default::default()
                         });
+                        let update_cmd = helper_cmd.update_command();
+                        let update_cmds = vec![update_cmd.clone()];
 
-                        let sequence_result = run_command_sequence(
-                            vec![helper_cmd.update_command()],
-                            result_tx_clone.clone(),
-                            active_pid_clone,
-                            cancel_requested_clone,
-                        )
-                        .await;
+                        let res = tm
+                            .run_safe_transaction(
+                                "system-update",
+                                Some(&update_cmds.clone()),
+                                || async {
+                                    run_command_sequence(
+                                        update_cmds,
+                                        result_tx_clone.clone(),
+                                        active_pid_clone,
+                                        cancel_requested_clone,
+                                    )
+                                    .await
+                                },
+                            )
+                            .await;
 
-                        match sequence_result {
-                            CommandRunResult::Finished => {
+                        match res {
+                            Ok(CommandRunResult::Finished) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandFinished);
-                                let _ = action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
+                                let _ =
+                                    action_tx_clone.send(Action::new(ActionInner::CheckUpdates));
                             }
-                            CommandRunResult::Cancelled => {
+                            Ok(CommandRunResult::Cancelled) => {
                                 let _ = result_tx_clone.send(ActionResult::CommandCancelled);
                             }
+                            Err(e) => {
+                                if let crate::errors::AppError::TransactionFailed(msg, Some(id)) = e
+                                {
+                                    let _ = result_tx_clone
+                                        .send(ActionResult::TransactionFailedWithRollback(msg, id));
+                                } else {
+                                    let _ = result_tx_clone.send(ActionResult::Error(format!(
+                                        "Transaction failed: {}",
+                                        e
+                                    )));
+                                }
+                            }
+                        }
+                    });
+                }
+                ActionInner::Simulate(commands) => {
+                    tracing::info!(action_id, "Processing Simulate action");
+                    let result_tx_clone = result_tx.clone();
+                    let simulator = simulator.clone();
+                    let commands = commands.clone();
+
+                    tokio::spawn(async move {
+                        let pkg_names = if let Some(cmd) = commands.first() {
+                            if cmd.args.len() > 1 {
+                                vec![cmd.args[cmd.args.len() - 1].as_str()]
+                            } else {
+                                vec!["system"]
+                            }
+                        } else {
+                            vec!["system"]
+                        };
+
+                        match simulator.simulate_install(&pkg_names).await {
+                            Ok(res) => {
+                                let _ = result_tx_clone.send(ActionResult::SimulationResult(res));
+                            }
+                            Err(e) => {
+                                let _ = result_tx_clone
+                                    .send(ActionResult::Error(format!("Simulation failed: {}", e)));
+                            }
+                        }
+                    });
+                }
+                ActionInner::Rollback(id) => {
+                    tracing::info!(action_id, "Processing Rollback action for id: {}", id);
+                    let result_tx_clone = result_tx.clone();
+                    let id = id.clone();
+                    let tm = transaction_manager_for_spawn.clone();
+
+                    tokio::spawn(async move {
+                        if let Some(provider) = tm.get_snapshot_provider() {
+                            match provider.rollback(&id).await {
+                                Ok(_) => {
+                                    let _ = result_tx_clone.send(ActionResult::CommandOutput(
+                                        format!("Rollback to {} successful. Please reboot.", id),
+                                    ));
+                                    let _ =
+                                        result_tx_clone.send(ActionResult::RollbackFinished(id));
+                                }
+                                Err(e) => {
+                                    let _ = result_tx_clone.send(ActionResult::Error(format!(
+                                        "Rollback failed: {}",
+                                        e
+                                    )));
+                                }
+                            }
+                        } else {
+                            let _ = result_tx_clone.send(ActionResult::Error(
+                                "No snapshot provider available for rollback".to_string(),
+                            ));
                         }
                     });
                 }
@@ -616,7 +967,7 @@ async fn main() -> Result<()> {
 
         terminal.draw(|f| ui::render(&mut app, f))?;
 
-        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u32);
+        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u64);
 
         // Handle Input with shorter timeout for responsiveness
         if event::poll(Duration::from_millis(INPUT_POLL_TIMEOUT_MS))? {
@@ -624,7 +975,9 @@ async fn main() -> Result<()> {
 
             // Check for Ctrl+C (Interrupt) for graceful shutdown
             if let event::Event::Key(key) = &event {
-                if key.code == event::KeyCode::Char('c') && key.modifiers.contains(event::KeyModifiers::CONTROL) {
+                if key.code == event::KeyCode::Char('c')
+                    && key.modifiers.contains(event::KeyModifiers::CONTROL)
+                {
                     tracing::info!("Ctrl+C detected, initiating graceful shutdown");
                     shutdown_requested.store(true, Ordering::SeqCst);
 
@@ -662,10 +1015,15 @@ async fn main() -> Result<()> {
                         Some(0)
                     };
                     let count = app.results.len();
-                    app.add_toast(format!("Found {} packages", count), crate::animations::ToastStyle::Info);
+                    app.add_toast(
+                        format!("Found {} packages", count),
+                        crate::animations::ToastStyle::Info,
+                    );
                 }
                 ActionResult::Error(msg) => {
                     tracing::error!("Error received: {}", msg);
+                    let notifier = DesktopNotifier::new();
+                    let _ = notifier.notify_error(&msg);
                     crate::telemetry::append_log_line(&format!("[error] {}", msg));
                     app.error_message = Some(msg.clone());
                     app.is_loading = false;
@@ -684,6 +1042,22 @@ async fn main() -> Result<()> {
                         }
                     }
                     app.is_operation_running = false;
+                }
+                ActionResult::TransactionFailedWithRollback(msg, snapshot_id) => {
+                    tracing::error!(
+                        "Transaction failed: {}. Snapshot {} is available.",
+                        msg,
+                        snapshot_id
+                    );
+                    app.error_message = Some(msg.clone());
+                    app.is_loading = false;
+                    app.is_operation_running = false;
+                    app.show_rollback_confirm = true;
+                    app.pending_rollback_id = Some(snapshot_id);
+                    app.add_toast(
+                        format!("Failed: {}", msg),
+                        crate::animations::ToastStyle::Error,
+                    );
                 }
                 ActionResult::SudoResult(success) => {
                     app.is_loading = false;
@@ -716,7 +1090,14 @@ async fn main() -> Result<()> {
                     app.is_operation_running = false;
                     app.command_stdin_tx = None;
                     app.console_input.clear();
-                    app.add_toast("Operation completed successfully!".to_string(), crate::animations::ToastStyle::Success);
+                    app.add_toast(
+                        "Operation completed successfully!".to_string(),
+                        crate::animations::ToastStyle::Success,
+                    );
+
+                    let notifier = DesktopNotifier::new();
+                    let _ = notifier.send("Arch TUI", "Operation completed successfully!");
+
                     if let Some(mut tx) = app.current_transaction.take() {
                         tx.status = TransactionStatus::Success;
                         app.transaction_history.push_front(tx);
@@ -748,8 +1129,26 @@ async fn main() -> Result<()> {
                 ActionResult::UpdateCount(count) => {
                     app.available_updates = Some(count);
                     if count > 0 {
-                        app.add_toast(format!("{} updates available!", count), crate::animations::ToastStyle::Warning);
+                        app.add_toast(
+                            format!("{} updates available!", count),
+                            crate::animations::ToastStyle::Warning,
+                        );
                     }
+                }
+                ActionResult::RollbackFinished(id) => {
+                    app.is_operation_running = false;
+                    app.add_toast(
+                        format!("Rollback to {} successful! Please reboot.", id),
+                        crate::animations::ToastStyle::Success,
+                    );
+                    app.add_console_output(
+                        "----- Rollback Finished (Please reboot your system) -----".to_string(),
+                    );
+                }
+                ActionResult::SimulationResult(res) => {
+                    app.simulation_result = Some(res);
+                    app.show_simulation = true;
+                    app.is_loading = false;
                 }
                 ActionResult::Cancelled => {
                     app.is_operation_running = false;
@@ -760,8 +1159,6 @@ async fn main() -> Result<()> {
 
         // Periodic cleanup
         if last_update.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
-            PackageService::clear_expired_cache();
-            crate::services::enforce_cache_limit();
             last_update = std::time::Instant::now();
         }
 
@@ -777,8 +1174,7 @@ async fn main() -> Result<()> {
     // Restore terminal
     tracing::info!("Shutting down Arch TUI");
     disable_raw_mode().map_err(crate::errors::AppError::Io)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .map_err(crate::errors::AppError::Io)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(crate::errors::AppError::Io)?;
     terminal
         .show_cursor()
         .map_err(crate::errors::AppError::Io)?;

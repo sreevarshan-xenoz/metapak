@@ -1,0 +1,31 @@
+<h2>Detailed Design: Transaction Middleware</h2>
+<p class="subtitle">Ensuring atomic safety for every package operation</p>
+
+<div class="mockup">
+  <div class="mockup-header">Core Architecture</div>
+  <div class="mockup-body">
+    <div style="font-family: monospace; font-size: 13px;">
+      <div style="color: #89b4fa;">pub trait SnapshotProvider {</div>
+      <div style="padding-left: 20px;">async fn create(&self, label: &str) -> Result&lt;String&gt;;</div>
+      <div style="padding-left: 20px;">async fn rollback(&self, id: &str) -> Result&lt;()&gt;;</div>
+      <div style="padding-left: 20px;">async fn cleanup(&self, keep: usize) -> Result&lt;()&gt;;</div>
+      <div style="color: #89b4fa;">}</div>
+      <br>
+      <div style="color: #fab387;">pub struct TransactionManager {</div>
+      <div style="padding-left: 20px;">snapshot_provider: Arc&lt;dyn SnapshotProvider&gt;,</div>
+      <div style="padding-left: 20px;">simulator: SimulationEngine,</div>
+      <div style="padding-left: 20px;">watchdog: HealthWatchdog,</div>
+      <div style="color: #fab387;">}</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>1. Snapshot Providers</h3>
+  <p>We'll implement the <code>SnapshotProvider</code> trait for:</p>
+  <ul>
+    <li><b>BtrfsProvider:</b> Uses <code>btrfs subvolume snapshot</code>.</li>
+    <li><b>TimeshiftProvider:</b> Calls <code>timeshift --create</code> via CLI.</li>
+    <li><b>LvmProvider:</b> Uses <code>lvcreate -s</code>.</li>
+  </ul>
+</div>
