@@ -305,16 +305,22 @@ async fn run_command_sequence(
                     // Handle dependency errors - run system upgrade first
                     if is_dependency_error {
                         let _ = tx.send(ActionResult::CommandOutput(
-                            "Dependency issue detected. Running: sudo pacman -Syu...".to_string(),
+                            "Dependency issue detected. Running system upgrade...".to_string(),
                         ));
-                        let fix = CommandSpec {
-                            prog: "sudo".to_string(),
-                            args: vec![
-                                "pacman".to_string(),
-                                "-Syu".to_string(),
-                                "--noconfirm".to_string(),
-                            ],
+                        
+                        let fix = if cfg!(windows) {
+                            CommandSpec::new_no_sudo("winget", vec!["upgrade".to_string(), "--all".to_string()])
+                        } else {
+                            CommandSpec {
+                                prog: "sudo".to_string(),
+                                args: vec![
+                                    "pacman".to_string(),
+                                    "-Syu".to_string(),
+                                    "--noconfirm".to_string(),
+                                ],
+                            }
                         };
+                        
                         match run_single_command(
                             &fix,
                             tx.clone(),
@@ -344,7 +350,7 @@ async fn run_command_sequence(
                     }
 
                     // Handle conflict errors - remove conflicting packages
-                    if is_conflict_error {
+                    if is_conflict_error && !cfg!(windows) {
                         let _ = tx.send(ActionResult::CommandOutput(
                             "Package conflict detected. Trying to resolve...".to_string(),
                         ));
@@ -387,7 +393,7 @@ async fn run_command_sequence(
                     }
 
                     // Handle signature errors - refresh keys
-                    if is_signature_error {
+                    if is_signature_error && !cfg!(windows) {
                         let _ = tx.send(ActionResult::CommandOutput(
                             "PGP signature issue detected. Attempting to refresh keys..."
                                 .to_string(),
@@ -431,9 +437,12 @@ async fn run_command_sequence(
 
                     // Handle disk space errors
                     if is_disk_space_error {
-                        let _ = tx.send(ActionResult::CommandOutput(
-                            "Disk space issue. Try: sudo pacman -Scc to clean cache".to_string(),
-                        ));
+                        let msg = if cfg!(windows) {
+                            "Disk space issue. Please free up some space and try again.".to_string()
+                        } else {
+                            "Disk space issue. Try: sudo pacman -Scc to clean cache".to_string()
+                        };
+                        let _ = tx.send(ActionResult::CommandOutput(msg));
                         return Err(crate::errors::AppError::ResourceExhausted(err));
                     }
 
@@ -448,7 +457,7 @@ async fn run_command_sequence(
                     }
 
                     // Handle cache errors
-                    if is_cache_error {
+                    if is_cache_error && !cfg!(windows) {
                         let _ = tx.send(ActionResult::CommandOutput(
                             "Cache issue. Cleaning local cache...".to_string(),
                         ));
@@ -541,7 +550,11 @@ async fn main() -> Result<()> {
                 let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
                 let cmd =
                     helper.install_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                if cfg!(windows) {
+                    eprintln!("Run: {} {}", cmd.prog, cmd.args.join(" "));
+                } else {
+                    eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                }
                 return Ok(());
             }
             Commands::Remove { package } => {
@@ -549,7 +562,11 @@ async fn main() -> Result<()> {
                 let helper = AurHelperCommand::new(&crate::config::AppConfig::default());
                 let cmd =
                     helper.remove_command(&package.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-                eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                if cfg!(windows) {
+                    eprintln!("Run: {} {}", cmd.prog, cmd.args.join(" "));
+                } else {
+                    eprintln!("Run: sudo {} {}", cmd.prog, cmd.args.join(" "));
+                }
                 return Ok(());
             }
         }
@@ -600,23 +617,25 @@ async fn main() -> Result<()> {
     let simulator = Arc::new(crate::simulation::SimulationEngine::new(sim_backend));
 
     // Detect and initialize snapshot provider
-    let root_path = "/";
-    let snapshots_dir = "/.snapshots";
-    let snapshot_provider: Option<Arc<dyn crate::traits::SnapshotProvider>> =
-        if std::path::Path::new("/usr/bin/btrfs").exists() {
-            tracing::info!("Detected btrfs, using BtrfsProvider");
-            Some(Arc::new(
-                crate::backends::snapshots::btrfs::BtrfsProvider::new(root_path, snapshots_dir),
-            ))
-        } else if std::path::Path::new("/usr/bin/timeshift").exists() {
-            tracing::info!("Detected timeshift, using TimeshiftProvider");
-            Some(Arc::new(
-                crate::backends::snapshots::timeshift::TimeshiftProvider::new(),
-            ))
-        } else {
-            tracing::warn!("No supported snapshot provider (btrfs, timeshift) detected");
-            None
-        };
+    let root_path = if cfg!(windows) { "C:\\" } else { "/" };
+    let snapshots_dir = if cfg!(windows) { "C:\\.snapshots" } else { "/.snapshots" };
+    let snapshot_provider: Option<Arc<dyn crate::traits::SnapshotProvider>> = if cfg!(windows) {
+        // Windows-specific snapshot provider could be added here (e.g. VSS)
+        None
+    } else if std::path::Path::new("/usr/bin/btrfs").exists() {
+        tracing::info!("Detected btrfs, using BtrfsProvider");
+        Some(Arc::new(
+            crate::backends::snapshots::btrfs::BtrfsProvider::new(root_path, snapshots_dir),
+        ))
+    } else if std::path::Path::new("/usr/bin/timeshift").exists() {
+        tracing::info!("Detected timeshift, using TimeshiftProvider");
+        Some(Arc::new(
+            crate::backends::snapshots::timeshift::TimeshiftProvider::new(),
+        ))
+    } else {
+        tracing::warn!("No supported snapshot provider (btrfs, timeshift) detected");
+        None
+    };
 
     let transaction_manager = Arc::new(crate::transaction_manager::TransactionManager::new(
         snapshot_provider,

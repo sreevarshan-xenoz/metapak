@@ -295,7 +295,7 @@ impl App {
             updates_changelog_package: None,
             partial_update_warning_shown: false,
 
-            show_password_prompt: true,
+            show_password_prompt: cfg!(not(target_os = "windows")),
             password_input: PasswordInput::new(),
 
             selected_packages: HashMap::new(),

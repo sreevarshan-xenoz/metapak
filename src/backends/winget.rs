@@ -81,7 +81,7 @@ impl UniversalPackageManager for WingetBackend {
                         parts[0].to_string(),
                         parts.get(parts.len() - 1).unwrap_or(&"?").to_string(),
                         String::new(),
-                        PackageSource::Pacman,
+                        PackageSource::Winget,
                     ));
                 }
                 None

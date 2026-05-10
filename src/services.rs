@@ -1247,7 +1247,14 @@ pub struct CommandSpec {
 }
 
 impl CommandSpec {
-    fn new(prog: impl Into<String>, args: Vec<String>) -> Self {
+    pub fn new(prog: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            prog: prog.into(),
+            args,
+        }
+    }
+
+    pub fn new_no_sudo(prog: impl Into<String>, args: Vec<String>) -> Self {
         Self {
             prog: prog.into(),
             args,

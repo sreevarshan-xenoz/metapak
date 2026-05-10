@@ -42,7 +42,7 @@ impl UniversalPackageManager for ChocolateyBackend {
                         parts[0].to_string(),
                         parts[1].to_string(),
                         String::new(),
-                        PackageSource::Pacman,
+                        PackageSource::Chocolatey,
                     ));
                 }
                 None
@@ -78,7 +78,7 @@ impl UniversalPackageManager for ChocolateyBackend {
                         parts[0].to_string(),
                         parts[1].to_string(),
                         String::new(),
-                        PackageSource::Pacman,
+                        PackageSource::Chocolatey,
                     ));
                 }
                 None
