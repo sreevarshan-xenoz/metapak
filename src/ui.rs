@@ -257,6 +257,9 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                     crate::models::PackageSource::Chocolatey => theme.warning(),
                     crate::models::PackageSource::Flatpak => theme.secondary(),
                     crate::models::PackageSource::Snap => theme.primary(),
+                    crate::models::PackageSource::Npm => theme.warning(),
+                    crate::models::PackageSource::Cargo => theme.secondary(),
+                    crate::models::PackageSource::Pip => theme.info(),
                 }
             };
 
@@ -286,6 +289,9 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                 crate::models::PackageSource::Chocolatey => " choco",
                 crate::models::PackageSource::Flatpak => " flat",
                 crate::models::PackageSource::Snap => " snap",
+                crate::models::PackageSource::Npm => " npm",
+                crate::models::PackageSource::Cargo => " crgo",
+                crate::models::PackageSource::Pip => " pip",
             };
 
             let size_str = pkg.format_download_size();

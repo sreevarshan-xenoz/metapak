@@ -822,6 +822,9 @@ impl PackageService {
                 PackageSource::Chocolatey => "chocolatey".to_string(),
                 PackageSource::Flatpak => "flatpak".to_string(),
                 PackageSource::Snap => "snap".to_string(),
+                PackageSource::Npm => "npm".to_string(),
+                PackageSource::Cargo => "cargo".to_string(),
+                PackageSource::Pip => "pip".to_string(),
             };
             let key = (source, pkg.name.clone());
             deduped

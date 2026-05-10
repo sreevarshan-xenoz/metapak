@@ -58,6 +58,9 @@ pub enum PackageSource {
     Chocolatey,
     Flatpak,
     Snap,
+    Npm,
+    Cargo,
+    Pip,
 }
 
 impl std::fmt::Display for PackageSource {
@@ -73,6 +76,9 @@ impl std::fmt::Display for PackageSource {
             PackageSource::Chocolatey => write!(f, "chocolatey"),
             PackageSource::Flatpak => write!(f, "flatpak"),
             PackageSource::Snap => write!(f, "snap"),
+            PackageSource::Npm => write!(f, "npm"),
+            PackageSource::Cargo => write!(f, "cargo"),
+            PackageSource::Pip => write!(f, "pip"),
         }
     }
 }
