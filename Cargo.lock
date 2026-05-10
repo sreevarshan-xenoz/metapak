@@ -121,38 +121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arch-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "async-trait",
- "chrono",
- "clap",
- "config",
- "crossterm",
- "dashmap",
- "dirs",
- "futures",
- "fuzzy-matcher",
- "inotify",
- "once_cell",
- "open",
- "ratatui",
- "regex",
- "reqwest",
- "secrecy",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "urlencoding",
-]
-
-[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1321,6 +1289,38 @@ name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
+
+[[package]]
+name = "metapak"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "async-trait",
+ "chrono",
+ "clap",
+ "config",
+ "crossterm",
+ "dashmap",
+ "dirs",
+ "futures",
+ "fuzzy-matcher",
+ "inotify",
+ "once_cell",
+ "open",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "urlencoding",
+]
 
 [[package]]
 name = "mime"

@@ -73,7 +73,7 @@ use crate::transaction_history::{save_history, TransactionStatus};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "arch-tui")]
+#[command(name = "metapak")]
 #[command(about = "Arch Linux TUI Package Manager", long_about = None)]
 struct Cli {
     #[command(subcommand)]
