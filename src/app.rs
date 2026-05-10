@@ -19,6 +19,19 @@ use crate::services::CommandSpec;
 use crate::transaction_history::TransactionRecord;
 use crate::utils::PasswordInput;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ViewMode {
+    System,
+    Ecosystem,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EcosystemKind {
+    Npm,
+    Cargo,
+    Pip,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
@@ -215,6 +228,11 @@ pub struct App {
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
 
+    // Ecosystem View
+    pub view_mode: ViewMode,
+    pub active_ecosystem: EcosystemKind,
+    pub ecosystem_results: Vec<Package>,
+
     // Overlay cursors for scrolling
     pub history_cursor: Option<usize>,
     pub console_cursor: Option<usize>,
@@ -379,6 +397,10 @@ impl App {
             console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
 
+            view_mode: ViewMode::System,
+            active_ecosystem: EcosystemKind::Npm,
+            ecosystem_results: Vec::new(),
+
             history_cursor: Some(0),
             console_cursor: Some(0),
             diagnostics_cursor: Some(0),
@@ -531,6 +553,17 @@ impl App {
 
     // Pagination
     pub fn get_paginated_results(&self) -> Vec<&Package> {
+        if matches!(self.view_mode, ViewMode::Ecosystem) {
+            let start = self.current_page * self.items_per_page;
+            let end = ((self.current_page + 1) * self.items_per_page).min(self.ecosystem_results.len());
+
+            if start >= self.ecosystem_results.len() {
+                return Vec::new();
+            }
+
+            return self.ecosystem_results[start..end].iter().collect();
+        }
+
         let results = if self.filtered_results.is_empty() {
             &self.results
         } else {
@@ -548,7 +581,9 @@ impl App {
     }
 
     pub fn total_pages(&self) -> usize {
-        let count = if self.filtered_results.is_empty() {
+        let count = if matches!(self.view_mode, ViewMode::Ecosystem) {
+            self.ecosystem_results.len()
+        } else if self.filtered_results.is_empty() {
             self.results.len()
         } else {
             self.filtered_results.len()

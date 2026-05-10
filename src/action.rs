@@ -1,3 +1,4 @@
+use crate::app::{EcosystemKind, ViewMode};
 use crate::models::Package;
 use crate::services::CommandSpec;
 use secrecy::SecretString;
@@ -39,6 +40,18 @@ pub enum ActionInner {
 
     /// Cancel current operation
     CancelOperation,
+
+    /// Switch between System and Ecosystem view
+    SwitchViewMode(ViewMode),
+
+    /// Switch active ecosystem manager
+    SwitchEcosystem(EcosystemKind),
+
+    /// Search for packages in an ecosystem
+    SearchEcosystem {
+        provider: EcosystemKind,
+        query: String,
+    },
 }
 
 static ACTION_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -109,4 +122,13 @@ pub enum ActionResult {
 
     /// Rollback completed successfully
     RollbackFinished(String),
+
+    /// View mode was switched
+    ViewModeSwitched(ViewMode),
+
+    /// Ecosystem was switched
+    EcosystemSwitched(EcosystemKind),
+
+    /// Ecosystem search results
+    EcosystemSearchResults(Vec<Package>),
 }

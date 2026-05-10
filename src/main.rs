@@ -922,6 +922,35 @@ async fn main() -> Result<()> {
                     }
                     let _ = result_tx.send(ActionResult::Cancelled);
                 }
+                ActionInner::SwitchViewMode(mode) => {
+                    tracing::info!(action_id, "Processing SwitchViewMode action: {:?}", mode);
+                    let _ = result_tx.send(ActionResult::ViewModeSwitched(*mode));
+                }
+                ActionInner::SwitchEcosystem(kind) => {
+                    tracing::info!(action_id, "Processing SwitchEcosystem action: {:?}", kind);
+                    let _ = result_tx.send(ActionResult::EcosystemSwitched(*kind));
+                }
+                ActionInner::SearchEcosystem { provider, query } => {
+                    tracing::info!(action_id, "Processing SearchEcosystem action for {:?}: {}", provider, query);
+                    let result_tx_clone = result_tx.clone();
+                    let query = query.clone();
+                    let provider = *provider;
+                    let config = config.clone();
+
+                    tokio::spawn(async move {
+                        let package_service = PackageService::new(config);
+                        match package_service.search_ecosystem(provider, &query).await {
+                            Ok(results) => {
+                                let _ = result_tx_clone.send(ActionResult::EcosystemSearchResults(results));
+                            }
+                            Err(e) => {
+                                tracing::error!(action_id, "Ecosystem search failed: {}", e);
+                                let _ = result_tx_clone
+                                    .send(ActionResult::Error(format!("Ecosystem search failed: {}", e)));
+                            }
+                        }
+                    });
+                }
             }
         }
     });
@@ -1177,6 +1206,36 @@ async fn main() -> Result<()> {
                 ActionResult::Cancelled => {
                     app.is_operation_running = false;
                     app.is_loading = false;
+                }
+                ActionResult::ViewModeSwitched(mode) => {
+                    app.view_mode = mode;
+                    app.add_toast(
+                        format!("Switched to {:?} mode", mode),
+                        crate::animations::ToastStyle::Info,
+                    );
+                }
+                ActionResult::EcosystemSwitched(kind) => {
+                    app.active_ecosystem = kind;
+                    app.add_toast(
+                        format!("Switched to {:?}", kind),
+                        crate::animations::ToastStyle::Info,
+                    );
+                }
+                ActionResult::EcosystemSearchResults(pkgs) => {
+                    app.ecosystem_results = pkgs;
+                    app.is_loading = false;
+                    app.error_message = None;
+                    app.current_page = 0;
+                    app.selected_index = if app.get_paginated_results().is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    };
+                    let count = app.ecosystem_results.len();
+                    app.add_toast(
+                        format!("Found {} packages in ecosystem", count),
+                        crate::animations::ToastStyle::Info,
+                    );
                 }
             }
         }

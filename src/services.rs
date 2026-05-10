@@ -1155,9 +1155,20 @@ impl PackageService {
         Ok(results)
     }
 
-    /// Check for available updates
+    /// Search for available updates
     pub async fn check_updates(&self) -> Result<usize> {
         self.update_provider.check_updates().await
+    }
+
+    /// Search for packages in a specific ecosystem
+    pub async fn search_ecosystem(&self, kind: crate::app::EcosystemKind, query: &str) -> Result<Vec<Package>> {
+        let provider: Arc<dyn PackageProvider> = match kind {
+            crate::app::EcosystemKind::Npm => Arc::new(NpmProvider::new()),
+            crate::app::EcosystemKind::Cargo => Arc::new(CargoProvider::new()),
+            crate::app::EcosystemKind::Pip => Arc::new(PipProvider::new()),
+        };
+        
+        provider.search(query).await
     }
 
     /// Get detailed list of outdated packages
