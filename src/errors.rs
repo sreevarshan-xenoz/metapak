@@ -20,6 +20,12 @@ pub enum AppError {
     #[error("NPM command failed: {0}")]
     Npm(String),
 
+    #[error("Cargo command failed: {0}")]
+    Cargo(String),
+
+    #[error("Pip command failed: {0}")]
+    Pip(String),
+
     #[error("Sudo authentication failed")]
     SudoAuthFailed,
 

@@ -547,6 +547,164 @@ impl PackageProvider for NpmProvider {
     }
 }
 
+/// Cargo package provider implementation
+pub struct CargoProvider;
+
+impl CargoProvider {
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn parse_cargo_search(stdout: &str) -> Vec<Package> {
+        let mut packages = Vec::new();
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("...") {
+                continue;
+            }
+
+            // Format: name = "version" # description
+            if let Some((name_ver, desc)) = line.split_once(" # ") {
+                if let Some((name, ver)) = name_ver.split_once(" = ") {
+                    let name = name.trim().to_string();
+                    let version = ver.trim().trim_matches('"').to_string();
+                    packages.push(Package {
+                        name,
+                        version,
+                        description: desc.trim().to_string(),
+                        source: PackageSource::Cargo,
+                        ..Default::default()
+                    });
+                }
+            } else if let Some((name, ver)) = line.split_once(" = ") {
+                let name = name.trim().to_string();
+                let version = ver.trim().trim_matches('"').to_string();
+                packages.push(Package {
+                    name,
+                    version,
+                    description: String::new(),
+                    source: PackageSource::Cargo,
+                    ..Default::default()
+                });
+            }
+        }
+        packages
+    }
+}
+
+#[async_trait]
+impl PackageProvider for CargoProvider {
+    async fn search(&self, query: &str) -> Result<Vec<Package>> {
+        let query = query.to_string();
+        tokio::task::spawn_blocking(move || {
+            let output = Command::new("cargo")
+                .args(["search", &query, "--limit", "50"])
+                .output()
+                .map_err(|e| AppError::Cargo(format!("Failed to execute cargo search: {}", e)))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppError::Cargo(format!("cargo search failed: {}", stderr)));
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(Self::parse_cargo_search(&stdout))
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+    }
+
+    async fn is_installed(&self, pkg_name: &str) -> bool {
+        let pkg_name = pkg_name.to_string();
+        match tokio::task::spawn_blocking(move || {
+            let output = Command::new("cargo").args(["install", "--list"]).output();
+
+            if let Ok(o) = output {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                for line in stdout.lines() {
+                    if line.starts_with(&format!("{} ", pkg_name)) {
+                        return true;
+                    }
+                }
+            }
+            false
+        })
+        .await
+        {
+            Ok(res) => res,
+            _ => false,
+        }
+    }
+}
+
+/// Pip package provider implementation
+pub struct PipProvider {
+    client: reqwest::Client,
+}
+
+impl PipProvider {
+    pub fn new() -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("metapak/0.1.0")
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to create Pip HTTP client: {}, using default", e);
+                reqwest::Client::new()
+            });
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl PackageProvider for PipProvider {
+    async fn search(&self, query: &str) -> Result<Vec<Package>> {
+        // Try exact match via JSON API first since pip search is deprecated
+        let url = format!(
+            "https://pypi.org/pypi/{}/json",
+            urlencoding::encode(query)
+        );
+
+        let response = self.client.get(&url).send().await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(data) = resp.json::<PypiResponse>().await {
+                    let info = data.info;
+                    return Ok(vec![Package {
+                        name: info.name,
+                        version: info.version,
+                        description: info.summary.unwrap_or_default(),
+                        source: PackageSource::Pip,
+                        url: info.project_url.or(info.home_page),
+                        maintainers: info.author.map(|a| vec![a]).unwrap_or_default(),
+                        licenses: info.license.map(|l| vec![l]).unwrap_or_default(),
+                        ..Default::default()
+                    }]);
+                }
+            }
+            _ => {}
+        }
+
+        Ok(Vec::new())
+    }
+
+    async fn is_installed(&self, pkg_name: &str) -> bool {
+        let pkg_name = pkg_name.to_string();
+        match tokio::task::spawn_blocking(move || {
+            Command::new("pip")
+                .args(["show", &pkg_name])
+                .output()
+                .map(|o| o.status.success())
+        })
+        .await
+        {
+            Ok(Ok(res)) => res,
+            _ => false,
+        }
+    }
+}
+
 /// Update provider implementation
 pub struct SystemUpdateProvider;
 
@@ -856,6 +1014,8 @@ impl PackageService {
                 Arc::new(PacmanProvider::new()),
                 Arc::new(AurProvider::new()),
                 Arc::new(NpmProvider::new()),
+                Arc::new(CargoProvider::new()),
+                Arc::new(PipProvider::new()),
             ],
             update_provider: Arc::new(SystemUpdateProvider::new()),
             cache: Arc::clone(&SEARCH_CACHE),
@@ -1340,6 +1500,22 @@ struct NpmUser {
     username: Option<String>,
 }
 
+#[derive(serde::Deserialize, Debug)]
+struct PypiResponse {
+    info: PypiInfo,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct PypiInfo {
+    name: String,
+    version: String,
+    summary: Option<String>,
+    home_page: Option<String>,
+    project_url: Option<String>,
+    author: Option<String>,
+    license: Option<String>,
+}
+
 /// Command builder for safe command execution
 pub struct SafeCommandBuilder {
     program: String,
@@ -1805,6 +1981,47 @@ mod tests {
             pkg.url,
             Some("https://www.npmjs.com/package/express".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_cargo_search() {
+        let stdout = r#"
+cargo-edit = "0.12.2" # A utility for managing cargo dependencies from the command line.
+tokio = "1.36.0" # An event-driven, non-blocking I/O platform for writing asynchronous applications with the Rust programming language.
+...
+"#;
+        let packages = CargoProvider::parse_cargo_search(stdout);
+        assert_eq!(packages.len(), 2);
+
+        assert_eq!(packages[0].name, "cargo-edit");
+        assert_eq!(packages[0].version, "0.12.2");
+        assert_eq!(packages[0].source, PackageSource::Cargo);
+        assert!(packages[0].description.contains("managing cargo dependencies"));
+
+        assert_eq!(packages[1].name, "tokio");
+        assert_eq!(packages[1].version, "1.36.0");
+        assert!(packages[1].description.contains("event-driven"));
+    }
+
+    #[test]
+    fn test_parse_pypi_response() {
+        let json = r#"{
+            "info": {
+                "name": "requests",
+                "version": "2.31.0",
+                "summary": "Python HTTP for Humans.",
+                "project_url": "https://pypi.org/project/requests/",
+                "author": "Kenneth Reitz",
+                "license": "Apache 2.0"
+            }
+        }"#;
+        let response: PypiResponse = serde_json::from_str(json).unwrap();
+        let info = response.info;
+        assert_eq!(info.name, "requests");
+        assert_eq!(info.version, "2.31.0");
+        assert_eq!(info.summary, Some("Python HTTP for Humans.".to_string()));
+        assert_eq!(info.author, Some("Kenneth Reitz".to_string()));
+        assert_eq!(info.license, Some("Apache 2.0".to_string()));
     }
 }
 
