@@ -63,7 +63,7 @@ use crate::constants::ui::{
 };
 
 use crate::action::{Action, ActionInner, ActionResult};
-use crate::app::App;
+use crate::app::{App, ViewMode};
 use crate::command::CommandRunResult;
 use crate::errors::Result;
 use crate::notifications::DesktopNotifier;
@@ -968,22 +968,44 @@ async fn main() -> Result<()> {
         if let Some(query) = app.should_execute_search() {
             app.clear_pending_search();
             app.is_loading = true;
-            app.results.clear();
             app.add_to_history(query.clone());
 
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(Action::new(ActionInner::Search(query)));
+                match app.view_mode {
+                    ViewMode::System => {
+                        app.results.clear();
+                        let _ = tx.send(Action::new(ActionInner::Search(query)));
+                    }
+                    ViewMode::Ecosystem => {
+                        app.ecosystem_results.clear();
+                        let _ = tx.send(Action::new(ActionInner::SearchEcosystem {
+                            provider: app.active_ecosystem,
+                            query,
+                        }));
+                    }
+                }
             }
         }
 
         // Handle immediate search (when user presses Enter)
         if let Some(query) = app.immediate_search.take() {
             app.is_loading = true;
-            app.results.clear();
             app.add_to_history(query.clone());
 
             if let Some(tx) = &app.action_tx {
-                let _ = tx.send(Action::new(ActionInner::Search(query)));
+                match app.view_mode {
+                    ViewMode::System => {
+                        app.results.clear();
+                        let _ = tx.send(Action::new(ActionInner::Search(query)));
+                    }
+                    ViewMode::Ecosystem => {
+                        app.ecosystem_results.clear();
+                        let _ = tx.send(Action::new(ActionInner::SearchEcosystem {
+                            provider: app.active_ecosystem,
+                            query,
+                        }));
+                    }
+                }
             }
         }
 

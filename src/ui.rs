@@ -26,6 +26,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
     // Check terminal size constraints
     let sidebar_allowed = area.width >= 100;
     let search_bar_height = if area.height >= 20 { 3 } else { 2 };
+    let tabs_height = 3;
 
     // Build layout
     let main_chunks = if app.show_sidebar && sidebar_allowed && app.get_selected_package().is_some()
@@ -34,6 +35,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(tabs_height),
                 Constraint::Length(search_bar_height),
                 Constraint::Min(1),
                 Constraint::Length(4),
@@ -43,20 +45,22 @@ pub fn render(app: &mut App, f: &mut Frame) {
         let sub_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-            .split(chunks[1]);
+            .split(chunks[2]);
 
-        // Return: search, results, sidebar, status
+        // Return: tabs, search, results, sidebar, status
         RenderChunks {
-            search: chunks[0],
+            tabs: chunks[0],
+            search: chunks[1],
             results: sub_chunks[0],
             sidebar: Some(sub_chunks[1]),
-            status: chunks[2],
+            status: chunks[3],
         }
     } else {
         // Normal mode
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(tabs_height),
                 Constraint::Length(search_bar_height),
                 Constraint::Min(1),
                 Constraint::Length(4),
@@ -64,14 +68,16 @@ pub fn render(app: &mut App, f: &mut Frame) {
             .split(area);
 
         RenderChunks {
-            search: chunks[0],
-            results: chunks[1],
+            tabs: chunks[0],
+            search: chunks[1],
+            results: chunks[2],
             sidebar: None,
-            status: chunks[2],
+            status: chunks[3],
         }
     };
 
     // Render components
+    render_tabs(app, f, main_chunks.tabs, theme);
     render_search_bar(app, f, main_chunks.search, theme);
     render_results_list(app, f, main_chunks.results, theme);
     render_status_bar(app, f, main_chunks.status, theme);
@@ -152,6 +158,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
 }
 
 struct RenderChunks {
+    tabs: Rect,
     search: Rect,
     results: Rect,
     sidebar: Option<Rect>,
@@ -194,6 +201,31 @@ fn render_toasts(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::The
 
     f.render_widget(Clear, toast_area);
     f.render_widget(toast_widget, toast_area);
+}
+
+fn render_tabs(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
+    let titles = vec![" System ", " Ecosystem "];
+    let index = match app.view_mode {
+        crate::app::ViewMode::System => 0,
+        crate::app::ViewMode::Ecosystem => 1,
+    };
+
+    let tabs = Tabs::new(titles)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        )
+        .select(index)
+        .style(Style::default().fg(theme.muted()))
+        .highlight_style(
+            Style::default()
+                .fg(theme.primary())
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
+        );
+
+    f.render_widget(tabs, area);
 }
 
 fn render_search_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
@@ -356,6 +388,12 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             app.localizer.t("loading_label")
         )
     } else {
+        let ecosystem_indicator = if matches!(app.view_mode, crate::app::ViewMode::Ecosystem) {
+            format!(" [{:?}] ", app.active_ecosystem).to_lowercase()
+        } else {
+            "".to_string()
+        };
+
         let filter_info = match app.current_filter {
             FilterOption::All => "".to_string(),
             FilterOption::Installed => " [Installed]".to_string(),
@@ -382,11 +420,17 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             crate::app::SortOption::Group => " ↓Group",
         };
 
-        let count_info = format!(" ({})", app.results.len());
+        let results_len = if matches!(app.view_mode, crate::app::ViewMode::Ecosystem) {
+            app.ecosystem_results.len()
+        } else {
+            app.results.len()
+        };
+        let count_info = format!(" ({})", results_len);
 
         format!(
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}",
             app.localizer.t("packages_label"),
+            ecosystem_indicator,
             count_info,
             filter_info,
             page_info,
@@ -551,7 +595,6 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
             "".to_string()
         };
         let install_key = app.config.keyboard.install.as_str();
-        let toggle_key = app.config.keyboard.toggle_selection.as_str();
 
         let footer_lines = vec![
             Line::from(vec![
@@ -566,12 +609,17 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
                 ),
                 Span::raw(" Search "),
                 Span::styled(
+                    " Tab ",
+                    Style::default().fg(theme.foreground()).bg(theme.muted()),
+                ),
+                Span::raw(" Switch View "),
+                Span::styled(
                     format!(" {} ", install_key),
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
                 ),
                 Span::raw(" Install/Remove "),
                 Span::styled(
-                    format!(" {} ", toggle_key),
+                    " Space ",
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
                 ),
                 Span::raw(" Select "),
@@ -2359,7 +2407,8 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
                 .fg(theme.info())
                 .add_modifier(Modifier::BOLD),
         )]),
-        Line::from("  Tab       Toggle package selection"),
+        Line::from("  Tab       Switch View (System/Ecosystem)"),
+        Line::from("  Space     Toggle package selection"),
         Line::from("  u         Undo last selection"),
         Line::from("  Enter     Install/Remove selected packages"),
         Line::from("  y/n       Confirm/Cancel operation"),
