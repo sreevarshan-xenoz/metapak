@@ -574,7 +574,18 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         }
 
         // Selection
-        KeyCode::Tab => app.toggle_selection(),
+        KeyCode::Char(' ') => app.toggle_selection(),
+        KeyCode::Tab => {
+            let next_mode = match app.view_mode {
+                crate::app::ViewMode::System => crate::app::ViewMode::Ecosystem,
+                crate::app::ViewMode::Ecosystem => crate::app::ViewMode::System,
+            };
+            if let Some(tx) = &app.action_tx {
+                let _ = tx.send(crate::action::Action::new(
+                    crate::action::ActionInner::SwitchViewMode(next_mode),
+                ));
+            }
+        }
         KeyCode::Char('u') => app.undo_last_selection(),
 
         // Filter and Sort
@@ -585,8 +596,28 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
         KeyCode::Char('3') => app.set_filter(crate::app::FilterOption::NotInstalled),
         KeyCode::Char('4') => app.set_filter(crate::app::FilterOption::RepoOnly),
         KeyCode::Char('5') => app.set_filter(crate::app::FilterOption::AurOnly),
-        KeyCode::Char('[') => app.previous_filter(),
-        KeyCode::Char(']') => app.next_filter(),
+        KeyCode::Char('[') => {
+            if matches!(app.view_mode, crate::app::ViewMode::Ecosystem) {
+                app.previous_ecosystem();
+                let query = app.search_input.trim().to_string();
+                if !query.is_empty() {
+                    app.trigger_search(query);
+                }
+            } else {
+                app.previous_filter();
+            }
+        }
+        KeyCode::Char(']') => {
+            if matches!(app.view_mode, crate::app::ViewMode::Ecosystem) {
+                app.next_ecosystem();
+                let query = app.search_input.trim().to_string();
+                if !query.is_empty() {
+                    app.trigger_search(query);
+                }
+            } else {
+                app.next_filter();
+            }
+        }
 
         // Actions
         KeyCode::Enter => {

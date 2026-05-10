@@ -46,7 +46,7 @@ pub struct Package {
     pub num_votes: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PackageSource {
     Pacman,
     Aur,

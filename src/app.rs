@@ -1234,6 +1234,28 @@ impl App {
         self.console_input.clear();
         self.command_progress = None;
     }
+
+    pub fn next_ecosystem(&mut self) {
+        self.active_ecosystem = match self.active_ecosystem {
+            EcosystemKind::Npm => EcosystemKind::Cargo,
+            EcosystemKind::Cargo => EcosystemKind::Pip,
+            EcosystemKind::Pip => EcosystemKind::Npm,
+        };
+        self.current_page = 0;
+        self.selected_index = Some(0);
+        self.ecosystem_results.clear();
+    }
+
+    pub fn previous_ecosystem(&mut self) {
+        self.active_ecosystem = match self.active_ecosystem {
+            EcosystemKind::Npm => EcosystemKind::Pip,
+            EcosystemKind::Cargo => EcosystemKind::Npm,
+            EcosystemKind::Pip => EcosystemKind::Cargo,
+        };
+        self.current_page = 0;
+        self.selected_index = Some(0);
+        self.ecosystem_results.clear();
+    }
 }
 
 impl Default for App {

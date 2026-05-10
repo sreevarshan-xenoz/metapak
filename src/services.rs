@@ -948,33 +948,85 @@ pub fn command_display(spec: &CommandSpec) -> String {
 }
 
 pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec<CommandSpec> {
-    let (removes, installs): (Vec<_>, Vec<_>) = packages.iter().partition(|p| p.is_installed);
-    let helper = AurHelperCommand::new(config);
     let mut commands = Vec::new();
+    let helper = AurHelperCommand::new(config);
 
-    if !removes.is_empty() {
-        let names: Vec<&str> = removes.iter().map(|p| p.name.as_str()).collect();
-        commands.push(helper.remove_command(&names));
+    // Group by source and action (install/remove)
+    let mut to_install: HashMap<PackageSource, Vec<String>> = HashMap::new();
+    let mut to_remove: HashMap<PackageSource, Vec<String>> = HashMap::new();
+
+    for pkg in packages {
+        if pkg.is_installed {
+            to_remove
+                .entry(pkg.source.clone())
+                .or_default()
+                .push(pkg.name.clone());
+        } else {
+            to_install
+                .entry(pkg.source.clone())
+                .or_default()
+                .push(pkg.name.clone());
+        }
     }
 
-    if !installs.is_empty() {
-        let names: Vec<&str> = installs.iter().map(|p| p.name.as_str()).collect();
-        let use_aur_helper = installs
-            .iter()
-            .any(|p| matches!(p.source, PackageSource::Aur));
-        if use_aur_helper {
-            commands.push(helper.install_command(&names));
-        } else {
-            let mut args = vec![
-                "pacman".to_string(),
-                "-S".to_string(),
-                "--noconfirm".to_string(),
-            ];
-            args.extend(names.into_iter().map(|n| n.to_string()));
-            commands.push(CommandSpec {
-                prog: "sudo".to_string(),
-                args,
-            });
+    // Handle removals
+    for (source, names) in to_remove {
+        let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        match source {
+            PackageSource::Pacman | PackageSource::Aur => {
+                commands.push(helper.remove_command(&name_refs));
+            }
+            PackageSource::Npm => {
+                let mut args = vec!["uninstall".to_string(), "-g".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("npm", args));
+            }
+            PackageSource::Cargo => {
+                let mut args = vec!["uninstall".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("cargo", args));
+            }
+            PackageSource::Pip => {
+                let mut args = vec!["uninstall".to_string(), "-y".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("pip", args));
+            }
+            _ => {}
+        }
+    }
+
+    // Handle installs
+    for (source, names) in to_install {
+        let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        match source {
+            PackageSource::Pacman => {
+                let mut args = vec![
+                    "pacman".to_string(),
+                    "-S".to_string(),
+                    "--noconfirm".to_string(),
+                ];
+                args.extend(names);
+                commands.push(CommandSpec::new("sudo", args));
+            }
+            PackageSource::Aur => {
+                commands.push(helper.install_command(&name_refs));
+            }
+            PackageSource::Npm => {
+                let mut args = vec!["install".to_string(), "-g".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("npm", args));
+            }
+            PackageSource::Cargo => {
+                let mut args = vec!["install".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("cargo", args));
+            }
+            PackageSource::Pip => {
+                let mut args = vec!["install".to_string(), "--user".to_string()];
+                args.extend(names);
+                commands.push(CommandSpec::new_no_sudo("pip", args));
+            }
+            _ => {}
         }
     }
 
@@ -2033,6 +2085,59 @@ tokio = "1.36.0" # An event-driven, non-blocking I/O platform for writing asynch
         assert_eq!(info.summary, Some("Python HTTP for Humans.".to_string()));
         assert_eq!(info.author, Some("Kenneth Reitz".to_string()));
         assert_eq!(info.license, Some("Apache 2.0".to_string()));
+    }
+
+    #[test]
+    fn test_plan_package_transaction_ecosystems() {
+        let config = AppConfig::default();
+        
+        // NPM
+        let pkg_npm = Package {
+            name: "express".to_string(),
+            source: PackageSource::Npm,
+            is_installed: false,
+            ..Default::default()
+        };
+        let cmds = plan_package_transaction(&[pkg_npm], &config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].prog, "npm");
+        assert_eq!(cmds[0].args, vec!["install", "-g", "express"]);
+
+        // Cargo
+        let pkg_cargo = Package {
+            name: "ripgrep".to_string(),
+            source: PackageSource::Cargo,
+            is_installed: false,
+            ..Default::default()
+        };
+        let cmds = plan_package_transaction(&[pkg_cargo], &config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].prog, "cargo");
+        assert_eq!(cmds[0].args, vec!["install", "ripgrep"]);
+
+        // Pip
+        let pkg_pip = Package {
+            name: "requests".to_string(),
+            source: PackageSource::Pip,
+            is_installed: false,
+            ..Default::default()
+        };
+        let cmds = plan_package_transaction(&[pkg_pip], &config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].prog, "pip");
+        assert_eq!(cmds[0].args, vec!["install", "--user", "requests"]);
+
+        // Uninstall NPM
+        let pkg_npm_un = Package {
+            name: "express".to_string(),
+            source: PackageSource::Npm,
+            is_installed: true,
+            ..Default::default()
+        };
+        let cmds = plan_package_transaction(&[pkg_npm_un], &config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].prog, "npm");
+        assert_eq!(cmds[0].args, vec!["uninstall", "-g", "express"]);
     }
 }
 
