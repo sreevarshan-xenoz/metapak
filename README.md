@@ -1,10 +1,10 @@
-# Arch TUI (Arch Linux Package Manager UI)
+# metapak (Unified Package Manager UI)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/built_with-Rust-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-Arch_Linux-1793d1.svg)
 
-**Arch TUI** is a modern, terminal-based user interface for managing packages on Arch Linux. It creates a unified experience for searching, installing, and removing packages from both the official repositories (`pacman`) and the AUR (via `paru` or `yay`), all without ever leaving the TUI.
+**metapak** is a modern, terminal-based user interface for managing packages. It creates a unified experience for searching, installing, and removing packages from both the official repositories (`pacman`) and the AUR (via `paru` or `yay`), all without ever leaving the TUI.
 
 ---
 
@@ -34,7 +34,7 @@
 *   **Toasts & Animations**: Smooth UI feedback.
 
 ### Backup & Recovery
-*   **System Backup**: Export explicit packages to `~/.config/arch-tui/backups/` for disaster recovery.
+*   **System Backup**: Export explicit packages to `~/.config/metapak/backups/` for disaster recovery.
 *   **Restore**: Use `pacman -S --needed < backup.txt` to restore.
 
 ### Robustness
@@ -45,7 +45,7 @@
 
 ## 📦 Installation
 
-You can install Arch TUI using the included automated script.
+You can install metapak using the included automated script.
 
 ### Prerequisites
 *   Arch Linux (or derivative)
@@ -56,8 +56,8 @@ You can install Arch TUI using the included automated script.
 ### Automated Install
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/sreevarshan-xenoz/arch-tui.git
-    cd arch-tui
+    git clone https://github.com/sreevarshan-xenoz/metapak.git
+    cd metapak
     ```
 
 2.  Run the installer:
@@ -68,7 +68,7 @@ You can install Arch TUI using the included automated script.
 
 This will:
 *   Build the release binary.
-*   Install it to `~/.local/bin/arch-tui`.
+*   Install it to `~/.local/bin/metapak`.
 *   Create a Desktop Entry so it appears in your Application Menu.
 
 ## 🎮 Usage
@@ -76,7 +76,7 @@ This will:
 Launch the application from your terminal or application launcher:
 
 ```bash
-arch-tui
+metapak
 ```
 
 ### Controls

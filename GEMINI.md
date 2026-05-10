@@ -1,6 +1,6 @@
-# Arch TUI - Developer Context
+# metapak - Developer Context
 
-Arch TUI is a modern, terminal-based user interface for managing packages on Arch Linux (and other distributions). It provides a unified experience for searching, installing, and removing packages across multiple package managers (pacman, AUR helpers, apt, brew, etc.).
+metapak is a modern, terminal-based user interface for managing packages on Arch Linux (and other distributions). It provides a unified experience for searching, installing, and removing packages across multiple package managers (pacman, AUR helpers, apt, brew, etc.).
 
 ## 🚀 Project Overview
 
@@ -47,7 +47,7 @@ The project follows a modular architecture designed for extensibility and safety
 ## ⚙️ Configuration
 
 - **Default Config:** `config/default.toml`
-- **User Config:** `~/.config/arch-tui/config.toml`
+- **User Config:** `~/.config/metapak/config.toml`
 - Configuration is loaded using the `config` crate and managed in `src/config.rs`.
 
 ## 🧪 Testing

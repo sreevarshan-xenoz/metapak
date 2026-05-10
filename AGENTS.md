@@ -20,7 +20,7 @@ Runs on every push/PR: `cargo fmt --check`, `cargo clippy --all-targets -- -D wa
 - **Entry point**: `src/main.rs`
 - **App state**: `src/app.rs`
 - **UI rendering**: `src/ui.rs`
-- **Config**: `src/config.rs`, loads from `~/.config/arch-tui/config.toml`
+- **Config**: `src/config.rs`, loads from `~/.config/metapak/config.toml`
 - **Package service**: `src/services.rs` (unified search: pacman + AUR)
 
 ## Key Constraints
