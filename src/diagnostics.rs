@@ -553,7 +553,7 @@ pub fn create_system_backup() -> Result<String, String> {
     use std::env;
 
     let home = env::var("HOME").map_err(|_| "Cannot find home directory".to_string())?;
-    let backup_dir = format!("{}/.config/arch-tui/backups", home);
+    let backup_dir = format!("{}/.config/metapak/backups", home);
 
     // Create backup directory if it doesn't exist
     std::fs::create_dir_all(&backup_dir)

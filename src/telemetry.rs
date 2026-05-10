@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 fn log_path() -> PathBuf {
     let base = dirs::state_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    base.join("arch-tui").join("operations.log")
+    base.join("metapak").join("operations.log")
 }
 
 pub fn append_log_line(line: &str) {

@@ -64,7 +64,7 @@ impl ApplicationState {
 
 fn state_path() -> PathBuf {
     let base = dirs::state_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    base.join("arch-tui").join("session.json")
+    base.join("metapak").join("session.json")
 }
 
 pub fn load_state() -> Result<ApplicationState> {
