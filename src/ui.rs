@@ -311,19 +311,19 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             };
 
             let source_indicator = match pkg.source {
-                crate::models::PackageSource::Pacman => "📦",
-                crate::models::PackageSource::Aur => " ↑",
-                crate::models::PackageSource::Apt => " apt",
-                crate::models::PackageSource::Dnf => " dnf",
-                crate::models::PackageSource::Zypper => " zyp",
-                crate::models::PackageSource::Brew => " brew",
-                crate::models::PackageSource::Winget => " wing",
-                crate::models::PackageSource::Chocolatey => " choco",
-                crate::models::PackageSource::Flatpak => " flat",
-                crate::models::PackageSource::Snap => " snap",
-                crate::models::PackageSource::Npm => " npm",
-                crate::models::PackageSource::Cargo => " crgo",
-                crate::models::PackageSource::Pip => " pip",
+                crate::models::PackageSource::Pacman => "📦   ",
+                crate::models::PackageSource::Aur => "↑aur ",
+                crate::models::PackageSource::Apt => "apt  ",
+                crate::models::PackageSource::Dnf => "dnf  ",
+                crate::models::PackageSource::Zypper => "zyp  ",
+                crate::models::PackageSource::Brew => "brew ",
+                crate::models::PackageSource::Winget => "wing ",
+                crate::models::PackageSource::Chocolatey => "chco ",
+                crate::models::PackageSource::Flatpak => "flat ",
+                crate::models::PackageSource::Snap => "snap ",
+                crate::models::PackageSource::Npm => "npm  ",
+                crate::models::PackageSource::Cargo => "crgo ",
+                crate::models::PackageSource::Pip => "pip  ",
             };
 
             let size_str = pkg.format_download_size();
@@ -613,6 +613,11 @@ fn render_status_bar(app: &App, f: &mut Frame, area: Rect, theme: &crate::theme:
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
                 ),
                 Span::raw(" Switch View "),
+                Span::styled(
+                    " [ ] ",
+                    Style::default().fg(theme.foreground()).bg(theme.muted()),
+                ),
+                Span::raw(" Prov "),
                 Span::styled(
                     format!(" {} ", install_key),
                     Style::default().fg(theme.foreground()).bg(theme.muted()),
@@ -2369,6 +2374,14 @@ fn render_dependency_visualization(app: &App, f: &mut Frame, theme: &crate::them
 fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
     let help_text = vec![
         Line::from(vec![Span::styled(
+            "metapak - Universal Package Manager TUI",
+            Style::default()
+                .fg(theme.primary())
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("Now with support for Ecosystem Packages (npm, cargo, pip)"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
             "Keyboard Shortcuts",
             Style::default()
                 .fg(theme.primary())
@@ -2408,6 +2421,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect, theme: &crate::theme::Theme) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from("  Tab       Switch View (System/Ecosystem)"),
+        Line::from("  [ / ]     Cycle Ecosystem Provider (npm/cargo/pip)"),
         Line::from("  Space     Toggle package selection"),
         Line::from("  u         Undo last selection"),
         Line::from("  Enter     Install/Remove selected packages"),
