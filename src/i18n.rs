@@ -52,6 +52,19 @@ impl Language {
         }
         Language::English
     }
+
+    /// Parse a language code string from config
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code.to_lowercase().as_str() {
+            "en" | "english" => Some(Language::English),
+            "es" | "spanish" => Some(Language::Spanish),
+            "fr" | "french" => Some(Language::French),
+            "de" | "german" => Some(Language::German),
+            "zh" | "chinese" => Some(Language::Chinese),
+            "ja" | "japanese" => Some(Language::Japanese),
+            _ => None,
+        }
+    }
 }
 
 /// Localization manager
@@ -64,6 +77,29 @@ impl Localizer {
     /// Create a new localizer with auto-detected language
     pub fn new() -> Self {
         let language = Language::detect();
+        let mut localizer = Self {
+            current_language: language,
+            translations: HashMap::new(),
+        };
+
+        localizer.load_all_translations();
+        localizer
+    }
+
+    /// Create a localizer using the config language setting
+    pub fn with_config(language_setting: &str) -> Self {
+        let language = if language_setting == "auto" || language_setting.is_empty() {
+            Language::detect()
+        } else {
+            Language::from_code(language_setting).unwrap_or_else(|| {
+                tracing::warn!(
+                    "Unknown language '{}' in config, falling back to auto-detect",
+                    language_setting
+                );
+                Language::detect()
+            })
+        };
+
         let mut localizer = Self {
             current_language: language,
             translations: HashMap::new(),
