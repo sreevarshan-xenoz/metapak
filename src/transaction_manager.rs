@@ -1,4 +1,5 @@
 use crate::errors::{AppError, Result};
+use crate::hooks::HookRunner;
 use crate::services::CommandSpec;
 use crate::simulation::SimulationEngine;
 use crate::traits::{PackageSimulator, SnapshotProvider};
@@ -6,12 +7,13 @@ use crate::watchdog::HealthWatchdog;
 use std::sync::Arc;
 use tracing;
 
-/// Orchestrates safe package transactions with health checks, simulations, and snapshots.
+/// Orchestrates safe package transactions with health checks, simulations, snapshots, and hooks.
 pub struct TransactionManager {
     snapshot_provider: Option<Arc<dyn SnapshotProvider>>,
     simulator: Arc<SimulationEngine>,
     watchdog: Arc<HealthWatchdog>,
     keep_count: usize,
+    hook_runner: Option<HookRunner>,
 }
 
 impl TransactionManager {
@@ -27,12 +29,93 @@ impl TransactionManager {
             simulator,
             watchdog,
             keep_count,
+            hook_runner: None,
         }
+    }
+
+    /// Set the hook runner from application configuration
+    pub fn with_hooks(mut self, hook_runner: HookRunner) -> Self {
+        self.hook_runner = Some(hook_runner);
+        self
     }
 
     /// Get the snapshot provider if one is available
     pub fn get_snapshot_provider(&self) -> Option<Arc<dyn SnapshotProvider>> {
         self.snapshot_provider.clone()
+    }
+
+    /// Run pre-operation hooks and log results
+    fn run_pre_hooks(&self, action_name: &str) {
+        if let Some(ref runner) = self.hook_runner {
+            let results = match action_name {
+                name if name.contains("install") => runner.run_pre_install(),
+                name if name.contains("remove") || name.contains("uninstall") => {
+                    runner.run_pre_remove()
+                }
+                name if name.contains("update") || name.contains("upgrade") => {
+                    runner.run_pre_update()
+                }
+                _ => Vec::new(),
+            };
+
+            for (i, result) in results.iter().enumerate() {
+                match result {
+                    Ok(output) => {
+                        tracing::info!(
+                            action = %action_name,
+                            hook = i,
+                            "Pre-hook succeeded: {}",
+                            output.trim()
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            action = %action_name,
+                            hook = i,
+                            "Pre-hook failed: {}",
+                            err
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Run post-operation hooks and log results
+    fn run_post_hooks(&self, action_name: &str) {
+        if let Some(ref runner) = self.hook_runner {
+            let results = match action_name {
+                name if name.contains("install") => runner.run_post_install(),
+                name if name.contains("remove") || name.contains("uninstall") => {
+                    runner.run_post_remove()
+                }
+                name if name.contains("update") || name.contains("upgrade") => {
+                    runner.run_post_update()
+                }
+                _ => Vec::new(),
+            };
+
+            for (i, result) in results.iter().enumerate() {
+                match result {
+                    Ok(output) => {
+                        tracing::info!(
+                            action = %action_name,
+                            hook = i,
+                            "Post-hook succeeded: {}",
+                            output.trim()
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            action = %action_name,
+                            hook = i,
+                            "Post-hook failed: {}",
+                            err
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Execute an action within a safe transaction pipeline
@@ -131,13 +214,19 @@ impl TransactionManager {
             None
         };
 
-        // 4. Run Action
+        // 4. Run Pre-Hooks
+        self.run_pre_hooks(action_name);
+
+        // 5. Run Action
         let result = action().await;
 
-        // 5. Handle success/failure
+        // 6. Handle success/failure
         match result {
             Ok(val) => {
                 tracing::info!(action = %action_name, "Transaction completed successfully");
+
+                // Run Post-Hooks
+                self.run_post_hooks(action_name);
 
                 // Cleanup old snapshots
                 if let Some(p) = &self.snapshot_provider {

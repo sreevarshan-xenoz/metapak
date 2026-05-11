@@ -349,47 +349,38 @@ async fn run_command_sequence(
                         }
                     }
 
-                    // Handle conflict errors - remove conflicting packages
-                    if is_conflict_error && !cfg!(windows) {
-                        let _ = tx.send(ActionResult::CommandOutput(
-                            "Package conflict detected. Trying to resolve...".to_string(),
-                        ));
-                        let fix = CommandSpec {
-                            prog: "sudo".to_string(),
-                            args: vec![
-                                "pacman".to_string(),
-                                "-Syu".to_string(),
-                                "--overwrite".to_string(),
-                                "*".to_string(),
-                                "--noconfirm".to_string(),
-                            ],
+                    // Handle conflict errors - report to user instead of blindly overwriting
+                    if is_conflict_error {
+                        // The error string already contains relevant output from the command
+                        let conflict_details: Vec<String> = err
+                            .lines()
+                            .filter(|line| {
+                                let lower = line.to_lowercase();
+                                lower.contains("conflict")
+                                    || lower.contains("exists in filesystem")
+                                    || lower.contains("are in conflict")
+                            })
+                            .map(|s| s.to_string())
+                            .collect();
+
+                        let detail_msg = if conflict_details.is_empty() {
+                            format!("Package conflicts detected: {}", err)
+                        } else {
+                            format!(
+                                "Package conflicts detected:\n{}",
+                                conflict_details.join("\n")
+                            )
                         };
-                        match run_single_command(
-                            &fix,
-                            tx.clone(),
-                            active_pid.clone(),
-                            cancel_requested.clone(),
-                        )
-                        .await
-                        {
-                            Ok(CommandRunResult::Finished) => {
-                                let _ = tx.send(ActionResult::CommandOutput(
-                                    "Conflicts resolved.".to_string(),
-                                ));
-                                if attempts < MAX_ATTEMPTS {
-                                    continue;
-                                }
-                            }
-                            Ok(CommandRunResult::Cancelled) => {
-                                return Ok(CommandRunResult::Cancelled)
-                            }
-                            Err(fix_err) => {
-                                return Err(crate::errors::AppError::Backend(format!(
-                                    "Conflict resolution failed: {}",
-                                    fix_err
-                                )));
-                            }
-                        }
+
+                        let _ = tx.send(ActionResult::CommandOutput(detail_msg.clone()));
+                        let _ = tx.send(ActionResult::CommandOutput(
+                            "Tip: Use 'pacman -Syu --overwrite <specific-file>' to resolve individual conflicts.".to_string(),
+                        ));
+
+                        return Err(crate::errors::AppError::Backend(format!(
+                            "Transaction aborted due to package conflicts: {}",
+                            err
+                        )));
                     }
 
                     // Handle signature errors - refresh keys
@@ -637,12 +628,16 @@ async fn main() -> Result<()> {
         None
     };
 
-    let transaction_manager = Arc::new(crate::transaction_manager::TransactionManager::new(
+    let transaction_manager = crate::transaction_manager::TransactionManager::new(
         snapshot_provider,
         simulator.clone(),
         watchdog.clone(),
         app_config.robustness.snapshot_keep_count,
-    ));
+    );
+
+    // Attach hooks from config
+    let hook_runner = crate::hooks::HookRunner::from_config(&app_config.hooks);
+    let transaction_manager = Arc::new(transaction_manager.with_hooks(hook_runner));
 
     // Create app
     let aur_helper = app_config.aur_helper.clone();
@@ -655,13 +650,36 @@ async fn main() -> Result<()> {
     app.max_history_size = app.config.ui.max_search_history;
     app.max_undo_history = app.config.ui.max_undo_history;
     app.theme = app.config.get_theme();
+    app.localizer = crate::i18n::Localizer::with_config(&app.config.i18n.language);
     app.set_sender(action_tx.clone());
     if let Ok(history) = crate::transaction_history::load_history() {
         app.transaction_history = history.into();
     }
 
-    // Initial check for updates (on startup) - send after spawn is ready
-    let _ = action_tx.send(Action::new(ActionInner::CheckUpdates));
+    // Rotate telemetry logs if needed
+    if app.config.telemetry.enabled {
+        crate::telemetry::rotate_logs(
+            app.config.telemetry.max_log_size_mb,
+            app.config.telemetry.max_log_files,
+        );
+    }
+
+    // Validate theme contrast ratios on startup
+    let contrast_failures = app.theme.validate_contrast();
+    if !contrast_failures.is_empty() {
+        for (name, ratio) in &contrast_failures {
+            tracing::warn!(
+                "WCAG AA contrast warning: '{}' has ratio {:.2}:1 (minimum 4.5:1)",
+                name,
+                ratio
+            );
+        }
+    }
+
+    // Initial check for updates (only if auto_update_on_startup is enabled)
+    if app.config.ui.auto_update_on_startup {
+        let _ = action_tx.send(Action::new(ActionInner::CheckUpdates));
+    }
 
     // Start auto-update checker if enabled
     let auto_check_enabled = app.config.ui.auto_check_updates;

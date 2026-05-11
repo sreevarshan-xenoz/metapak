@@ -92,15 +92,16 @@ impl SecurityAuditService {
     pub fn new() -> Self {
         let ecosystem_map = [
             ("Pacman", "Arch Linux"),
-            ("Aur", "AUR"),
+            ("Aur", "Arch Linux"),
             ("Apt", "Debian"),
-            ("Dnf", "PyPI"),
-            ("Zypper", "PyPI"),
-            ("Brew", "PyPI"),
+            ("Dnf", "Red Hat"),
+            ("Zypper", "openSUSE"),
+            ("Brew", "Homebrew"),
             ("Winget", "NuGet"),
-            ("Chocolatey", "PyPI"),
-            ("Flatpak", "PyPI"),
-            ("Snap", "PyPI"),
+            ("Chocolatey", "NuGet"),
+            ("Flatpak", "Linux"),
+            ("Snap", "Linux"),
+            ("Apk", "Alpine"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
