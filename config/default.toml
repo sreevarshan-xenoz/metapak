@@ -40,3 +40,25 @@ cache_ttl_seconds = 300
 [robustness]
 snapshot_keep_count = 5
 simulation_backend = "auto"
+
+[hooks]
+pre_install = []
+post_install = []
+pre_remove = []
+post_remove = []
+pre_update = []
+post_update = []
+
+[i18n]
+language = "auto"
+
+[notifications]
+enabled = true
+on_install = true
+on_update = true
+on_error = true
+
+[telemetry]
+enabled = true
+max_log_size_mb = 5
+max_log_files = 5

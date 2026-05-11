@@ -57,6 +57,36 @@ auto_check_updates = false          # Enable periodic update checks
 update_check_interval_minutes = 60  # How often to check for updates
 auto_update_on_startup = false     # Check for updates on app start
 
+[search]
+cache_ttl_seconds = 300             # How long to cache search results
+
 [robustness]
 snapshot_keep_count = 5            # Number of btrfs snapshots to keep
 simulation_backend = "auto"        # Backend for simulation (auto, mock)
+
+[hooks]
+# Shell commands to run before/after package operations
+# Example: pre_install = ["echo 'Installing packages...'"]
+pre_install = []
+post_install = []
+pre_remove = []
+post_remove = []
+pre_update = []
+post_update = []
+
+[i18n]
+# Language setting: "auto" to detect from environment, or "en", "es", "fr", "de", "zh", "ja"
+language = "auto"
+
+[notifications]
+# Desktop notification settings
+enabled = true                     # Enable/disable desktop notifications
+on_install = true                  # Notify after install/remove operations
+on_update = true                   # Notify when updates are available
+on_error = true                    # Notify on operation errors
+
+[telemetry]
+# Operation logging settings
+enabled = true                     # Enable/disable operation logging
+max_log_size_mb = 5                # Maximum log file size in MB
+max_log_files = 5                  # Number of log files to keep
