@@ -808,6 +808,31 @@ impl App {
         self.apply_filter_and_sort();
     }
 
+    // Theme cycling
+    pub fn cycle_theme_next(&mut self) {
+        use crate::theme::{Theme, ThemePreset};
+        let current_preset = if self.config.theme.preset == "latte" || self.config.theme.preset == "light" {
+            ThemePreset::Latte
+        } else {
+            ThemePreset::Mocha
+        };
+        let next_preset = match current_preset {
+            ThemePreset::Mocha => ThemePreset::Latte,
+            ThemePreset::Latte => ThemePreset::Mocha,
+        };
+        self.theme = Theme::from_preset(next_preset);
+        self.config.theme.preset = match next_preset {
+            ThemePreset::Mocha => "mocha".to_string(),
+            ThemePreset::Latte => "latte".to_string(),
+        };
+        self.add_toast(format!("Theme: {}", self.config.theme.preset), crate::animations::ToastStyle::Info);
+    }
+
+    pub fn cycle_theme_previous(&mut self) {
+        // Same as next since we only have 2 themes
+        self.cycle_theme_next();
+    }
+
     // View Management
     pub fn show_package_details(&mut self) {
         if self.selected_index.is_some() {

@@ -10,6 +10,14 @@ pub struct AppConfig {
     pub ui: UiConfig,
     pub search: SearchConfig,
     pub robustness: RobustnessConfig,
+    #[serde(default)]
+    pub hooks: HooksConfig,
+    #[serde(default)]
+    pub i18n: I18nConfig,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub telemetry: TelemetryConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -94,6 +102,71 @@ impl Default for RobustnessConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct HooksConfig {
+    #[serde(default)]
+    pub pre_install: Vec<String>,
+    #[serde(default)]
+    pub post_install: Vec<String>,
+    #[serde(default)]
+    pub pre_remove: Vec<String>,
+    #[serde(default)]
+    pub post_remove: Vec<String>,
+    #[serde(default)]
+    pub pre_update: Vec<String>,
+    #[serde(default)]
+    pub post_update: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct I18nConfig {
+    pub language: String,
+}
+
+impl Default for I18nConfig {
+    fn default() -> Self {
+        Self {
+            language: "auto".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct NotificationsConfig {
+    pub enabled: bool,
+    pub on_install: bool,
+    pub on_update: bool,
+    pub on_error: bool,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            on_install: true,
+            on_update: true,
+            on_error: true,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TelemetryConfig {
+    pub enabled: bool,
+    pub max_log_size_mb: u64,
+    pub max_log_files: usize,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_log_size_mb: 5,
+            max_log_files: 5,
+        }
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -132,6 +205,10 @@ impl Default for AppConfig {
             },
             search: SearchConfig::default(),
             robustness: RobustnessConfig::default(),
+            hooks: HooksConfig::default(),
+            i18n: I18nConfig::default(),
+            notifications: NotificationsConfig::default(),
+            telemetry: TelemetryConfig::default(),
         }
     }
 }
