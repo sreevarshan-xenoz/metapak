@@ -6,12 +6,17 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
+pub mod apk;
 pub mod apt;
 pub mod brew;
+pub mod cargo_backend;
 pub mod chocolatey;
 pub mod dnf;
 pub mod flatpak;
+pub mod npm;
 pub mod pacman;
+pub mod pip;
+pub mod scoop;
 pub mod snap;
 pub mod snapshots;
 pub mod winget;
@@ -94,9 +99,11 @@ impl UniversalPackageService {
             Some(PackageManager::Apt) => Arc::new(apt::AptBackend::new()),
             Some(PackageManager::Dnf) => Arc::new(dnf::DnfBackend::new()),
             Some(PackageManager::Zypper) => Arc::new(zypper::ZypperBackend::new()),
+            Some(PackageManager::Apk) => Arc::new(apk::ApkBackend::new()),
             Some(PackageManager::Brew) => Arc::new(brew::BrewBackend::new()),
             Some(PackageManager::Winget) => Arc::new(winget::WingetBackend::new()),
             Some(PackageManager::Chocolatey) => Arc::new(chocolatey::ChocolateyBackend::new()),
+            Some(PackageManager::Scoop) => Arc::new(scoop::ScoopBackend::new()),
             Some(PackageManager::Flatpak) => Arc::new(flatpak::FlatpakBackend::new()),
             Some(PackageManager::Snap) => Arc::new(snap::SnapBackend::new()),
             _ => Arc::new(pacman::PacmanBackend::new()), // Default to pacman
