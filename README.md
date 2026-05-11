@@ -4,17 +4,18 @@
 ![Rust](https://img.shields.io/badge/built_with-Rust-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-Arch_Linux-1793d1.svg)
 
-**metapak** is a modern, terminal-based user interface for managing packages. It creates a unified experience for searching, installing, and removing packages from both the official repositories (`pacman`) and the AUR (via `paru` or `yay`), all without ever leaving the TUI.
+**metapak** is a modern, terminal-based user interface for managing packages. It creates a unified experience for searching, installing, and removing packages across system package managers (pacman, apt, dnf, zypper, brew, scoop, apk) and language ecosystems (npm, pip, cargo), all without ever leaving the TUI.
 
 ---
 
 ## 🚀 Key Features
 
 ### Package Management
-*   **Unified Search**: Query both **Official Repositories** and the **AUR** simultaneously.
+*   **Universal Search**: Query both **System Repositories** (pacman, apt, brew, scoop, apk) and **Language Ecosystems** (npm, pip, cargo) simultaneously.
 *   **Batch Operations**: Select multiple packages using `Tab` and install/remove them in a single transaction.
 *   **Live Search**: Search as you type with debounced queries.
 *   **Fuzzy Matching**: Find packages even with partial or typo-prone queries.
+*   **Pre/Post Hooks**: Execute custom shell commands before or after package operations.
 
 ### System Views
 *   **Updates View** (`U`): View and manage available system updates.
@@ -27,9 +28,11 @@
 *   **Cache Info** (`C`): View pacman and AUR cache sizes.
 
 ### Native TUI Experience
+*   **Runtime Theme Switching**: Cycle between beautiful dark and light themes (Mocha/Latte) instantly using `T` or `Shift+T`.
+*   **i18n Support**: Auto-detected or configurable language localization.
 *   **Startup Sudo Cache**: Enter your password once at launch; no interruptions during installation.
 *   **Embedded Console**: Watch build logs and installation output directly inside the UI.
-*   **Confirmation Popups**: Safety checks before executing any system changes.
+*   **Safe Conflict Resolution**: Automatic safety checks and conflict parsing before executing any system changes.
 *   **Dependency Visualization** (`v`): View package dependency trees.
 *   **Toasts & Animations**: Smooth UI feedback.
 
@@ -38,8 +41,9 @@
 *   **Restore**: Use `pacman -S --needed < backup.txt` to restore.
 
 ### Robustness
-*   **Circuit Breaker**: Automatic protection against AUR service outages.
+*   **Circuit Breaker**: Automatic protection against external service outages.
 *   **Graceful Shutdown**: Ctrl+C safely closes the application.
+*   **Telemetry**: Built-in structured operations logging with automatic log rotation.
 *   **Input Validation**: Sanitized package names and paths.
 *   **Search Limits**: Configurable result limits to prevent memory exhaustion.
 
@@ -48,10 +52,9 @@
 You can install metapak using the included automated script.
 
 ### Prerequisites
-*   Arch Linux (or derivative)
+*   A supported OS (Linux, macOS, Windows)
 *   `rustup` (Rust toolchain) - *Script will attempt to install if missing*
-*   `pacman`
-*   An AUR helper (`paru` or `yay`) is recommended for full functionality.
+*   One or more supported package managers (pacman, apt, brew, scoop, dnf, etc.)
 
 ### Automated Install
 1.  Clone the repository:
@@ -121,6 +124,7 @@ metapak
 
 ### Keyboard Modifiers
 *   `Shift+U` - System update
+*   `T` or `Shift+T` - Cycle UI Theme
 *   `Ctrl+C` - Graceful shutdown
 
 ## 🛠️ Architecture

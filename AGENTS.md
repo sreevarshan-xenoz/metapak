@@ -20,14 +20,14 @@ Runs on every push/PR: `cargo fmt --check`, `cargo clippy --all-targets -- -D wa
 - **Entry point**: `src/main.rs`
 - **App state**: `src/app.rs`
 - **UI rendering**: `src/ui.rs`
-- **Config**: `src/config.rs`, loads from `~/.config/metapak/config.toml`
-- **Package service**: `src/services.rs` (unified search: pacman + AUR)
+- **Config**: `src/config.rs`, loads from `~/.config/metapak/config.toml` (includes `[hooks]`, `[telemetry]`, etc.)
+- **Package service**: `src/services.rs` (unified search across multiple backends)
 
 ## Key Constraints
 
-- Linux-only (requires pacman, AUR helper like `paru`/`yay` for full functionality)
-- Requires sudo for package operations
-- Tests require Linux environment
+- Cross-platform support: Windows (Scoop), macOS (Homebrew), Linux (Pacman, APT, DNF, APK, etc.)
+- Requires sudo for system-level package operations, but works without sudo for ecosystem/user-level (Scoop, NPM, Cargo)
+- Tests require relevant package managers to run comprehensively
 
 ## Special Notes
 
