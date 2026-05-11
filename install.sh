@@ -1,5 +1,9 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+
+# metapak robust universal installer
+# Supports: Linux, macOS
+
+set -euo pipefail
 
 # Color codes
 GREEN='\033[0;32m'
@@ -8,159 +12,132 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-VERSION="0.1.0"
-INSTALL_DIR="${HOME}/.local"
-BIN_DIR="${INSTALL_DIR}/bin"
-SHARE_DIR="${INSTALL_DIR}/share"
+REPO_URL="https://github.com/sreevarshan-xenoz/metapak.git"
+INSTALL_DIR="${HOME}/.local/bin"
+SHARE_DIR="${HOME}/.local/share"
 CONFIG_DIR="${HOME}/.config/metapak"
+TMP_DIR=$(mktemp -d -t metapak-install-XXXXXX)
 
-usage() {
-    echo "metapak Installer v${VERSION}"
-    echo ""
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  -i, --install      Install metapak (default)"
-    echo "  -u, --uninstall    Uninstall metapak"
-    echo "  -U, --update       Update and rebuild"
-    echo "  -h, --help         Show this help message"
-    echo ""
-}
-
-install() {
-    echo -e "${BLUE}=== metapak Installer ===${NC}"
-
-    # 1. Check dependencies
-    echo -e "${GREEN}[1/6] Checking dependencies...${NC}"
-
-    if ! command -v cargo &> /dev/null; then
-        echo "Rust/Cargo is not installed. Installing via rustup..."
-        if command -v pacman &> /dev/null; then
-            sudo pacman -S --noconfirm rustup
-        else
-            echo "Error: Cannot install Rust - pacman not found"
-            exit 1
-        fi
-        rustup default stable
+# Ensure cleanup runs on exit or interrupt
+cleanup() {
+    local exit_code=$?
+    if [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
     fi
+    if [ $exit_code -ne 0 ]; then
+        echo -e "${RED}Installation failed or was interrupted.${NC}"
+    fi
+    exit $exit_code
+}
+trap cleanup EXIT INT TERM
 
-    if ! command -v pacman &> /dev/null; then
-        echo -e "${RED}Error: 'pacman' not found. Is this an Arch Linux system?${NC}"
+echo -e "${BLUE}=== metapak Installer ===${NC}"
+
+# 1. Dependency Validation
+echo -e "${GREEN}[1/6] Checking dependencies...${NC}"
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo -e "${RED}Error: curl is required to download dependencies. Please install it and try again.${NC}"
+    exit 1
+fi
+
+if ! command -v git >/dev/null 2>&1; then
+    echo -e "${RED}Error: git is required to clone the repository. Please install it and try again.${NC}"
+    exit 1
+fi
+
+# Rust installation / detection
+if ! command -v cargo >/dev/null 2>&1; then
+    echo -e "${YELLOW}Rust/Cargo not found. Installing via rustup...${NC}"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    
+    # Safely source the environment for the current script
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    else
+        echo -e "${RED}Failed to source Cargo environment. You may need to restart your terminal and try again.${NC}"
         exit 1
     fi
+else
+    echo "Found Rust: $(cargo --version)"
+fi
 
-    # Check for AUR helper
-    if command -v paru &> /dev/null; then
-        echo "Found AUR helper: paru"
-    elif command -v yay &> /dev/null; then
-        echo "Found AUR helper: yay"
-    else
-        echo -e "${YELLOW}Warning: No AUR helper (paru/yay) found. AUR functionality limited.${NC}"
-    fi
+# 2. Clone Repository
+echo -e "${GREEN}[2/6] Downloading source code...${NC}"
+git clone --depth 1 "$REPO_URL" "$TMP_DIR"
+cd "$TMP_DIR"
 
-    # 2. Build Release
-    echo -e "${GREEN}[2/6] Building release binary...${NC}"
-    cargo build --release
+# 3. Build Release
+echo -e "${GREEN}[3/6] Building release binary (this may take a few minutes)...${NC}"
+cargo build --release
 
-    # 3. Install Binary
-    echo -e "${GREEN}[3/6] Installing binary to ${BIN_DIR}...${NC}"
-    mkdir -p "${BIN_DIR}"
-    cp target/release/metapak "${BIN_DIR}/"
-    chmod +x "${BIN_DIR}/metapak"
+# 4. Install Binary
+echo -e "${GREEN}[4/6] Installing binary to ${INSTALL_DIR}...${NC}"
+mkdir -p "$INSTALL_DIR"
 
-    # 4. Install Config
-    echo -e "${GREEN}[4/6] Installing default config...${NC}"
-    mkdir -p "${CONFIG_DIR}"
-    if [ ! -f "${CONFIG_DIR}/config.toml" ]; then
-        cp config.example.toml "${CONFIG_DIR}/config.toml"
-    fi
+# Idempotence check
+if [ -f "${INSTALL_DIR}/metapak" ]; then
+    echo -e "${YELLOW}metapak is already installed. Updating binary...${NC}"
+    rm -f "${INSTALL_DIR}/metapak"
+fi
 
-    # 5. Install Desktop Entry
-    echo -e "${GREEN}[5/6] Installing desktop entry...${NC}"
+cp target/release/metapak "${INSTALL_DIR}/"
+chmod +x "${INSTALL_DIR}/metapak"
+
+# 5. Install Config & Desktop Entry
+echo -e "${GREEN}[5/6] Setting up configuration...${NC}"
+mkdir -p "${CONFIG_DIR}"
+if [ ! -f "${CONFIG_DIR}/config.toml" ]; then
+    cp config.example.toml "${CONFIG_DIR}/config.toml"
+    echo "Created default config at ${CONFIG_DIR}/config.toml"
+else
+    echo "Config already exists. Skipping..."
+fi
+
+if [ "$(uname)" = "Linux" ]; then
+    echo "Setting up desktop entry..."
     mkdir -p "${SHARE_DIR}/applications"
     cp metapak.desktop "${SHARE_DIR}/applications/"
-    update-desktop-database "${SHARE_DIR}/applications/" 2>/dev/null || true
-
-    # 6. Finalize
-    echo -e "${GREEN}[6/6] Installation Complete!${NC}"
-    echo ""
-    echo -e "${GREEN}To run metapak:${NC}"
-    echo "  ${BIN_DIR}/metapak"
-    echo ""
-    echo "Or add to PATH by adding to ~/.bashrc or ~/.zshrc:"
-    echo "  export PATH=\"\${HOME}/.local/bin:\$PATH\""
-    echo ""
-    echo -e "Press ${GREEN}?${NC} in the app for keyboard shortcuts"
-}
-
-uninstall() {
-    echo -e "${BLUE}=== Uninstalling metapak ===${NC}"
     
-    if [ -f "${BIN_DIR}/metapak" ]; then
-        rm -f "${BIN_DIR}/metapak"
-        echo "Removed binary"
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "${SHARE_DIR}/applications/" 2>/dev/null || true
     fi
-    
-    if [ -d "${CONFIG_DIR}" ]; then
-        rm -rf "${CONFIG_DIR}"
-        echo "Removed config"
+fi
+
+# 6. PATH Injection & Finalize
+echo -e "${GREEN}[6/6] Finalizing installation...${NC}"
+
+# Detect shell and check PATH
+SHELL_RC=""
+if [[ "$SHELL" == *"zsh"* ]]; then
+    SHELL_RC="$HOME/.zshrc"
+elif [[ "$SHELL" == *"bash"* ]]; then
+    SHELL_RC="$HOME/.bashrc"
+    # Some bash environments use .bash_profile
+    if [ ! -f "$SHELL_RC" ] && [ -f "$HOME/.bash_profile" ]; then
+        SHELL_RC="$HOME/.bash_profile"
     fi
-    
-    if [ -f "${SHARE_DIR}/applications/metapak.desktop" ]; then
-        rm -f "${SHARE_DIR}/applications/metapak.desktop"
-        echo "Removed desktop entry"
+elif [[ "$SHELL" == *"fish"* ]]; then
+    SHELL_RC="$HOME/.config/fish/config.fish"
+fi
+
+if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+    if ! grep -q "$INSTALL_DIR" "$SHELL_RC"; then
+        echo -e "${YELLOW}Adding ${INSTALL_DIR} to PATH in ${SHELL_RC}${NC}"
+        echo "" >> "$SHELL_RC"
+        echo "# Added by metapak installer" >> "$SHELL_RC"
+        if [[ "$SHELL" == *"fish"* ]]; then
+            echo "set -gx PATH \"$INSTALL_DIR\" \$PATH" >> "$SHELL_RC"
+        else
+            echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
+        fi
+        echo -e "${YELLOW}Note: Please restart your terminal or run 'source ${SHELL_RC}' to update your PATH.${NC}"
     fi
-    
-    echo -e "${GREEN}Uninstallation complete!${NC}"
-}
+else
+    echo -e "${YELLOW}Could not automatically detect your shell configuration.${NC}"
+    echo -e "Please ensure ${INSTALL_DIR} is in your PATH."
+fi
 
-update() {
-    echo -e "${BLUE}=== Updating metapak ===${NC}"
-    git pull 2>/dev/null || true
-    cargo build --release
-    mkdir -p "${BIN_DIR}"
-    cp target/release/metapak "${BIN_DIR}/"
-    chmod +x "${BIN_DIR}/metapak"
-    echo -e "${GREEN}Update complete!${NC}"
-}
-
-# Parse arguments
-ACTION="install"
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -i|--install)
-            ACTION="install"
-            shift
-            ;;
-        -u|--uninstall)
-            ACTION="uninstall"
-            shift
-            ;;
-        -U|--update)
-            ACTION="update"
-            shift
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            usage
-            exit 1
-            ;;
-    esac
-done
-
-case $ACTION in
-    install)
-        install
-        ;;
-    uninstall)
-        uninstall
-        ;;
-    update)
-        update
-        ;;
-esac
+echo ""
+echo -e "${GREEN}✓ metapak Installation Complete!${NC}"
+echo -e "Run ${BLUE}metapak${NC} to get started."

@@ -56,23 +56,34 @@ You can install metapak using the included automated script.
 *   `rustup` (Rust toolchain) - *Script will attempt to install if missing*
 *   One or more supported package managers (pacman, apt, brew, scoop, dnf, etc.)
 
-### Automated Install
+### Automated Install (One-Liner)
+
+The universal installer will automatically download the source, install Rust if missing, build the release binary, and configure your PATH.
+
+#### Linux / macOS
+Open your terminal and run:
+```bash
+curl -sSL https://raw.githubusercontent.com/sreevarshan-xenoz/metapak/main/install.sh | bash
+```
+
+#### Windows (PowerShell)
+Open PowerShell and run:
+```powershell
+irm https://raw.githubusercontent.com/sreevarshan-xenoz/metapak/main/install.ps1 | iex
+```
+
+### Manual Installation
+If you prefer to install manually:
 1.  Clone the repository:
     ```bash
     git clone https://github.com/sreevarshan-xenoz/metapak.git
     cd metapak
     ```
-
-2.  Run the installer:
+2.  Build and install:
     ```bash
-    chmod +x install.sh
-    ./install.sh
+    cargo build --release
+    # Copy target/release/metapak to your PATH
     ```
-
-This will:
-*   Build the release binary.
-*   Install it to `~/.local/bin/metapak`.
-*   Create a Desktop Entry so it appears in your Application Menu.
 
 ## 🎮 Usage
 
