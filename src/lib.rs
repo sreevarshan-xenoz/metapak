@@ -39,7 +39,6 @@ pub mod notifications;
 pub mod operation_queue;
 pub mod platform;
 pub mod search;
-pub mod security;
 pub mod services;
 pub mod simulation;
 pub mod telemetry;

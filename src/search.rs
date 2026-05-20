@@ -10,7 +10,6 @@
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use regex::Regex;
-use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchToken {
@@ -360,18 +359,12 @@ fn parse_size(value: &str) -> Option<u64> {
 
 pub struct EnhancedSearch {
     fuzzy: FuzzySearch,
-    #[allow(dead_code)]
-    history: Vec<String>,
-    #[allow(dead_code)]
-    max_history: usize,
 }
 
 impl EnhancedSearch {
     pub fn new() -> Self {
         Self {
             fuzzy: FuzzySearch::new(),
-            history: Vec::new(),
-            max_history: 50,
         }
     }
 
@@ -395,47 +388,6 @@ impl EnhancedSearch {
         self.fuzzy.matcher.fuzzy_indices(text, pattern)
     }
 
-    #[allow(dead_code)]
-    pub fn match_simple(&self, text: &str, pattern: &str) -> bool {
-        self.match_with_score(text, pattern).is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn filter_and_sort<'a>(
-        &self,
-        items: &'a [(String, String)],
-        pattern: &str,
-    ) -> Vec<(&'a str, i64, Vec<usize>)> {
-        if pattern.is_empty() {
-            return items
-                .iter()
-                .map(|(name, _)| (name.as_str(), 0, vec![]))
-                .collect();
-        }
-
-        let query = SearchQuery::parse(pattern);
-
-        let mut results: Vec<(&'a str, i64, Vec<usize>)> = items
-            .iter()
-            .filter_map(|(name, desc)| {
-                if query.is_regex {
-                    if let Ok(re) = Regex::new(pattern) {
-                        if re.is_match(name) || re.is_match(desc) {
-                            return Some((name.as_str(), 100, vec![]));
-                        }
-                    }
-                    None
-                } else {
-                    self.match_with_score(name, pattern)
-                        .map(|(score, indices)| (name.as_str(), score, indices))
-                }
-            })
-            .collect();
-
-        results.sort_by_key(|(_name, score, _indices)| std::cmp::Reverse(*score));
-        results
-    }
-
     pub fn filter_packages<'a>(
         &self,
         packages: &'a [crate::models::Package],
@@ -451,56 +403,6 @@ impl EnhancedSearch {
             .iter()
             .filter(|pkg| query.matches_package(&pkg.name, &pkg.description, pkg))
             .collect()
-    }
-
-    #[allow(dead_code)]
-    pub fn add_to_history(&mut self, query: String) {
-        if !query.trim().is_empty() && !self.history.contains(&query) {
-            self.history.insert(0, query);
-            if self.history.len() > self.max_history {
-                self.history.pop();
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn get_history(&self) -> &[String] {
-        &self.history
-    }
-
-    #[allow(dead_code)]
-    pub fn clear_history(&mut self) {
-        self.history.clear();
-    }
-
-    #[allow(dead_code)]
-    pub fn get_suggestions(
-        &self,
-        prefix: &str,
-        packages: &[crate::models::Package],
-    ) -> Vec<String> {
-        if prefix.len() < 2 {
-            return vec![];
-        }
-
-        let query = SearchQuery::parse(prefix);
-
-        let mut suggestions = Vec::new();
-        let mut seen = HashSet::new();
-
-        for pkg in packages {
-            if suggestions.len() >= 10 {
-                break;
-            }
-
-            if query.matches_package(&pkg.name, &pkg.description, pkg)
-                && seen.insert(pkg.name.clone())
-            {
-                suggestions.push(pkg.name.clone());
-            }
-        }
-
-        suggestions
     }
 }
 
@@ -528,31 +430,6 @@ impl FuzzySearch {
     #[allow(dead_code)]
     pub fn match_simple(&self, text: &str, pattern: &str) -> bool {
         self.matcher.fuzzy_match(text, pattern).is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn filter_and_sort<'a>(
-        &self,
-        items: &'a [(String, String)],
-        pattern: &str,
-    ) -> Vec<(&'a str, i64, Vec<usize>)> {
-        if pattern.is_empty() {
-            return items
-                .iter()
-                .map(|(name, _)| (name.as_str(), 0, vec![]))
-                .collect();
-        }
-
-        let mut results: Vec<(&'a str, i64, Vec<usize>)> = items
-            .iter()
-            .filter_map(|(name, _)| {
-                self.match_with_score(name, pattern)
-                    .map(|(score, indices)| (name.as_str(), score, indices))
-            })
-            .collect();
-
-        results.sort_by_key(|(_name, score, _indices)| std::cmp::Reverse(*score));
-        results
     }
 }
 
@@ -615,17 +492,6 @@ mod tests {
     fn test_query_parse_regex() {
         let query = SearchQuery::parse("regex:^fire");
         assert!(query.is_regex);
-    }
-
-    #[test]
-    fn test_enhanced_search_history() {
-        let mut search = EnhancedSearch::new();
-        search.add_to_history("firefox".to_string());
-        search.add_to_history("vim".to_string());
-        search.add_to_history("firefox".to_string());
-
-        assert_eq!(search.get_history().len(), 2);
-        assert_eq!(search.get_history()[0], "vim");
     }
 
     #[test]

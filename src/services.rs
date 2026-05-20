@@ -935,41 +935,6 @@ impl QuerySpec {
         spec.text = text_tokens.join(" ").trim().to_string();
         spec
     }
-
-    #[allow(dead_code)]
-    fn matches(&self, pkg: &Package) -> bool {
-        if self.source == QuerySourceFilter::Aur && !matches!(pkg.source, PackageSource::Aur) {
-            return false;
-        }
-        if self.source == QuerySourceFilter::Repo && !matches!(pkg.source, PackageSource::Pacman) {
-            return false;
-        }
-        if let Some(installed) = self.installed {
-            if pkg.is_installed != installed {
-                return false;
-            }
-        }
-        if let Some(prefix) = &self.name_prefix {
-            if !pkg.name.to_lowercase().starts_with(prefix) {
-                return false;
-            }
-        }
-        if let Some(contains) = &self.name_contains {
-            if !pkg.name.to_lowercase().contains(contains) {
-                return false;
-            }
-        }
-        if let Some(dep) = &self.dependency_contains {
-            let hit = pkg
-                .depends_on
-                .iter()
-                .any(|d| d.to_lowercase().contains(dep));
-            if !hit {
-                return false;
-            }
-        }
-        true
-    }
 }
 
 #[allow(dead_code)]
@@ -1247,48 +1212,6 @@ impl PackageService {
         provider.search(query).await
     }
 
-    /// Get detailed list of outdated packages
-    #[allow(dead_code)]
-    pub async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
-        self.update_provider.get_outdated_packages().await
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_orphans(&self) -> Result<Vec<String>> {
-        tokio::task::spawn_blocking(move || {
-            let output = Command::new("pacman")
-                .args(["-Qdtq"])
-                .output()
-                .map_err(|e| AppError::Pacman(format!("Failed to get orphans: {}", e)))?;
-
-            if !output.status.success() {
-                return Ok(Vec::new());
-            }
-
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let orphans: Vec<String> = stdout
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| l.to_string())
-                .collect();
-
-            Ok(orphans)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
-    }
-
-    #[allow(dead_code)]
-    pub async fn remove_orphans(&self, packages: &[String]) -> Result<Vec<CommandSpec>> {
-        if packages.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let names: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-        let helper = AurHelperCommand::new(&self.config);
-        Ok(vec![helper.remove_command(&names)])
-    }
-
     pub fn scan_pacnew_pacsave() -> Result<Vec<PacnewPacsaveFile>> {
         let mut files = Vec::new();
         let etc_dir = std::path::Path::new("/etc");
@@ -1553,13 +1476,6 @@ struct AurPackage {
     #[serde(rename = "FileSize")]
     #[allow(dead_code)]
     file_size: Option<i64>,
-}
-
-#[allow(dead_code)]
-#[derive(serde::Deserialize, Debug)]
-struct AurInfoResponse {
-    #[serde(rename = "results")]
-    results: Option<AurPackage>,
 }
 
 // NPM Response structures

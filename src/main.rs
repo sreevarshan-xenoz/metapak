@@ -15,7 +15,6 @@ mod notifications;
 mod operation_queue;
 mod platform;
 mod search;
-mod security;
 mod services;
 mod simulation;
 mod telemetry;

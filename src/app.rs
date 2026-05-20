@@ -675,10 +675,16 @@ impl App {
                 .map(|p| (p.name.clone(), p.description.clone()))
                 .collect();
 
-            let results = self
-                .fuzzy_matcher
-                .filter_and_sort(&items, &self.search_input);
-            for (name, score, indices) in results {
+            let mut scored: Vec<(&str, i64, Vec<usize>)> = items
+                .iter()
+                .filter_map(|(name, _)| {
+                    self.fuzzy_matcher
+                        .match_with_score(name, &self.search_input)
+                        .map(|(score, indices)| (name.as_str(), score, indices))
+                })
+                .collect();
+            scored.sort_by_key(|(_, score, _)| std::cmp::Reverse(*score));
+            for (name, score, indices) in scored {
                 self.fuzzy_scores.insert(name.to_string(), score);
                 self.fuzzy_indices.insert(name.to_string(), indices);
             }
