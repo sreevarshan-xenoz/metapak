@@ -15,6 +15,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub i18n: I18nConfig,
     #[serde(default)]
+    #[allow(dead_code)]
     pub notifications: NotificationsConfig,
     #[serde(default)]
     pub telemetry: TelemetryConfig,
@@ -59,6 +60,7 @@ impl Default for ThemeConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct KeyboardConfig {
     pub quit: String,
     pub search: String,
@@ -132,6 +134,7 @@ impl Default for I18nConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct NotificationsConfig {
     pub enabled: bool,
     pub on_install: bool,
@@ -355,10 +358,7 @@ impl AppConfig {
         theme
     }
 
-    /// Reload configuration from file
-    pub fn reload() -> Result<Self, config::ConfigError> {
-        Self::load()
-    }
+
 }
 
 /// Configuration validation errors

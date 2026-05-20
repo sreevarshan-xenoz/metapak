@@ -344,12 +344,6 @@ fn parse_size(value: &str) -> Option<u64> {
         || value.ends_with("M")
     {
         1024
-    } else if value.ends_with("KIB")
-        || value.ends_with("KI")
-        || value.ends_with("KB")
-        || value.ends_with("K")
-    {
-        1
     } else {
         1
     };
@@ -366,7 +360,9 @@ fn parse_size(value: &str) -> Option<u64> {
 
 pub struct EnhancedSearch {
     fuzzy: FuzzySearch,
+    #[allow(dead_code)]
     history: Vec<String>,
+    #[allow(dead_code)]
     max_history: usize,
 }
 
@@ -399,10 +395,12 @@ impl EnhancedSearch {
         self.fuzzy.matcher.fuzzy_indices(text, pattern)
     }
 
+    #[allow(dead_code)]
     pub fn match_simple(&self, text: &str, pattern: &str) -> bool {
         self.match_with_score(text, pattern).is_some()
     }
 
+    #[allow(dead_code)]
     pub fn filter_and_sort<'a>(
         &self,
         items: &'a [(String, String)],
@@ -455,6 +453,7 @@ impl EnhancedSearch {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn add_to_history(&mut self, query: String) {
         if !query.trim().is_empty() && !self.history.contains(&query) {
             self.history.insert(0, query);
@@ -464,14 +463,17 @@ impl EnhancedSearch {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_history(&self) -> &[String] {
         &self.history
     }
 
+    #[allow(dead_code)]
     pub fn clear_history(&mut self) {
         self.history.clear();
     }
 
+    #[allow(dead_code)]
     pub fn get_suggestions(
         &self,
         prefix: &str,
@@ -491,11 +493,10 @@ impl EnhancedSearch {
                 break;
             }
 
-            if query.matches_package(&pkg.name, &pkg.description, pkg) {
-                if seen.insert(pkg.name.clone()) {
+            if query.matches_package(&pkg.name, &pkg.description, pkg)
+                && seen.insert(pkg.name.clone()) {
                     suggestions.push(pkg.name.clone());
                 }
-            }
         }
 
         suggestions
@@ -523,10 +524,12 @@ impl FuzzySearch {
         self.matcher.fuzzy_indices(text, pattern)
     }
 
+    #[allow(dead_code)]
     pub fn match_simple(&self, text: &str, pattern: &str) -> bool {
         self.matcher.fuzzy_match(text, pattern).is_some()
     }
 
+    #[allow(dead_code)]
     pub fn filter_and_sort<'a>(
         &self,
         items: &'a [(String, String)],

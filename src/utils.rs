@@ -107,6 +107,26 @@ impl Default for PasswordInput {
     }
 }
 
+/// Validate that a path doesn't contain path traversal attempts
+pub fn validate_path(path: &std::path::Path) -> bool {
+    use std::path::Component;
+    let components = path.components();
+    for comp in components {
+        match comp {
+            Component::ParentDir => return false,
+            Component::Normal(s) => {
+                let s_str = s.to_string_lossy();
+                if s_str.starts_with('.') && s_str != ".config" && s_str != ".local" && s_str != ".cache" && !s_str.starts_with(".tmp") {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,43 +158,4 @@ mod tests {
         assert_eq!(pwd.len(), 7);
         assert_eq!(pwd.masked(), "*******█");
     }
-}
-
-/// Validate that a path doesn't contain path traversal attempts
-pub fn validate_path(path: &std::path::Path) -> bool {
-    use std::path::Component;
-    let mut components = path.components();
-    while let Some(comp) = components.next() {
-        match comp {
-            Component::ParentDir => return false,
-            Component::Normal(s) => {
-                let s_str = s.to_string_lossy();
-                if s_str.starts_with('.') && s_str != ".config" && s_str != ".local" && s_str != ".cache" && !s_str.starts_with(".tmp") {
-                    return false;
-                }
-            }
-            _ => {}
-        }
-    }
-    true
-}
-
-/// Sanitize a filename to prevent injection
-pub fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .filter(|c| c.is_alphanumeric() || "-_.".contains(*c))
-        .collect()
-}
-
-/// Validate a search query to prevent injection
-pub fn validate_search_query(query: &str) -> bool {
-    // Check for potentially dangerous patterns
-    let dangerous_patterns = ["&&", "||", ";", "|", "`", "$(", "$(", ">"];
-    let query_lower = query.to_lowercase();
-    for pattern in dangerous_patterns {
-        if query_lower.contains(pattern) {
-            return false;
-        }
-    }
-    true
 }

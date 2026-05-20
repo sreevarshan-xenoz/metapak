@@ -1,4 +1,3 @@
-use crate::export::chrono_lite;
 use std::fs;
 use std::process::Command;
 
@@ -9,17 +8,6 @@ pub struct DiagnosticItem {
 }
 
 pub fn run_diagnostics() -> Vec<DiagnosticItem> {
-    let mut items = Vec::new();
-
-    items.push(DiagnosticItem {
-        label: "pacman binary".to_string(),
-        status: if command_exists("pacman") {
-            "OK".to_string()
-        } else {
-            "MISSING".to_string()
-        },
-    });
-
     let aur_helper = if command_exists("paru") {
         "paru"
     } else if command_exists("yay") {
@@ -27,79 +15,71 @@ pub fn run_diagnostics() -> Vec<DiagnosticItem> {
     } else {
         "none"
     };
-    items.push(DiagnosticItem {
-        label: "AUR helper".to_string(),
-        status: aur_helper.to_string(),
-    });
 
-    let lock_exists = std::path::Path::new("/var/lib/pacman/db.lck").exists();
-    items.push(DiagnosticItem {
-        label: "pacman db lock".to_string(),
-        status: if lock_exists {
-            "LOCKED".to_string()
-        } else {
-            "clear".to_string()
+    let items = vec![
+        DiagnosticItem {
+            label: "pacman binary".to_string(),
+            status: if command_exists("pacman") {
+                "OK".to_string()
+            } else {
+                "MISSING".to_string()
+            },
         },
-    });
-
-    items.push(DiagnosticItem {
-        label: "disk space /".to_string(),
-        status: disk_usage_root().unwrap_or_else(|| "unknown".to_string()),
-    });
-
+        DiagnosticItem {
+            label: "AUR helper".to_string(),
+            status: aur_helper.to_string(),
+        },
+        DiagnosticItem {
+            label: "pacman db lock".to_string(),
+            status: if std::path::Path::new("/var/lib/pacman/db.lck").exists() {
+                "LOCKED".to_string()
+            } else {
+                "clear".to_string()
+            },
+        },
+        DiagnosticItem {
+            label: "disk space /".to_string(),
+            status: disk_usage_root().unwrap_or_else(|| "unknown".to_string()),
+        },
+    ];
     items
 }
 
 pub fn get_system_info() -> Vec<DiagnosticItem> {
-    let mut items = Vec::new();
-
-    // OS Info
-    items.push(DiagnosticItem {
-        label: "OS".to_string(),
-        status: get_os_info().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // Kernel
-    items.push(DiagnosticItem {
-        label: "Kernel".to_string(),
-        status: get_kernel_version().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // Hostname
-    items.push(DiagnosticItem {
-        label: "Hostname".to_string(),
-        status: get_hostname().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // Uptime
-    items.push(DiagnosticItem {
-        label: "Uptime".to_string(),
-        status: get_uptime().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // CPU
-    items.push(DiagnosticItem {
-        label: "CPU".to_string(),
-        status: get_cpu_info().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // CPU Cores
-    items.push(DiagnosticItem {
-        label: "CPU Cores".to_string(),
-        status: get_cpu_cores().to_string(),
-    });
-
-    // Memory
-    items.push(DiagnosticItem {
-        label: "Memory".to_string(),
-        status: get_memory_info().unwrap_or_else(|| "unknown".to_string()),
-    });
-
-    // Total packages
-    items.push(DiagnosticItem {
-        label: "Installed packages".to_string(),
-        status: get_total_packages().unwrap_or_else(|_| "unknown".to_string()),
-    });
+    let mut items = vec![
+        DiagnosticItem {
+            label: "OS".to_string(),
+            status: get_os_info().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "Kernel".to_string(),
+            status: get_kernel_version().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "Hostname".to_string(),
+            status: get_hostname().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "Uptime".to_string(),
+            status: get_uptime().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "CPU".to_string(),
+            status: get_cpu_info().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "CPU Cores".to_string(),
+            status: get_cpu_cores().to_string(),
+        },
+        DiagnosticItem {
+            label: "Memory".to_string(),
+            status: get_memory_info().unwrap_or_else(|| "unknown".to_string()),
+        },
+        DiagnosticItem {
+            label: "Installed packages".to_string(),
+            status: get_total_packages().unwrap_or_else(|_| "unknown".to_string()),
+        },
+    ];
 
     // Screen resolution (if available)
     if let Some(res) = get_screen_resolution() {
@@ -273,7 +253,6 @@ fn get_desktop_environment() -> Option<String> {
 #[derive(Debug, Clone)]
 pub struct OrphanPackage {
     pub name: String,
-    pub reason: String,
 }
 
 pub fn find_orphan_packages() -> Vec<OrphanPackage> {
@@ -294,7 +273,6 @@ pub fn find_orphan_packages() -> Vec<OrphanPackage> {
                     if !is_required_by_other_package(pkg_name) {
                         orphans.push(OrphanPackage {
                             name: pkg_name.to_string(),
-                            reason: "Not required by any installed package".to_string(),
                         });
                     }
                 }
@@ -430,18 +408,16 @@ fn get_dir_size(path: &str) -> Result<CacheInfo, std::io::Error> {
     let mut file_count = 0usize;
 
     let entries = std::fs::read_dir(path)?;
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Ok(metadata) = entry.metadata() {
-                if metadata.is_file() {
-                    total_size += metadata.len();
-                    file_count += 1;
-                } else if metadata.is_dir() {
-                    // Recursively count files in subdirectories
-                    if let Ok(sub_info) = get_dir_size(&entry.path().to_string_lossy()) {
-                        total_size += sub_info.size_bytes;
-                        file_count += sub_info.file_count;
-                    }
+    for entry in entries.flatten() {
+        if let Ok(metadata) = entry.metadata() {
+            if metadata.is_file() {
+                total_size += metadata.len();
+                file_count += 1;
+            } else if metadata.is_dir() {
+                // Recursively count files in subdirectories
+                if let Ok(sub_info) = get_dir_size(&entry.path().to_string_lossy()) {
+                    total_size += sub_info.size_bytes;
+                    file_count += sub_info.file_count;
                 }
             }
         }
@@ -471,104 +447,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn get_total_cache_size() -> u64 {
-    get_cache_info().iter().map(|c| c.size_bytes).sum()
-}
 
-#[derive(Debug, Clone)]
-pub struct RecentlyInstalled {
-    pub name: String,
-    pub version: String,
-    pub install_date: String,
-}
-
-pub fn get_recently_installed(days: u32) -> Vec<RecentlyInstalled> {
-    let mut packages = Vec::new();
-
-    let output = Command::new("pacman")
-        .args(["-Qi", "--color", "never"])
-        .output();
-
-    if let Ok(output) = output {
-        let content = String::from_utf8_lossy(&output.stdout);
-        let mut current_pkg = String::new();
-        let mut current_ver = String::new();
-        let mut install_date = Option::<String>::None;
-
-        for line in content.lines() {
-            if line.starts_with("Name            :") {
-                // Save previous package if we have install date
-                if let Some(date) = install_date.take() {
-                    if !current_pkg.is_empty() {
-                        packages.push(RecentlyInstalled {
-                            name: current_pkg.clone(),
-                            version: current_ver.clone(),
-                            install_date: date,
-                        });
-                    }
-                }
-                if let Some(name) = line.split(':').nth(1) {
-                    current_pkg = name.trim().to_string();
-                }
-                install_date = None;
-                current_ver.clear();
-            } else if line.starts_with("Version         :") {
-                if let Some(ver) = line.split(':').nth(1) {
-                    current_ver = ver.trim().to_string();
-                }
-            } else if line.starts_with("Install Date   :") {
-                if let Some(date) = line.split(':').nth(1) {
-                    let date_str = date.trim().to_string();
-                    // Parse date and check if within range
-                    if let Ok(_) = parse_install_date(&date_str, days) {
-                        install_date = Some(date_str);
-                    }
-                }
-            }
-        }
-
-        // Don't forget the last package
-        if let Some(date) = install_date {
-            if !current_pkg.is_empty() {
-                packages.push(RecentlyInstalled {
-                    name: current_pkg,
-                    version: current_ver,
-                    install_date: date,
-                });
-            }
-        }
-    }
-
-    packages
-}
-
-fn parse_install_date(date_str: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let _ = date_str;
-    let _ = days;
-    Ok(())
-}
-
-/// Create a system backup file in the user's home directory
-pub fn create_system_backup() -> Result<String, String> {
-    use std::env;
-
-    let home = env::var("HOME").map_err(|_| "Cannot find home directory".to_string())?;
-    let backup_dir = format!("{}/.config/metapak/backups", home);
-
-    // Create backup directory if it doesn't exist
-    std::fs::create_dir_all(&backup_dir)
-        .map_err(|e| format!("Failed to create backup directory: {}", e))?;
-
-    let timestamp = chrono_lite().replace(':', "-").replace(' ', "_");
-    let backup_path = format!("{}/packages_{}.txt", backup_dir, timestamp);
-
-    let path = std::path::Path::new(&backup_path);
-
-    crate::export::export_system_backup(path)
-        .map_err(|e| format!("Failed to create backup: {}", e))?;
-
-    Ok(backup_path)
-}
 
 #[derive(Debug, Clone)]
 pub struct ForeignPackage {
@@ -688,39 +567,3 @@ pub fn get_package_groups() -> Vec<PackageGroup> {
     groups
 }
 
-pub fn get_group_members(group_name: &str) -> Vec<String> {
-    let output = Command::new("pacman")
-        .args(["-Sg", group_name, "--color", "never"])
-        .output();
-
-    if let Ok(output) = output {
-        if output.status.success() {
-            let content = String::from_utf8_lossy(&output.stdout);
-            return content
-                .lines()
-                .next()
-                .map(|l| l.split_whitespace().skip(1).map(String::from).collect())
-                .unwrap_or_default();
-        }
-    }
-    Vec::new()
-}
-
-pub fn get_changelog(pkg_name: &str) -> Result<String, String> {
-    let changelog_paths = [
-        format!("/var/lib/pacman/local/{}/changelog", pkg_name),
-        format!("/usr/share/doc/{}/CHANGELOG", pkg_name),
-        format!("/usr/share/doc/{}/ChangeLog", pkg_name),
-        format!("/usr/share/doc/{}/CHANGES", pkg_name),
-    ];
-
-    for path in changelog_paths {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if !content.is_empty() {
-                return Ok(content);
-            }
-        }
-    }
-
-    Err(format!("No changelog found for {}", pkg_name))
-}

@@ -18,7 +18,7 @@ use crate::search::EnhancedSearch;
 use crate::traits::{PackageProvider, UpdateProvider};
 
 /// Circuit breaker for AUR API
-static AUR_CIRCUIT_BREAKER: Lazy<CircuitBreaker> = Lazy::new(|| CircuitBreaker::new());
+static AUR_CIRCUIT_BREAKER: Lazy<CircuitBreaker> = Lazy::new(CircuitBreaker::new);
 
 /// Circuit breaker for AUR API calls to prevent flooding when service is down
 pub struct CircuitBreaker {
@@ -130,6 +130,7 @@ impl SearchCache {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clear(&self) {
         if let Ok(mut map) = self.map.write() {
             map.clear();
@@ -145,6 +146,12 @@ impl Default for SearchCache {
 
 /// Pacman package provider implementation
 pub struct PacmanProvider;
+
+impl Default for PacmanProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl PacmanProvider {
     pub fn new() -> Self {
@@ -271,6 +278,12 @@ impl PacmanProvider {
 /// AUR package provider implementation
 pub struct AurProvider {
     client: reqwest::Client,
+}
+
+impl Default for AurProvider {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AurProvider {
@@ -443,6 +456,12 @@ pub struct NpmProvider {
     client: reqwest::Client,
 }
 
+impl Default for NpmProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NpmProvider {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
@@ -550,6 +569,12 @@ impl PackageProvider for NpmProvider {
 /// Cargo package provider implementation
 pub struct CargoProvider;
 
+impl Default for CargoProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CargoProvider {
     pub fn new() -> Self {
         Self
@@ -616,7 +641,7 @@ impl PackageProvider for CargoProvider {
 
     async fn is_installed(&self, pkg_name: &str) -> bool {
         let pkg_name = pkg_name.to_string();
-        match tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let output = Command::new("cargo").args(["install", "--list"]).output();
 
             if let Ok(o) = output {
@@ -630,16 +655,19 @@ impl PackageProvider for CargoProvider {
             false
         })
         .await
-        {
-            Ok(res) => res,
-            _ => false,
-        }
+        .unwrap_or_default()
     }
 }
 
 /// Pip package provider implementation
 pub struct PipProvider {
     client: reqwest::Client,
+}
+
+impl Default for PipProvider {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PipProvider {
@@ -707,6 +735,12 @@ impl PackageProvider for PipProvider {
 
 /// Update provider implementation
 pub struct SystemUpdateProvider;
+
+impl Default for SystemUpdateProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SystemUpdateProvider {
     pub fn new() -> Self {
@@ -793,8 +827,6 @@ impl UpdateProvider for SystemUpdateProvider {
                                                 1024 * 1024
                                             } else if size_str.contains("MiB") {
                                                 1024
-                                            } else if size_str.contains("KiB") {
-                                                1
                                             } else {
                                                 1
                                             };
@@ -810,7 +842,6 @@ impl UpdateProvider for SystemUpdateProvider {
                                     } else if info_line.starts_with("Depends On") {
                                         let deps = info_line.split(':').nth(1).unwrap_or("");
                                         pkg.new_dependencies = deps
-                                            .trim()
                                             .split_whitespace()
                                             .map(|s| s.to_string())
                                             .collect();
@@ -908,6 +939,7 @@ impl QuerySpec {
         spec
     }
 
+    #[allow(dead_code)]
     fn matches(&self, pkg: &Package) -> bool {
         if self.source == QuerySourceFilter::Aur && !matches!(pkg.source, PackageSource::Aur) {
             return false;
@@ -943,6 +975,7 @@ impl QuerySpec {
     }
 }
 
+#[allow(dead_code)]
 pub fn command_display(spec: &CommandSpec) -> String {
     format!("{} {}", spec.prog, spec.args.join(" "))
 }
@@ -973,7 +1006,7 @@ pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec
     for (source, names) in to_remove {
         let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
         match source {
-            PackageSource::Pacman | PackageSource::Aur => {
+            PackageSource::Pacman |            PackageSource::Aur => {
                 commands.push(helper.remove_command(&name_refs));
             }
             PackageSource::Npm => {
@@ -991,7 +1024,6 @@ pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec
                 args.extend(names);
                 commands.push(CommandSpec::new_no_sudo("pip", args));
             }
-            _ => {}
         }
     }
 
@@ -1026,7 +1058,6 @@ pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec
                 args.extend(names);
                 commands.push(CommandSpec::new_no_sudo("pip", args));
             }
-            _ => {}
         }
     }
 
@@ -1136,14 +1167,6 @@ impl PackageService {
             let source = match pkg.source {
                 PackageSource::Pacman => "pacman".to_string(),
                 PackageSource::Aur => "aur".to_string(),
-                PackageSource::Apt => "apt".to_string(),
-                PackageSource::Dnf => "dnf".to_string(),
-                PackageSource::Zypper => "zypper".to_string(),
-                PackageSource::Brew => "brew".to_string(),
-                PackageSource::Winget => "winget".to_string(),
-                PackageSource::Chocolatey => "chocolatey".to_string(),
-                PackageSource::Flatpak => "flatpak".to_string(),
-                PackageSource::Snap => "snap".to_string(),
                 PackageSource::Npm => "npm".to_string(),
                 PackageSource::Cargo => "cargo".to_string(),
                 PackageSource::Pip => "pip".to_string(),
@@ -1224,10 +1247,12 @@ impl PackageService {
     }
 
     /// Get detailed list of outdated packages
+    #[allow(dead_code)]
     pub async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>> {
         self.update_provider.get_outdated_packages().await
     }
 
+    #[allow(dead_code)]
     pub async fn get_orphans(&self) -> Result<Vec<String>> {
         tokio::task::spawn_blocking(move || {
             let output = Command::new("pacman")
@@ -1252,6 +1277,7 @@ impl PackageService {
         .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
     }
 
+    #[allow(dead_code)]
     pub async fn remove_orphans(&self, packages: &[String]) -> Result<Vec<CommandSpec>> {
         if packages.is_empty() {
             return Ok(Vec::new());
@@ -1324,7 +1350,7 @@ impl PackageService {
             .lines()
             .rev()
             .take(limit)
-            .filter_map(|line| Self::parse_log_line(line))
+            .filter_map(Self::parse_log_line)
             .collect();
 
         Ok(entries)
@@ -1370,6 +1396,7 @@ pub struct PacnewPacsaveFile {
     pub path: String,
     pub original_name: String,
     pub file_type: PacnewType,
+    #[allow(dead_code)]
     pub modified: Option<std::time::SystemTime>,
 }
 
@@ -1398,6 +1425,7 @@ pub enum LogOperation {
 pub struct AvailableVersion {
     pub version: String,
     pub date: String,
+    #[allow(dead_code)]
     pub repo: String,
 }
 
@@ -1516,10 +1544,13 @@ struct AurPackage {
     #[serde(rename = "PackageBaseID")]
     package_base_id: Option<i32>,
     #[serde(rename = "PackageBase")]
+    #[allow(dead_code)]
     package_base: Option<String>,
     #[serde(rename = "Download")]
+    #[allow(dead_code)]
     download: Option<String>,
     #[serde(rename = "FileSize")]
+    #[allow(dead_code)]
     file_size: Option<i64>,
 }
 
@@ -1580,12 +1611,14 @@ struct PypiInfo {
 }
 
 /// Command builder for safe command execution
+#[allow(dead_code)]
 pub struct SafeCommandBuilder {
     program: String,
     args: Vec<String>,
 }
 
 impl SafeCommandBuilder {
+    #[allow(dead_code)]
     pub fn new(program: &str) -> Self {
         Self {
             program: program.to_string(),
@@ -1594,6 +1627,7 @@ impl SafeCommandBuilder {
     }
 
     /// Sanitize and add an argument
+    #[allow(dead_code)]
     pub fn arg(mut self, arg: &str) -> Self {
         let sanitized = Self::sanitize(arg);
         self.args.push(sanitized);
@@ -1601,6 +1635,7 @@ impl SafeCommandBuilder {
     }
 
     /// Sanitize and add multiple arguments
+    #[allow(dead_code)]
     pub fn args(mut self, args: &[&str]) -> Self {
         for arg in args {
             self.args.push(Self::sanitize(arg));
@@ -1609,6 +1644,7 @@ impl SafeCommandBuilder {
     }
 
     /// Build the command string for display
+    #[allow(dead_code)]
     pub fn build_display(&self) -> String {
         format!("{} {}", self.program, self.args.join(" "))
     }
@@ -1685,7 +1721,7 @@ impl AurHelperCommand {
             "paru" => HelperKind::Paru,
             "yay" => HelperKind::Yay,
             "pacman" => HelperKind::Pacman,
-            "auto" | _ => {
+            _ => {
                 if Self::command_exists("paru") {
                     HelperKind::Paru
                 } else if Self::command_exists("yay") {
@@ -1732,6 +1768,7 @@ impl AurHelperCommand {
         CommandSpec::new("sudo", args)
     }
 
+    #[allow(dead_code)]
     /// Build install command with validation
     pub fn install_command_validated(
         &self,
@@ -1745,6 +1782,7 @@ impl AurHelperCommand {
         Ok(self.install_command(packages))
     }
 
+    #[allow(dead_code)]
     /// Build remove command with validation
     pub fn remove_command_validated(
         &self,
@@ -1771,6 +1809,17 @@ impl AurHelperCommand {
             }
         }
     }
+}
+
+pub fn copy_to_clipboard(text: &str) -> bool {
+    match arboard::Clipboard::new() {
+        Ok(mut clipboard) => clipboard.set_text(text).is_ok(),
+        Err(_) => false,
+    }
+}
+
+pub fn get_aur_clone_command(pkg_name: &str) -> String {
+    format!("git clone https://aur.archlinux.org/{}.git", pkg_name)
 }
 
 #[cfg(test)]
@@ -2139,15 +2188,4 @@ tokio = "1.36.0" # An event-driven, non-blocking I/O platform for writing asynch
         assert_eq!(cmds[0].prog, "npm");
         assert_eq!(cmds[0].args, vec!["uninstall", "-g", "express"]);
     }
-}
-
-pub fn copy_to_clipboard(text: &str) -> bool {
-    match arboard::Clipboard::new() {
-        Ok(mut clipboard) => clipboard.set_text(text).is_ok(),
-        Err(_) => false,
-    }
-}
-
-pub fn get_aur_clone_command(pkg_name: &str) -> String {
-    format!("git clone https://aur.archlinux.org/{}.git", pkg_name)
 }

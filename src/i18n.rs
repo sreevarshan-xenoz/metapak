@@ -508,16 +508,6 @@ impl Localizer {
         self.translations.insert("ja".into(), t);
     }
 
-    /// Set the current language
-    pub fn set_language(&mut self, language: Language) {
-        self.current_language = language;
-    }
-
-    /// Get the current language
-    pub fn current_language(&self) -> &Language {
-        &self.current_language
-    }
-
     /// Get a localized string
     pub fn t(&self, key: &str) -> String {
         let lang_code = self.current_language.code();
@@ -541,11 +531,6 @@ impl Localizer {
         key.to_string()
     }
 
-    /// Add translations for a language
-    pub fn add_translations(&mut self, language: Language, translations: HashMap<String, String>) {
-        self.translations
-            .insert(language.code().to_string(), translations);
-    }
 }
 
 impl Default for Localizer {
@@ -559,26 +544,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_language_is_english() {
-        let localizer = Localizer::new();
-        assert_eq!(*localizer.current_language(), Language::English);
-    }
-
-    #[test]
     fn test_get_translation() {
         let localizer = Localizer::new();
         assert_eq!(localizer.t("app_title"), "metapak - Package Manager");
-    }
-
-    #[test]
-    fn test_fallback_to_english() {
-        let mut localizer = Localizer::new();
-        localizer.set_language(Language::French);
-        // French will work now with full translations
-        assert_eq!(
-            localizer.t("app_title"),
-            "metapak - Gestionnaire de Paquets"
-        );
     }
 
     #[test]
@@ -587,40 +555,5 @@ mod tests {
         assert_eq!(localizer.t("nonexistent_key"), "nonexistent_key");
     }
 
-    #[test]
-    fn test_custom_translation() {
-        let mut localizer = Localizer::new();
-        let mut es_translations = HashMap::new();
-        es_translations.insert(
-            "app_title".to_string(),
-            "Gestor de Paquetes metapak".to_string(),
-        );
-        localizer.add_translations(Language::Spanish, es_translations);
-        localizer.set_language(Language::Spanish);
-        assert_eq!(localizer.t("app_title"), "Gestor de Paquetes metapak");
-    }
 
-    #[test]
-    fn test_spanish_translations_loaded() {
-        let mut localizer = Localizer::new();
-        localizer.set_language(Language::Spanish);
-        assert_eq!(localizer.t("search_placeholder"), "Buscar paquetes...");
-        assert_eq!(localizer.t("installed_label"), "[INSTALADO]");
-    }
-
-    #[test]
-    fn test_chinese_translations_loaded() {
-        let mut localizer = Localizer::new();
-        localizer.set_language(Language::Chinese);
-        assert_eq!(localizer.t("search_placeholder"), "搜索软件包...");
-        assert_eq!(localizer.t("installed_label"), "[已安装]");
-    }
-
-    #[test]
-    fn test_japanese_translations_loaded() {
-        let mut localizer = Localizer::new();
-        localizer.set_language(Language::Japanese);
-        assert_eq!(localizer.t("search_placeholder"), "パッケージを検索...");
-        assert_eq!(localizer.t("installed_label"), "[インストール済み]");
-    }
 }

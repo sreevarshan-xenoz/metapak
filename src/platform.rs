@@ -7,6 +7,7 @@ use std::process::Command;
 
 /// Represents the operating system platform
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Platform {
     Linux,
     Macos,
@@ -219,8 +220,6 @@ mod tests {
 
     #[test]
     fn test_package_manager_detection() {
-        let managers = detect_package_managers();
-        // At least one should be detected or empty list on unsupported platform
-        assert!(managers.len() >= 0);
+        let _managers = detect_package_managers();
     }
 }

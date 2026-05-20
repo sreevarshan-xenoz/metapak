@@ -36,30 +36,27 @@ pub struct Package {
     pub votes: Option<i32>,
     /// AUR: Popularity score
     pub popularity: Option<f32>,
-    /// AUR: First submitted timestamp
-    pub first_submitted: Option<i64>,
     /// AUR: Last updated timestamp
     pub last_updated: Option<i64>,
-    /// AUR: Package base ID
-    pub package_base_id: Option<String>,
     /// AUR: Num votes (alias for votes, different API naming)
     pub num_votes: Option<i32>,
+    /// AUR: First submitted timestamp
+    #[allow(dead_code)]
+    pub first_submitted: Option<i64>,
+    /// AUR: Package base ID
+    #[allow(dead_code)]
+    pub package_base_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PackageSource {
     Pacman,
     Aur,
-    Apt,
-    Dnf,
-    Zypper,
-    Brew,
-    Winget,
-    Chocolatey,
-    Flatpak,
-    Snap,
+    /// NPM (Node.js package registry)
     Npm,
+    /// Cargo (Rust package registry)
     Cargo,
+    /// Pip (Python package index)
     Pip,
 }
 
@@ -68,14 +65,6 @@ impl std::fmt::Display for PackageSource {
         match self {
             PackageSource::Pacman => write!(f, "pacman"),
             PackageSource::Aur => write!(f, "aur"),
-            PackageSource::Apt => write!(f, "apt"),
-            PackageSource::Dnf => write!(f, "dnf"),
-            PackageSource::Zypper => write!(f, "zypper"),
-            PackageSource::Brew => write!(f, "brew"),
-            PackageSource::Winget => write!(f, "winget"),
-            PackageSource::Chocolatey => write!(f, "chocolatey"),
-            PackageSource::Flatpak => write!(f, "flatpak"),
-            PackageSource::Snap => write!(f, "snap"),
             PackageSource::Npm => write!(f, "npm"),
             PackageSource::Cargo => write!(f, "cargo"),
             PackageSource::Pip => write!(f, "pip"),
@@ -90,6 +79,7 @@ impl Default for PackageSource {
 }
 
 impl Package {
+    #[allow(dead_code)]
     pub fn new(name: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -113,13 +103,14 @@ impl Package {
             provides: vec![],
             votes: None,
             popularity: None,
-            first_submitted: None,
             last_updated: None,
-            package_base_id: None,
             num_votes: None,
+            first_submitted: None,
+            package_base_id: None,
         }
     }
 
+    #[allow(dead_code)]
     pub fn format_installed_size(&self) -> String {
         match self.installed_size {
             Some(size) if size > 0 => Self::format_size_kb(size),
@@ -216,18 +207,13 @@ pub struct OutdatedPackage {
     pub is_security_update: bool,
     pub cve_info: Option<String>,
     pub new_dependencies: Vec<String>,
-    pub removed_dependencies: Vec<String>,
-    pub new_opt_depends: Vec<String>,
-    pub removed_opt_depends: Vec<String>,
-    pub conflicts: Vec<String>,
-    pub replaces: Vec<String>,
     pub is_aur: bool,
     pub needs_rebuild: bool,
-    pub changelog: Option<String>,
     pub is_selected: bool,
 }
 
 impl OutdatedPackage {
+    #[allow(dead_code)]
     pub fn new(
         name: String,
         current_version: String,
@@ -243,14 +229,8 @@ impl OutdatedPackage {
             is_security_update: false,
             cve_info: None,
             new_dependencies: Vec::new(),
-            removed_dependencies: Vec::new(),
-            new_opt_depends: Vec::new(),
-            removed_opt_depends: Vec::new(),
-            conflicts: Vec::new(),
-            replaces: Vec::new(),
             is_aur: false,
             needs_rebuild: false,
-            changelog: None,
             is_selected: false,
         }
     }

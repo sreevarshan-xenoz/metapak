@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>metapak — Architecture Visualization</title>
+<style>
+  :root {
+    --bg-primary: #1e1e2e;
+    --bg-secondary: #181825;
+    --bg-surface: #2a2a3c;
+    --bg-card: #252538;
+    --bg-hover: #313145;
+    --text-primary: #cdd6f4;
+    --text-secondary: #a6adc8;
+    --text-muted: #6c7086;
+    --accent-blue: #89b4fa;
+    --accent-green: #a6e3a1;
+    --accent-red: #f38ba8;
+    --accent-yellow: #f9e2af;
+    --accent-peach: #fab387;
+    --accent-mauve: #cba6f7;
+    --accent-teal: #94e2d5;
+    --accent-pink: #f5c2e7;
+    --border: #313244;
+    --glow-blue: rgba(137,180,250,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  .hero {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, #1a1a2e 50%, #16213e 100%);
+    padding: 60px 40px 40px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, var(--glow-blue) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(203,166,247,0.08) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero-title {
+    font-size: 3em;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-mauve));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+    position: relative;
+  }
+  .hero-subtitle {
+    font-size: 1.15em;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    position: relative;
+  }
+  .hero-meta {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .hero-badge {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+  }
+  .hero-badge strong { color: var(--text-primary); }
+
+  .nav {
+    display: flex;
+    gap: 0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    overflow-x: auto;
+    backdrop-filter: blur(12px);
+  }
+  .nav-btn {
+    padding: 14px 22px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .nav-btn:hover { color: var(--text-secondary); background: var(--bg-hover); }
+  .nav-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+
+  .content { display: none; padding: 32px 40px; max-width: 1400px; margin: 0 auto; }
+  .content.active { display: block; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    transition: all 0.2s;
+  }
+  .card:hover { border-color: #45475a; }
+  .card-title {
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--accent-blue);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .count {
+    font-size: 0.75em;
+    background: var(--bg-hover);
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .content { padding: 20px; }
+    .hero { padding: 40px 20px; }
+  }
+
+  .layer-stack { display: flex; flex-direction: column; gap: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .layer {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.2s;
+    cursor: default;
+  }
+  .layer:hover { filter: brightness(1.15); }
+  .layer:nth-child(1) { background: linear-gradient(135deg, #2d1b69, #3b2080); }
+  .layer:nth-child(2) { background: linear-gradient(135deg, #1b3a69, #204a80); }
+  .layer:nth-child(3) { background: linear-gradient(135deg, #1b6945, #208055); }
+  .layer:nth-child(4) { background: linear-gradient(135deg, #69551b, #806620); }
+  .layer:nth-child(5) { background: linear-gradient(135deg, #692b1b, #803520); }
+  .layer:nth-child(6) { background: linear-gradient(135deg, #1b6969, #208080); }
+  .layer:nth-child(7) { background: linear-gradient(135deg, #4a1b69, #5c2080); }
+  .layer:nth-child(8) { background: linear-gradient(135deg, #3d3d3d, #505050); }
+  .layer-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1em; flex-shrink: 0;
+    background: rgba(255,255,255,0.1);
+  }
+  .layer-name { font-weight: 600; min-width: 140px; }
+  .layer-desc { color: rgba(255,255,255,0.8); font-size: 0.88em; }
+  .layer-badge {
+    margin-left: auto; font-size: 0.78em; padding: 3px 10px;
+    border-radius: 10px; background: rgba(255,255,255,0.1); white-space: nowrap;
+  }
+
+  .tree-node { margin: 2px 0; }
+  .tree-toggle {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 6px 10px; border-radius: 6px; transition: 0.15s;
+    width: 100%; background: none; border: none; color: var(--text-primary);
+    font-size: 0.88em; text-align: left;
+  }
+  .tree-toggle:hover { background: var(--bg-hover); }
+  .tree-toggle .arrow {
+    width: 18px; text-align: center; flex-shrink: 0;
+    transition: transform 0.2s; color: var(--text-muted);
+  }
+  .tree-toggle .arrow.open { transform: rotate(90deg); }
+  .tree-toggle .mod-type {
+    font-size: 0.7em; padding: 1px 8px; border-radius: 8px;
+    background: var(--bg-surface); color: var(--text-muted);
+    margin-left: 8px;
+  }
+  .tree-children { margin-left: 28px; }
+  .tree-children.hidden { display: none; }
+
+  .backend-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .backend-card:hover { transform: translateY(-2px); border-color: var(--accent-blue); box-shadow: 0 4px 20px var(--glow-blue); }
+  .backend-icon { font-size: 2em; margin-bottom: 6px; }
+  .backend-name { font-weight: 600; font-size: 0.9em; }
+  .backend-platform { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+
+  .flow-container {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    padding: 20px; background: var(--bg-card); border-radius: 12px;
+    border: 1px solid var(--border); justify-content: center;
+  }
+  .flow-step {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 16px; font-size: 0.82em;
+    text-align: center; min-width: 100px; transition: 0.2s;
+  }
+  .flow-step:hover { border-color: var(--accent-blue); background: var(--bg-hover); }
+  .flow-arrow { color: var(--accent-teal); font-size: 1.2em; }
+  .flow-step .step-label { font-weight: 600; color: var(--accent-blue); font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; }
+  .flow-step .step-desc { color: var(--text-secondary); margin-top: 2px; }
+
+  .dep-graph {
+    width: 100%; height: 500px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 12px;
+    position: relative; overflow: hidden;
+  }
+  .dep-graph svg { width: 100%; height: 100%; }
+
+  .feature-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; transition: all 0.2s;
+  }
+  .feature-card:hover { border-color: var(--accent-mauve); transform: translateY(-1px); }
+  .feature-card h4 { color: var(--accent-mauve); font-size: 0.9em; margin-bottom: 6px; }
+  .feature-card p { color: var(--text-secondary); font-size: 0.84em; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px; text-align: center;
+  }
+  .stat-value { font-size: 2.2em; font-weight: 700; }
+  .stat-label { font-size: 0.78em; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .trail { position: relative; padding-left: 30px; }
+  .trail::before {
+    content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--border);
+  }
+  .trail-item {
+    position: relative; padding: 10px 16px; margin-bottom: 4px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.85em;
+  }
+  .trail-item::before {
+    content: ''; position: absolute; left: -24px; top: 16px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent-blue); border: 2px solid var(--bg-primary);
+  }
+  .trail-item .file { color: var(--accent-yellow); font-weight: 600; }
+  .trail-item .desc { color: var(--text-secondary); }
+
+  .section-title {
+    font-size: 1.5em; font-weight: 700; margin: 32px 0 16px;
+    color: var(--text-primary);
+  }
+  .section-title:first-of-type { margin-top: 0; }
+  .section-subtitle {
+    font-size: 1.1em; font-weight: 600; color: var(--text-secondary);
+    margin: 24px 0 12px;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .card, .stat-card, .feature-card, .backend-card { animation: fadeInUp 0.4s ease-out; }
+
+  .key-list { list-style: none; padding: 0; }
+  .key-list li {
+    padding: 6px 0; border-bottom: 1px solid var(--border);
+    font-size: 0.85em; color: var(--text-secondary);
+  }
+  .key-list li:last-child { border-bottom: none; }
+  .key-list li code {
+    background: var(--bg-surface); padding: 1px 6px; border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.92em;
+    color: var(--accent-green);
+  }
+
+  .mini-tabs { display: flex; gap: 0; margin-bottom: 16px; }
+  .mini-tab {
+    padding: 8px 16px; background: none; border: none;
+    border-bottom: 2px solid transparent; color: var(--text-muted);
+    cursor: pointer; font-size: 0.85em;
+  }
+  .mini-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+  .mini-tab:hover { color: var(--text-secondary); }
+
+  .collapsible-header {
+    cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .collapsible-body { margin-top: 12px; }
+
+  .color-green { color: var(--accent-green); }
+  .color-blue { color: var(--accent-blue); }
+  .color-peach { color: var(--accent-peach); }
+  .color-mauve { color: var(--accent-mauve); }
+  .color-yellow { color: var(--accent-yellow); }
+  .color-teal { color: var(--accent-teal); }
+  .color-red { color: var(--accent-red); }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 6px;
+    font-size: 0.72em; font-weight: 500; margin: 2px;
+  }
+  .tag-core { background: #2d1b69; color: #cba6f7; }
+  .tag-provider { background: #1b3a69; color: #89b4fa; }
+  .tag-infra { background: #1b6945; color: #a6e3a1; }
+  .tag-ui { background: #69551b; color: #f9e2af; }
+  .tag-data { background: #692b1b; color: #f38ba8; }
+
+  .platform-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .platform-row:last-child { border-bottom: none; }
+  .platform-name { min-width: 80px; font-weight: 600; }
+  .platform-backends { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pbm { padding: 3px 10px; border-radius: 6px; font-size: 0.78em; background: var(--bg-surface); border: 1px solid var(--border); }
+  .pbm-native { border-color: var(--accent-blue); color: var(--accent-blue); }
+  .pbm-eco { border-color: var(--accent-yellow); color: var(--accent-yellow); }
+
+  .metric-row { margin: 8px 0; }
+  .metric-label { display: flex; justify-content: space-between; font-size: 0.82em; color: var(--text-secondary); margin-bottom: 4px; }
+  .metric-bar { height: 6px; background: var(--bg-surface); border-radius: 3px; overflow: hidden; }
+  .metric-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-title">metapak</div>
+  <div class="hero-subtitle">Universal Terminal-Based Package Manager — Architecture Visualization</div>
+  <div class="hero-meta">
+    <span class="hero-badge"><strong>Language</strong> Rust (edition 2021)</span>
+    <span class="hero-badge"><strong>TUI</strong> Ratatui + Crossterm</span>
+    <span class="hero-badge"><strong>Async</strong> Tokio</span>
+    <span class="hero-badge"><strong>License</strong> MIT</span>
+    <span class="hero-badge"><strong>Files</strong> 37 source + 4 test</span>
+    <span class="hero-badge"><strong>Providers</strong> 5 package + 2 snapshot</span>
+    <span class="hero-badge"><strong>Platforms</strong> 🐧 🍎 🪟</span>
+  </div>
+</div>
+
+<div class="nav" id="nav">
+  <button class="nav-btn active" data-tab="overview">📊 Overview</button>
+  <button class="nav-btn" data-tab="modules">📁 Module Tree</button>
+  <button class="nav-btn" data-tab="layers">🏗️ Architecture Layers</button>
+  <button class="nav-btn" data-tab="backends">🔌 Providers</button>
+  <button class="nav-btn" data-tab="deps">🔄 Dependency Graph</button>
+  <button class="nav-btn" data-tab="flow">➡️ Data Flow</button>
+  <button class="nav-btn" data-tab="features">✨ Key Features</button>
+  <button class="nav-btn" data-tab="config">⚙️ Configuration</button>
+</div>
+
+<!-- ======== OVERVIEW ======== -->
+<div class="content active" id="tab-overview">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-value color-blue">37</div><div class="stat-label">Source Files</div></div>
+    <div class="stat-card"><div class="stat-value color-green">5</div><div class="stat-label">Package Providers</div></div>
+    <div class="stat-card"><div class="stat-value color-peach">2</div><div class="stat-label">Snapshot Providers</div></div>
+    <div class="stat-card"><div class="stat-value color-mauve">8</div><div class="stat-label">Architecture Layers</div></div>
+    <div class="stat-card"><div class="stat-value color-yellow">3</div><div class="stat-label">Platforms</div></div>
+    <div class="stat-card"><div class="stat-value color-teal">4</div><div class="stat-label">Test Files</div></div>
+  </div>
+
+  <h2 class="section-title">📋 Architecture Pattern</h2>
+  <div class="card">
+    <p style="color: var(--text-secondary); font-size: 0.95em;">
+      <strong style="color: var(--accent-blue);">Provider + Event Loop + Orchestrator</strong> —
+      metapak uses a layered architecture with a central event loop driving TUI rendering,
+      built-in providers for 5 package managers (Pacman, AUR, npm, Cargo, pip) behind a unified
+      <code style="color: var(--accent-green);">PackageProvider</code> trait, and an orchestration layer
+      coordinating parallel operations, transactions, and safety guarantees.
+    </p>
+  </div>
+
+  <h2 class="section-title">🏛️ Architecture Layers</h2>
+  <div class="layer-stack">
+    <div class="layer">
+      <div class="layer-icon">🏁</div>
+      <div class="layer-name">Entry</div>
+      <div class="layer-desc">CLI parsing & initialization — <code>main.rs</code></div>
+      <span class="layer-badge">1 file</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🖥️</div>
+      <div class="layer-name">UI + Input</div>
+      <div class="layer-desc">TUI rendering & keyboard input — <code>ui.rs</code>, <code>input.rs</code>, <code>keybindings.rs</code>, <code>action.rs</code>, <code>ui_utils.rs</code></div>
+      <span class="layer-badge">6 files</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🧠</div>
+      <div class="layer-name">Application State</div>
+      <div class="layer-desc">Central state machine — <code>app.rs</code></div>
+      <span class="layer-badge">1 file</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🔀</div>
+      <div class="layer-name">Orchestration</div>
+      <div class="layer-desc">Package service, parallel exec, operation queue — <code>services.rs</code>, <code>parallel.rs</code>, <code>operation_queue.rs</code></div>
+      <span class="layer-badge">3 files</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">⚙️</div>
+      <div class="layer-name">Business Logic</div>
+      <div class="layer-desc">Search, simulation, transaction mgmt, dependency vis — <code>search.rs</code>, <code>simulation.rs</code>, <code>transaction_manager.rs</code>, <code>dependency_visualization.rs</code></div>
+      <span class="layer-badge">4 files</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🔌</div>
+      <div class="layer-name">Provider Adapters</div>
+      <div class="layer-desc">5 built-in providers in services.rs + 2 snapshot providers — <code>backends/snapshots/*.rs</code></div>
+      <span class="layer-badge">3 files</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🏗️</div>
+      <div class="layer-name">Infrastructure</div>
+      <div class="layer-desc">Command exec, errors, config, telemetry, hooks, notifications, diagnostics, watchdog, security, platform — <code>*.rs</code></div>
+      <span class="layer-badge">10 files</span>
+    </div>
+    <div class="layer">
+      <div class="layer-icon">🔀</div>
+      <div class="layer-name">Cross-cutting</div>
+      <div class="layer-desc">Theme, i18n, animations, constants, utils, transaction history — <code>*.rs</code></div>
+      <span class="layer-badge">6 files</span>
+    </div>
+  </div>
+
+  <h2 class="section-title">🎯 Design Principles</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">🔌 Provider Abstraction</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">All 5 providers implement the unified <code>PackageProvider</code> trait. Providers are built directly into <code>services.rs</code> — no separate backend files needed.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">🛡️ Fail-safe Transactions</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">Snapshot → Execute → Verify → Rollback-on-failure → Post-snapshot pipeline ensures system integrity during package operations.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">⚡ Parallel Async Execution</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">All 5 providers queried concurrently via tokio tasks. Search, install, and remove operations run in parallel.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">⏱️ Debounced Search</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">300ms configurable debounce window prevents flooding providers with intermediate keystrokes during interactive search.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">🔁 Circuit Breaker Pattern</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">AUR API circuit breaker monitors error rates, auto-disables queries on threshold exceeded, and periodically attempts recovery.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">🧩 Separation of Concerns</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">Each source file has a focused responsibility. Clear boundaries between UI, state, orchestration, providers, and infrastructure layers.</p>
+    </div>
+  </div>
+
+  <h2 class="section-title">🛡️ Safety Patterns</h2>
+  <div class="grid-3">
+    <div class="feature-card"><h4>⏰ Command Timeout</h4><p>All subprocess executions have configurable timeout handling</p></div>
+    <div class="feature-card"><h4>🔁 Auto Retry</h4><p>Automatic retry logic for DB locks and dependency errors</p></div>
+    <div class="feature-card"><h4>🛡️ Permission Validation</h4><p>Security checks before subprocess calls</p></div>
+    <div class="feature-card"><h4>🔍 Operation Simulation</h4><p>Dry-run preview before committing changes</p></div>
+    <div class="feature-card"><h4>📸 Snapshot Rollback</h4><p>Filesystem snapshots with automatic rollback on failure</p></div>
+    <div class="feature-card"><h4>🧹 Input Sanitization</h4><p>Sanitized user input for safe subprocess execution</p></div>
+    <div class="feature-card"><h4>📊 Structured Errors</h4><p>Typed error hierarchy for precise error handling</p></div>
+    <div class="feature-card"><h4>🔌 API Circuit Breaker</h4><p>External API protection against outages</p></div>
+    <div class="feature-card"><h4>📋 Transaction History</h4><p>Persistent structured logs of all operations with rotation</p></div>
+  </div>
+</div>
+
+<!-- ======== MODULE TREE ======== -->
+<div class="content" id="tab-modules">
+  <h2 class="section-title">📁 Complete Module Tree</h2>
+  <p style="color:var(--text-muted);margin-bottom:20px;font-size:0.88em;">Click to expand/collapse. Each node shows file type and key types defined within.</p>
+  <div id="module-tree"></div>
+</div>
+
+<!-- ======== ARCHITECTURE LAYERS ======== -->
+<div class="content" id="tab-layers">
+  <h2 class="section-title">🏗️ Detailed Architecture Layers</h2>
+
+  <div class="card">
+    <div class="card-title">🏁 1. Entry Layer</div>
+    <p style="color:var(--text-secondary);font-size:0.88em;">
+      <code style="color:var(--accent-yellow);">src/main.rs</code> — Clap-based CLI argument parsing, config initialization,
+      terminal setup (raw mode, alternate screen), and the main event loop via <code>App::run()</code>.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🖥️ 2. UI + Input Layer</div>
+    <p style="color:var(--text-secondary);font-size:0.88em;margin-bottom:12px;">
+      All TUI rendering and keyboard interaction. The <code>App</code> receives keyboard events,
+      transforms them to <code>Action</code>s via keybindings, and dispatches them.
+    </p>
+    <div class="grid-3">
+      <div><span class="tag tag-ui">ui.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">~1500 lines of Ratatui rendering</span></div>
+      <div><span class="tag tag-ui">input.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Key event parsing</span></div>
+      <div><span class="tag tag-ui">keybindings.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Key → Action mapping</span></div>
+      <div><span class="tag tag-ui">action.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Action enum (all user actions)</span></div>
+      <div><span class="tag tag-ui">ui_utils.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Rendering helpers, progress bars</span></div>
+      <div><span class="tag tag-ui">animations.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Loading spinners, transitions</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🧠 3. Application State Layer</div>
+    <div>
+      <span class="tag tag-core">app.rs</span>
+      <ul class="key-list" style="margin-top:8px;">
+        <li><code>App</code> — Central orchestrator holding all state</li>
+        <li><code>AppMode</code> — Current mode (Search, Browse, Detail, Help, etc.)</li>
+        <li><code>App::run()</code> — Main event loop</li>
+        <li><code>App::handle_action()</code> — Action dispatcher</li>
+        <li><code>App::fetch_all_packages()</code> — async package loading</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔀 4. Orchestration Layer</div>
+    <div class="grid-3">
+      <div>
+        <span class="tag tag-core">services.rs</span>
+        <ul class="key-list" style="margin-top:8px;">
+          <li><code>PackageService</code> — Unified search/install/remove</li>
+          <li>5 built-in providers</li>
+          <li><code>CircuitBreaker</code> for AUR API</li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag tag-core">parallel.rs</span>
+        <ul class="key-list" style="margin-top:8px;">
+          <li><code>run_parallel()</code> — Concurrent tokio tasks</li>
+          <li>Cancellation support</li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag tag-core">operation_queue.rs</span>
+        <ul class="key-list" style="margin-top:8px;">
+          <li><code>OperationQueue</code> — Batch operation orchestration</li>
+          <li><code>OperationPreview</code> — Summary generation</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">⚙️ 5. Business Logic Layer</div>
+    <div class="grid-2">
+      <div>
+        <span class="tag tag-core">search.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Fuzzy matching, query parsing, scoring</span>
+        <ul class="key-list" style="margin-top:6px;">
+          <li><code>EnhancedSearch</code>, <code>SearchQuery</code>, <code>FuzzySearch</code></li>
+          <li>AND/OR/NOT operators + filters</li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag tag-core">simulation.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Dry-run simulation</span>
+        <ul class="key-list" style="margin-top:6px;">
+          <li><code>PackageSimulator</code>, <code>simulate_upgrade()</code></li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag tag-core">transaction_manager.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Safe transactional pipeline</span>
+        <ul class="key-list" style="margin-top:6px;">
+          <li><code>TransactionManager</code>, <code>TransactionConfig</code></li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag tag-core">dependency_visualization.rs</span> <span style="color:var(--text-secondary);font-size:0.85em;">Interactive dependency tree</span>
+        <ul class="key-list" style="margin-top:6px;">
+          <li><code>DependencyVisualizer</code>, <code>DependencyNode</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔌 6. Provider Adapters Layer</div>
+    <p style="color:var(--text-secondary);font-size:0.88em;margin-bottom:12px;">
+      5 package providers built into <code>services.rs</code> + 2 snapshot providers, all behind trait interfaces.
+      <code>traits.rs</code> defines <code>PackageProvider</code> (search, is_installed) and
+      <code>UpdateProvider</code> (check_updates, get_outdated_packages).
+    </p>
+    <div class="grid-3" style="margin-top:8px;">
+      <div><span class="tag tag-provider">PacmanProvider</span> <span style="font-size:0.78em;color:var(--text-muted);">Arch Linux + AUR RPC</span></div>
+      <div><span class="tag tag-provider">AurProvider</span> <span style="font-size:0.78em;color:var(--text-muted);">AUR API (reqwest)</span></div>
+      <div><span class="tag tag-provider">NpmProvider</span> <span style="font-size:0.78em;color:var(--text-muted);">npm registry</span></div>
+      <div><span class="tag tag-provider">CargoProvider</span> <span style="font-size:0.78em;color:var(--text-muted);">crates.io</span></div>
+      <div><span class="tag tag-provider">PipProvider</span> <span style="font-size:0.78em;color:var(--text-muted);">PyPI</span></div>
+      <div><span class="tag tag-provider">BtrfsSnapshot</span> <span style="font-size:0.78em;color:var(--text-muted);">btrfs / snapper</span></div>
+      <div><span class="tag tag-provider">TimeshiftSnapshot</span> <span style="font-size:0.78em;color:var(--text-muted);">timeshift CLI</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🏗️ 7. Infrastructure Layer</div>
+    <div class="grid-3">
+      <div><span class="tag tag-infra">command.rs</span> Safe subprocess execution with timeout</div>
+      <div><span class="tag tag-infra">errors.rs</span> <code>MetapakError</code> enum hierarchy</div>
+      <div><span class="tag tag-infra">config.rs</span> TOML config with migration</div>
+      <div><span class="tag tag-infra">hooks.rs</span> Pre/post operation shell hooks</div>
+      <div><span class="tag tag-infra">notifications.rs</span> Desktop notifications</div>
+      <div><span class="tag tag-infra">telemetry.rs</span> Structured logging with rotation</div>
+      <div><span class="tag tag-infra">diagnostics.rs</span> Health checks & reports</div>
+      <div><span class="tag tag-infra">watchdog.rs</span> Health monitoring + disk checks</div>
+      <div><span class="tag tag-infra">security.rs</span> Permission & input validation</div>
+      <div><span class="tag tag-infra">platform.rs</span> OS/distribution detection</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔀 8. Cross-cutting Layer</div>
+    <div class="grid-3">
+      <div><span class="tag tag-data">theme.rs</span> Catppuccin Mocha/Latte themes</div>
+      <div><span class="tag tag-data">i18n.rs</span> Locale auto-detection, translated UI</div>
+      <div><span class="tag tag-data">constants.rs</span> App-wide constants</div>
+      <div><span class="tag tag-data">utils.rs</span> Generic helper functions</div>
+      <div><span class="tag tag-data">animations.rs</span> UI animation utilities</div>
+      <div><span class="tag tag-data">transaction_history.rs</span> Operation log</div>
+    </div>
+  </div>
+
+  <h2 class="section-title" style="margin-top:40px;">🧬 Trait Hierarchy</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title color-blue">PackageProvider</div>
+      <p style="color:var(--text-secondary);font-size:0.82em;">Methods: <code>search()</code>, <code>is_installed()</code></p>
+      <p style="color:var(--text-muted);font-size:0.78em;margin-top:6px;">Implemented by 5 providers</p>
+    </div>
+    <div class="card">
+      <div class="card-title color-green">UpdateProvider</div>
+      <p style="color:var(--text-secondary);font-size:0.82em;">Methods: <code>check_updates()</code>, <code>get_outdated_packages()</code></p>
+      <p style="color:var(--text-muted);font-size:0.78em;margin-top:6px;">SystemUpdateProvider</p>
+    </div>
+    <div class="card">
+      <div class="card-title color-peach">SnapshotProvider</div>
+      <p style="color:var(--text-secondary);font-size:0.82em;">Methods: <code>create_snapshot()</code>, <code>list_snapshots()</code>, <code>rollback_snapshot()</code>, <code>is_available()</code></p>
+      <p style="color:var(--text-muted);font-size:0.78em;margin-top:6px;">BtrfsSnapshot, TimeshiftSnapshot</p>
+    </div>
+  </div>
+</div>
+
+<!-- ======== BACKENDS / PROVIDERS ======== -->
+<div class="content" id="tab-backends">
+  <h2 class="section-title">🔌 Provider Matrix</h2>
+  <p style="color:var(--text-muted);margin-bottom:20px;font-size:0.88em;">
+    5 built-in package providers + 2 snapshot providers. Package providers are inlined in <code>services.rs</code>; snapshot providers are in <code>backends/snapshots/</code>.
+  </p>
+
+  <div class="card">
+    <div class="card-title">🐧 Linux</div>
+    <div class="platform-row">
+      <span class="platform-name color-blue">Native</span>
+      <div class="platform-backends">
+        <span class="pbm pbm-native">Pacman (Arch + AUR)</span>
+      </div>
+    </div>
+    <div class="platform-row">
+      <span class="platform-name color-yellow">Ecosystem</span>
+      <div class="platform-backends">
+        <span class="pbm pbm-eco">npm (Node.js)</span>
+        <span class="pbm pbm-eco">Cargo (Rust)</span>
+        <span class="pbm pbm-eco">pip (Python)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🍎 macOS</div>
+    <div class="platform-row">
+      <span class="platform-name color-yellow">Ecosystem</span>
+      <div class="platform-backends">
+        <span class="pbm pbm-eco">npm (Node.js)</span>
+        <span class="pbm pbm-eco">Cargo (Rust)</span>
+        <span class="pbm pbm-eco">pip (Python)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🪟 Windows</div>
+    <div class="platform-row">
+      <span class="platform-name color-yellow">Ecosystem</span>
+      <div class="platform-backends">
+        <span class="pbm pbm-eco">npm (Node.js)</span>
+        <span class="pbm pbm-eco">Cargo (Rust)</span>
+        <span class="pbm pbm-eco">pip (Python)</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">📸 Snapshot Providers</h2>
+  <div class="grid-4">
+    <div class="backend-card">
+      <div class="backend-icon">📦</div>
+      <div class="backend-name">Btrfs</div>
+      <div class="backend-platform">btrfs / snapper</div>
+    </div>
+    <div class="backend-card">
+      <div class="backend-icon">⏱️</div>
+      <div class="backend-name">Timeshift</div>
+      <div class="backend-platform">timeshift CLI</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">🧪 Test Files</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">src/app_test.rs</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">Application state unit tests</p>
+    </div>
+    <div class="card">
+      <div class="card-title">tests/robustness_tests.rs</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">System robustness integration tests</p>
+    </div>
+    <div class="card">
+      <div class="card-title">tests/simulation_tests.rs</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">Operation simulation tests</p>
+    </div>
+    <div class="card">
+      <div class="card-title">tests/btrfs_snapshot_tests.rs</div>
+      <p style="color:var(--text-secondary);font-size:0.85em;">Btrfs snapshot tests</p>
+    </div>
+  </div>
+
+  <h2 class="section-title">✅ CI Pipeline</h2>
+  <div class="card">
+    <div class="flow-container" style="padding:16px;">
+      <div class="flow-step"><div class="step-label">Step 1</div><div class="step-desc"><code>cargo fmt --check</code></div></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step"><div class="step-label">Step 2</div><div class="step-desc"><code>cargo clippy --all-targets -- -D warnings</code></div></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step"><div class="step-label">Step 3</div><div class="step-desc"><code>cargo test</code></div></div>
+    </div>
+    <p style="color:var(--text-muted);font-size:0.82em;margin-top:12px;">Runs on push/PR across ubuntu-latest, macos-latest, windows-latest</p>
+  </div>
+</div>
+
+<!-- ======== DEPENDENCY GRAPH ======== -->
+<div class="content" id="tab-deps">
+  <h2 class="section-title">🔄 Module Dependency Graph</h2>
+  <p style="color:var(--text-muted);margin-bottom:16px;font-size:0.88em;">
+    Interactive force-directed graph showing relationships between modules. Hover for details.
+  </p>
+  <div class="dep-graph" id="dep-graph"></div>
+  <div id="dep-tooltip" style="position:fixed;background:var(--bg-card);border:1px solid var(--accent-blue);border-radius:8px;padding:8px 14px;font-size:0.82em;pointer-events:none;display:none;z-index:1000;"></div>
+</div>
+
+<!-- ======== DATA FLOW ======== -->
+<div class="content" id="tab-flow">
+  <h2 class="section-title">➡️ Search Data Flow</h2>
+  <div class="flow-container" style="justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;padding:24px;">
+    <div class="flow-step"><div class="step-label">⌨️ Input</div><div class="step-desc">User types query</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">📋 Action</div><div class="step-desc">Action::Search</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">⏱️ Debounce</div><div class="step-desc">300ms timer</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">🔀 Service</div><div class="step-desc">PackageService</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">⚡ Parallel</div><div class="step-desc">5 providers</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">🔌 Providers</div><div class="step-desc">subprocess / HTTP</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">🔍 Search</div><div class="step-desc">Fuzzy + Query syntax</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">📊 Render</div><div class="step-desc">TUI list</div></div>
+  </div>
+
+  <h2 class="section-title">➡️ Install / Remove Data Flow</h2>
+  <div class="flow-container" style="justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;padding:24px;">
+    <div class="flow-step"><div class="step-label">🎯 Action</div><div class="step-desc">Install/Remove</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">📋 Queue</div><div class="step-desc">OperationQueue</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">🔍 Simulate</div><div class="step-desc">Dry-run preview</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">✅ Confirm</div><div class="step-desc">User review</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">🪝 Hooks</div><div class="step-desc">Pre-hooks</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">📸 Snapshot</div><div class="step-desc">Pre-snapshot</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">⚡ Execute</div><div class="step-desc">Install/Remove</div></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><div class="step-label">✅ Verify</div><div class="step-desc">Success check</div></div>
+  </div>
+  <div class="flow-container" style="justify-content:center;padding:16px;margin-top:12px;">
+    <div class="flow-step" style="border-color:var(--accent-green);">
+      <div class="step-label" style="color:var(--accent-green);">✅ On Success</div>
+      <div class="step-desc">Post-snapshot → Post-hooks → Notifications → Telemetry → History</div>
+    </div>
+    <span class="flow-arrow">|</span>
+    <div class="flow-step" style="border-color:var(--accent-red);">
+      <div class="step-label" style="color:var(--accent-red);">❌ On Failure</div>
+      <div class="step-desc">Rollback snapshot → Error reporting → Notifications → Telemetry</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">📂 Data Models</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">📦 <code>Package</code></div>
+      <ul class="key-list">
+        <li><code>name: String</code> — Package name</li>
+        <li><code>version: String</code> — Version string</li>
+        <li><code>description: String</code> — Human-readable description</li>
+        <li><code>source: PackageSource</code> — Pacman/Aur/Npm/Cargo/Pip</li>
+        <li><code>is_installed/is_outdated</code> — Status flags</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">🔄 <code>Action</code></div>
+      <ul class="key-list">
+        <li><code>Enum of all possible user actions</code></li>
+        <li><code>Search(String), Install(Vec), Remove(Vec)...</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 class="section-title">📝 Key Types by Module</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title color-blue">traits.rs</div>
+      <ul class="key-list">
+        <li><code>PackageProvider</code> — Core provider trait</li>
+        <li><code>UpdateProvider</code> — Update check trait</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-green">errors.rs</div>
+      <ul class="key-list">
+        <li><code>AppError</code> — Typed error enum</li>
+        <li><code>Result&lt;T&gt;</code> — Alias</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-peach">config.rs</div>
+      <ul class="key-list">
+        <li><code>AppConfig</code> — Main config struct</li>
+        <li><code>HooksConfig</code>, <code>TelemetryConfig</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-yellow">search.rs</div>
+      <ul class="key-list">
+        <li><code>EnhancedSearch</code> — Query parsing & filtering</li>
+        <li><code>SearchQuery</code> — Token-based search</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-teal">services.rs</div>
+      <ul class="key-list">
+        <li><code>PackageService</code> — Main service</li>
+        <li><code>PacmanProvider</code>, <code>AurProvider</code>, etc.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-mauve">watchdog.rs</div>
+      <ul class="key-list">
+        <li><code>HealthWatchdog</code> — System health monitor</li>
+        <li><code>DiskHealth</code>, <code>MirrorHealth</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== KEY FEATURES ======== -->
+<div class="content" id="tab-features">
+  <h2 class="section-title">✨ All Features</h2>
+  <div class="grid-3">
+    <div class="feature-card"><h4>🔍 Unified Search</h4><p>Queries 5 package providers simultaneously, merges results, filters with query syntax (AND/OR/NOT/repo:/aur:)</p></div>
+    <div class="feature-card"><h4>📦 Batch Operations</h4><p>Select multiple packages with Tab, install/remove in one batched transaction</p></div>
+    <div class="feature-card"><h4>🔬 Simulation Mode</h4><p>Dry-run to preview what operations would do before committing</p></div>
+    <div class="feature-card"><h4>📸 Snapshot Rollback</h4><p>Btrfs/Timeshift snapshot before operations, automatic rollback on failure</p></div>
+    <div class="feature-card"><h4>🔁 Circuit Breaker</h4><p>AUR API protection: disables queries on error threshold exceeded, periodic recovery attempts</p></div>
+    <div class="feature-card"><h4>🛡️ Transaction Safety</h4><p>Pre-check → snapshot → execute → verify → rollback-on-failure → post-snapshot pipeline</p></div>
+    <div class="feature-card"><h4>🩺 Health Dashboard</h4><p>Disk space, package manager status, mirror connectivity checks</p></div>
+    <div class="feature-card"><h4>🌳 Dependency Visualization</h4><p>Interactive dependency tree viewer with forward/reverse dependency traversal</p></div>
+    <div class="feature-card"><h4>🎨 Theme System</h4><p>Catppuccin Mocha (dark) / Latte (light) runtime theme switching</p></div>
+    <div class="feature-card"><h4>🌐 i18n</h4><p>Locale auto-detection with translated UI strings and fallback to English</p></div>
+    <div class="feature-card"><h4>🪝 Pre/Post Hooks</h4><p>User-configurable shell commands executed before/after package operations</p></div>
+    <div class="feature-card"><h4>📊 Telemetry Logging</h4><p>Structured operation logs with auto-rotation and configurable verbosity</p></div>
+    <div class="feature-card"><h4>🔔 Desktop Notifications</h4><p>System notifications on operation completion (success/failure)</p></div>
+    <div class="feature-card"><h4>⏱️ Debounced Search</h4><p>300ms configurable debounce delay before executing search</p></div>
+    <div class="feature-card"><h4>🔄 Async Operations</h4><p>All provider operations run concurrently via tokio tasks with cancellation</p></div>
+    <div class="feature-card"><h4>📋 Transaction History</h4><p>Persistent structured log of all package operations with rotation</p></div>
+    <div class="feature-card"><h4>⌨️ Keyboard-driven</h4><p>Full keyboard navigation with configurable keybindings</p></div>
+  </div>
+</div>
+
+<!-- ======== CONFIG ======== -->
+<div class="content" id="tab-config">
+  <h2 class="section-title">⚙️ Configuration</h2>
+  <div class="card">
+    <p style="color:var(--text-secondary);font-size:0.88em;">
+      <strong>Path:</strong> <code style="color:var(--accent-yellow);">~/.config/metapak/config.toml</code><br>
+      <strong>Format:</strong> TOML<br>
+      <strong>Migration:</strong> Auto-migration from legacy <code>~/.config/arch-tui/config.toml</code>
+    </p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title color-blue">[general]</div>
+      <ul class="key-list">
+        <li><code>debounce_delay_ms</code> — <span style="color:var(--text-muted);">u64, default 300</span></li>
+        <li><code>max_results</code> — <span style="color:var(--text-muted);">usize, default 100</span></li>
+        <li><code>refresh_rate</code> — <span style="color:var(--text-muted);">u64, default 60</span></li>
+        <li><code>cache_ttl_seconds</code> — <span style="color:var(--text-muted);">u64, default 60</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-green">[search]</div>
+      <ul class="key-list">
+        <li><code>cache_ttl_seconds</code> — <span style="color:var(--text-muted);">u64, default 60</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-peach">[snapshot]</div>
+      <ul class="key-list">
+        <li><code>enabled</code> — <span style="color:var(--text-muted);">bool</span></li>
+        <li><code>provider</code> — <span style="color:var(--text-muted);">btrfs | timeshift</span></li>
+        <li><code>create_before</code> / <code>create_after</code> — <span style="color:var(--text-muted);">bool</span></li>
+        <li><code>max_snapshots</code> — <span style="color:var(--text-muted);">u32</span></li>
+        <li><code>snapshot_prefix</code> — <span style="color:var(--text-muted);">String</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-yellow">[hooks]</div>
+      <ul class="key-list">
+        <li><code>pre_install</code>, <code>post_install</code> — <span style="color:var(--text-muted);">Vec&lt;String&gt;</span></li>
+        <li><code>pre_remove</code>, <code>post_remove</code> — <span style="color:var(--text-muted);">Vec&lt;String&gt;</span></li>
+        <li><code>pre_update</code>, <code>post_update</code> — <span style="color:var(--text-muted);">Vec&lt;String&gt;</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-teal">[telemetry]</div>
+      <ul class="key-list">
+        <li><code>enabled</code> — <span style="color:var(--text-muted);">bool</span></li>
+        <li><code>log_dir</code> — <span style="color:var(--text-muted);">String</span></li>
+        <li><code>max_log_files</code> — <span style="color:var(--text-muted);">u32</span></li>
+        <li><code>max_log_size_mb</code> — <span style="color:var(--text-muted);">u32</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title color-red">[color]</div>
+      <ul class="key-list">
+        <li><code>theme</code> — <span style="color:var(--text-muted);">'mocha' | 'latte'</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 class="section-title">📋 Module Descriptions</h2>
+  <div class="trail" id="trail-list"></div>
+</div>
+
+<script>
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'deps') setTimeout(renderGraph, 100);
+  });
+});
+
+const moduleData = [
+  {
+    name: 'src/main.rs', type: 'binary entry', icon: '🏁',
+    desc: 'CLI parsing (clap), config init, terminal setup, App::run() event loop'
+  }, {
+    name: 'src/lib.rs', type: 'module root', icon: '📦',
+    desc: 'Declares all public modules, re-exports library entry point'
+  }, {
+    name: 'src/app.rs', type: 'core orchestrator', icon: '🧠',
+    desc: 'Central App state, AppMode, SearchState, PackageListState. Main event loop and action dispatcher.',
+    children: [{ name: 'App', type: 'struct' }, { name: 'AppMode', type: 'enum' }, { name: 'App::run()', type: 'fn' }, { name: 'App::handle_action()', type: 'fn' }]
+  }, {
+    name: 'src/ui.rs', type: 'rendering (~1500 loc)', icon: '🖥️',
+    desc: 'All TUI rendering: layouts, widgets, status bars, help overlays, popups, system views, dependency trees, health dashboard',
+    children: [{ name: 'Ui', type: 'struct' }, { name: 'draw_main_layout()', type: 'fn' }, { name: 'draw_package_list()', type: 'fn' }, { name: 'draw_detail_pane()', type: 'fn' }, { name: 'draw_help_overlay()', type: 'fn' }]
+  }, {
+    name: 'src/services.rs', type: 'providers + orchestration', icon: '🔀',
+    desc: 'PackageService with 5 built-in providers (Pacman, AUR, npm, Cargo, pip). CircuitBreaker, CommandSpec, AurHelperCommand.',
+    children: [{ name: 'PackageService', type: 'struct' }, { name: 'PacmanProvider', type: 'struct' }, { name: 'AurProvider', type: 'struct' }, { name: 'NpmProvider', type: 'struct' }, { name: 'CargoProvider', type: 'struct' }, { name: 'PipProvider', type: 'struct' }, { name: 'CircuitBreaker', type: 'struct' }, { name: 'AurHelperCommand', type: 'struct' }]
+  }, {
+    name: 'src/backends/', type: 'snapshot providers', icon: '🔌',
+    desc: '2 snapshot providers: Btrfs, Timeshift',
+    children: [
+      { name: 'mod.rs — re-exports snapshots', type: 'registry' },
+      { name: 'snapshots/mod.rs — Btrfs + Timeshift', type: 'provider' },
+      { name: 'snapshots/btrfs.rs — Btrfs snapshot', type: 'provider' },
+      { name: 'snapshots/timeshift.rs — Timeshift snapshot', type: 'provider' }
+    ]
+  }, {
+    name: 'src/traits.rs', type: 'core interfaces', icon: '🧬',
+    desc: 'PackageProvider trait (search, is_installed), UpdateProvider trait (check_updates, get_outdated_packages), PackageSimulator',
+    children: [{ name: 'PackageProvider', type: 'trait' }, { name: 'UpdateProvider', type: 'trait' }, { name: 'PackageSimulator', type: 'trait' }]
+  }, {
+    name: 'src/models.rs', type: 'data models', icon: '📊',
+    desc: 'Package, OutdatedPackage, PackageSource (Pacman/Aur/Npm/Cargo/Pip)',
+    children: [{ name: 'Package', type: 'struct' }, { name: 'OutdatedPackage', type: 'struct' }, { name: 'PackageSource', type: 'enum' }]
+  }, {
+    name: 'src/config.rs', type: 'configuration', icon: '⚙️',
+    desc: 'TOML config loading, legacy migration, AppConfig with hooks/telemetry/snapshot/theme',
+    children: [{ name: 'AppConfig', type: 'struct' }, { name: 'HooksConfig', type: 'struct' }, { name: 'TelemetryConfig', type: 'struct' }, { name: 'SnapshotConfig', type: 'struct' }]
+  }, {
+    name: 'src/action.rs', type: 'action enum', icon: '⚡',
+    desc: 'Action enum — all user-triggered actions (Search, Install, Remove, Update, Quit, etc.)',
+    children: [{ name: 'Action', type: 'enum' }]
+  }, {
+    name: 'src/errors.rs', type: 'error handling', icon: '❌',
+    desc: 'AppError enum (Config, Io, Parse, Backend, Network, Permission, Snapshot, etc.)',
+    children: [{ name: 'AppError', type: 'enum' }, { name: 'Result<T>', type: 'alias' }]
+  }, {
+    name: 'src/input.rs', type: 'input handling', icon: '⌨️',
+    desc: 'Keyboard event parsing, normal/search mode input, cross-term event normalization',
+    children: [{ name: 'InputHandler', type: 'struct' }, { name: 'Key', type: 'enum' }, { name: 'parse_event()', type: 'fn' }]
+  }, {
+    name: 'src/keybindings.rs', type: 'key bindings', icon: '🎮',
+    desc: 'Key → Action mapping. Default bindings: / ? q Tab Enter Esc j k d v f s u i'
+  }, {
+    name: 'src/search.rs', type: 'search engine', icon: '🔍',
+    desc: 'EnhancedSearch: fuzzy matching, query parsing (AND/OR/NOT/filters), scoring, deduplication',
+    children: [{ name: 'EnhancedSearch', type: 'struct' }, { name: 'FuzzySearch', type: 'struct' }, { name: 'SearchQuery', type: 'struct' }]
+  }, {
+    name: 'src/parallel.rs', type: 'parallel execution', icon: '⚡',
+    desc: 'Async concurrent provider operations via tokio tasks with cancellation',
+    children: [{ name: 'run_parallel()', type: 'fn' }, { name: 'ParallelContext', type: 'struct' }]
+  }, {
+    name: 'src/operation_queue.rs', type: 'operation queue', icon: '📋',
+    desc: 'Batch operation orchestration, dependency resolution, preview generation',
+    children: [{ name: 'OperationQueue', type: 'struct' }, { name: 'OperationPreview', type: 'struct' }]
+  }, {
+    name: 'src/simulation.rs', type: 'dry-run', icon: '🔬',
+    desc: 'Pre-execution simulation with PackageSimulator',
+    children: [{ name: 'PackageSimulator', type: 'trait' }, { name: 'simulate_upgrade()', type: 'fn' }]
+  }, {
+    name: 'src/transaction_manager.rs', type: 'transaction mgmt', icon: '🛡️',
+    desc: 'Pre-snapshot → execute → verify → rollback → post-snapshot pipeline',
+    children: [{ name: 'TransactionManager', type: 'struct' }, { name: 'TransactionConfig', type: 'struct' }]
+  }, {
+    name: 'src/transaction_history.rs', type: 'history log', icon: '📜',
+    desc: 'Persistent structured logs of all operations with rotation'
+  }, {
+    name: 'src/hooks.rs', type: 'hook system', icon: '🪝',
+    desc: 'Pre/post execution shell hooks, conditional hooks per operation type'
+  }, {
+    name: 'src/notifications.rs', type: 'notifications', icon: '🔔',
+    desc: 'Desktop notification dispatch via notify-rust or platform-native'
+  }, {
+    name: 'src/export.rs', type: 'export (deprecated)', icon: '📤',
+    desc: 'Historically exported package lists. Module retained for compatibility, contents removed.'
+  }, {
+    name: 'src/diagnostics.rs', type: 'health checks', icon: '🩺',
+    desc: 'Disk space, package manager status, recently installed tracking'
+  }, {
+    name: 'src/dependency_visualization.rs', type: 'dep viewer', icon: '🌳',
+    desc: 'Interactive dependency tree: collapsible graph, forward/reverse deps',
+    children: [{ name: 'DependencyVisualizer', type: 'struct' }, { name: 'DependencyNode', type: 'struct' }]
+  }, {
+    name: 'src/watchdog.rs', type: 'health monitor', icon: '🔁',
+    desc: 'HealthWatchdog: disk usage, mirror latency, GPG key verification, periodic checks',
+    children: [{ name: 'HealthWatchdog', type: 'struct' }, { name: 'DiskHealth', type: 'struct' }, { name: 'MirrorHealth', type: 'struct' }]
+  }, {
+    name: 'src/telemetry.rs', type: 'telemetry', icon: '📊',
+    desc: 'Structured operation logging with auto-rotation, configurable verbosity'
+  }, {
+    name: 'src/theme.rs', type: 'theme system', icon: '🎨',
+    desc: 'Catppuccin Mocha (dark) and Latte (light) themes with full color palette, runtime switching',
+    children: [{ name: 'Theme', type: 'struct' }, { name: 'ThemePreset', type: 'enum' }]
+  }, {
+    name: 'src/i18n.rs', type: 'internationalization', icon: '🌐',
+    desc: 'Multi-language support, locale auto-detection, translation tables'
+  }, {
+    name: 'src/ui_utils.rs', type: 'UI helpers', icon: '🔧',
+    desc: 'Truncated text, styled blocks, progress bars, scrollable lists, format helpers'
+  }, {
+    name: 'src/animations.rs', type: 'animations', icon: '✨',
+    desc: 'Loading spinners, progress animations, transition effects'
+  }, {
+    name: 'src/security.rs', type: 'security', icon: '🛡️',
+    desc: 'Command path verification, permission checks'
+  }, {
+    name: 'src/platform.rs', type: 'platform detection', icon: '💻',
+    desc: 'OS/distribution detection. Identifies Linux/macOS/Windows + distro',
+    children: [{ name: 'Platform', type: 'struct' }, { name: 'OS', type: 'enum' }, { name: 'Distribution', type: 'enum' }]
+  }, {
+    name: 'src/constants.rs', type: 'constants', icon: '📏',
+    desc: 'APP_NAME, CONFIG_DIR, DEBOUNCE_DELAY_MS, MAX_SEARCH_RESULTS, network config, search limits'
+  }, {
+    name: 'src/utils.rs', type: 'utilities', icon: '🔧',
+    desc: 'Generic helpers: formatting, path utils, time formatting'
+  }
+];
+
+function renderTree() {
+  const container = document.getElementById('module-tree');
+  let html = '';
+  moduleData.forEach((mod, i) => {
+    const hasChildren = mod.children && mod.children.length > 0;
+    html += `<div class="tree-node">`;
+    html += `<button class="tree-toggle" onclick="toggleTree(this)" data-idx="${i}">`;
+    html += `<span class="arrow ${hasChildren ? '' : 'open'}">${hasChildren ? '▶' : ' '}</span>`;
+    html += `${mod.icon} <strong>${mod.name}</strong>`;
+    html += `<span class="mod-type">${mod.type}</span>`;
+    html += `</button>`;
+    if (hasChildren) {
+      html += `<div class="tree-children" id="tree-children-${i}" style="display:none">`;
+      mod.children.forEach(child => {
+        html += `<div class="tree-node" style="padding:3px 10px;font-size:0.82em;color:var(--text-secondary);">`;
+        html += `<code style="color:${child.type === 'enum' ? 'var(--accent-peach)' : child.type === 'struct' ? 'var(--accent-green)' : child.type === 'trait' ? 'var(--accent-mauve)' : 'var(--accent-blue)'}">${child.name}</code>`;
+        html += ` <span style="color:var(--text-muted);font-size:0.85em;">— ${child.type}</span>`;
+        html += `</div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+}
+
+function toggleTree(btn) {
+  const span = btn.querySelector('.arrow');
+  const children = document.getElementById('tree-children-' + btn.dataset.idx);
+  if (children) {
+    const isOpen = children.style.display !== 'none';
+    children.style.display = isOpen ? 'none' : 'block';
+    span.classList.toggle('open', !isOpen);
+  }
+}
+
+const trailData = [
+  { file: 'main.rs', desc: 'CLI entry — arg parsing (clap), config init, terminal setup' },
+  { file: 'lib.rs', desc: 'Module root — declares all public modules' },
+  { file: 'app.rs', desc: 'Core state machine — event loop, action dispatch, App::run()' },
+  { file: 'ui.rs', desc: 'TUI rendering — Ratatui widgets, layouts (~1500 lines)' },
+  { file: 'services.rs', desc: 'Package service + 5 providers — Pacman, AUR, npm, Cargo, pip' },
+  { file: 'traits.rs', desc: 'Core interfaces — PackageProvider + UpdateProvider traits' },
+  { file: 'models.rs', desc: 'Data models — Package, PackageSource, OutdatedPackage' },
+  { file: 'search.rs', desc: 'Search engine — EnhancedSearch with query syntax' },
+  { file: 'operation_queue.rs', desc: 'Operation queue — batch ops, preview generation' },
+  { file: 'transaction_manager.rs', desc: 'Transaction safety — snapshot/execute/rollback pipeline' },
+  { file: 'transaction_history.rs', desc: 'History log — persistent operation records' },
+  { file: 'simulation.rs', desc: 'Dry-run — PackageSimulator' },
+  { file: 'config.rs', desc: 'Configuration — TOML loading with legacy migration' },
+  { file: 'errors.rs', desc: 'Error handling — AppError type hierarchy' },
+  { file: 'hooks.rs', desc: 'Hook system — pre/post shell command execution' },
+  { file: 'notifications.rs', desc: 'Desktop notifications on operation completion' },
+  { file: 'diagnostics.rs', desc: 'Health checks — disk, recently installed tracking' },
+  { file: 'watchdog.rs', desc: 'Health watchdog — disk usage, mirror latency checks' },
+  { file: 'telemetry.rs', desc: 'Telemetry — structured logging with rotation' },
+  { file: 'export.rs', desc: 'Export — deprecated/empty, kept for compatibility' },
+  { file: 'parallel.rs', desc: 'Parallel exec — tokio concurrent provider operations' },
+  { file: 'dependency_visualization.rs', desc: 'Dep viewer — interactive dependency tree' },
+  { file: 'theme.rs', desc: 'Theme system — Catppuccin Mocha (dark) / Latte (light)' },
+  { file: 'i18n.rs', desc: 'Internationalization — locale auto-detection' },
+  { file: 'ui_utils.rs', desc: 'UI helpers — truncated text, styled blocks, progress bars' },
+  { file: 'animations.rs', desc: 'Animations — loading spinners, transitions' },
+  { file: 'security.rs', desc: 'Security — command path validation, permission checks' },
+  { file: 'platform.rs', desc: 'Platform detection — OS, distribution identification' },
+  { file: 'constants.rs', desc: 'Constants — app name, paths, debounce, refresh rate' },
+  { file: 'utils.rs', desc: 'Utilities — generic helper functions' },
+  { file: 'backends/mod.rs', desc: 'Minimal — re-exports snapshots submodule' },
+  { file: 'backends/snapshots/btrfs.rs', desc: 'Btrfs snapshot provider' },
+  { file: 'backends/snapshots/timeshift.rs', desc: 'Timeshift snapshot provider' }
+];
+
+function renderTrail() {
+  const container = document.getElementById('trail-list');
+  let html = '';
+  trailData.forEach(item => {
+    html += `<div class="trail-item"><span class="file">${item.file}</span> <span class="desc">— ${item.desc}</span></div>`;
+  });
+  container.innerHTML = html;
+}
+
+const depNodes = [
+  { id: 0, label: 'App (app.rs)', group: 'core', x: 400, y: 80 },
+  { id: 1, label: 'UI (ui.rs)', group: 'rendering', x: 250, y: 160 },
+  { id: 2, label: 'PackageService', group: 'orchestration', x: 550, y: 160 },
+  { id: 3, label: 'PackageProvider', group: 'interfaces', x: 550, y: 280 },
+  { id: 4, label: 'Snapshot Providers', group: 'snapshots', x: 700, y: 380 },
+  { id: 5, label: 'Search Engine', group: 'business', x: 400, y: 280 },
+  { id: 6, label: 'TransactionManager', group: 'business', x: 700, y: 200 },
+  { id: 7, label: 'Simulator', group: 'business', x: 550, y: 400 },
+  { id: 8, label: 'Action enum', group: 'core', x: 100, y: 160 },
+  { id: 9, label: 'InputHandler', group: 'input', x: 100, y: 280 },
+  { id: 10, label: 'Keybindings', group: 'input', x: 100, y: 400 },
+  { id: 11, label: 'Parallel Exec', group: 'infra', x: 700, y: 100 },
+  { id: 12, label: 'Command Exec', group: 'infra', x: 700, y: 500 },
+  { id: 13, label: 'Config', group: 'infra', x: 250, y: 400 },
+  { id: 14, label: 'Hooks', group: 'infra', x: 400, y: 500 },
+  { id: 15, label: 'Notifications', group: 'infra', x: 250, y: 500 },
+  { id: 16, label: 'Telemetry', group: 'infra', x: 400, y: 400 },
+  { id: 17, label: 'HealthWatchdog', group: 'infra', x: 550, y: 500 },
+  { id: 18, label: 'Diagnostics', group: 'infra', x: 150, y: 400 },
+  { id: 19, label: 'Dep Visualizer', group: 'business', x: 150, y: 280 },
+  { id: 20, label: 'EnhancedSearch', group: 'business', x: 400, y: 360 },
+];
+
+const depEdges = [
+  [0, 1], [0, 2], [0, 8], [0, 13],
+  [2, 3], [2, 5], [2, 11],
+  [3, 2],
+  [6, 4], [6, 7], [6, 14], [6, 16], [6, 15],
+  [8, 9], [9, 10],
+  [11, 12],
+  [0, 18], [0, 19],
+  [2, 20], [5, 20],
+  [15, 0], [16, 13],
+  [17, 6]
+];
+
+const groupColors = {
+  core: '#cba6f7',
+  rendering: '#f9e2af',
+  orchestration: '#89b4fa',
+  interfaces: '#a6e3a1',
+  snapshots: '#fab387',
+  business: '#f38ba8',
+  input: '#f5c2e7',
+  infra: '#6c7086'
+};
+
+function renderGraph() {
+  const svg = document.getElementById('dep-graph');
+  const tooltip = document.getElementById('dep-tooltip');
+  const w = svg.clientWidth || 900;
+  const h = 480;
+  const cx = w / 2, cy = h / 2;
+
+  const nodes = depNodes.map(n => ({
+    ...n,
+    vx: 0, vy: 0,
+    x: n.x + (Math.random() - 0.5) * 40,
+    y: n.y + (Math.random() - 0.5) * 40
+  }));
+
+  let html = `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
+  
+  html += `<g id="edges">`;
+  depEdges.forEach(([from, to]) => {
+    const f = nodes[from], t = nodes[to];
+    html += `<line x1="${f.x}" y1="${f.y}" x2="${t.x}" y2="${t.y}" stroke="#313244" stroke-width="1.5" opacity="0.6"/>`;
+  });
+  html += `</g>`;
+
+  html += `<g id="nodes">`;
+  nodes.forEach((n, i) => {
+    const color = groupColors[n.group] || '#6c7086';
+    const r = n.label.length > 15 ? 22 : 18;
+    html += `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${color}" opacity="0.85" stroke="#1e1e2e" stroke-width="2" 
+      onmouseenter="showTooltip(event, '${n.label} | ${n.group}')" onmouseleave="hideTooltip()" style="cursor:pointer"/>`;
+    const shortLabel = n.label.length > 14 ? n.label.substring(0, 12) + '…' : n.label;
+    html += `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" fill="#1e1e2e" font-size="9" font-weight="600" pointer-events="none">${shortLabel}</text>`;
+  });
+  html += `</g></svg>`;
+
+  svg.innerHTML = html;
+
+  let frame = 0;
+  function animate() {
+    frame++;
+    const circles = svg.querySelectorAll('circle');
+    nodes.forEach((n, i) => {
+      const r = 2 * Math.sin(frame * 0.02 + i) + 16;
+      if (circles[i]) circles[i].setAttribute('r', r);
+    });
+    if (frame < 200) requestAnimationFrame(animate);
+  }
+  setTimeout(animate, 500);
+}
+
+function showTooltip(e, text) {
+  const t = document.getElementById('dep-tooltip');
+  t.textContent = text;
+  t.style.display = 'block';
+  t.style.left = (e.clientX + 12) + 'px';
+  t.style.top = (e.clientY - 10) + 'px';
+}
+function hideTooltip() {
+  document.getElementById('dep-tooltip').style.display = 'none';
+}
+
+renderTree();
+renderTrail();
+</script>
+
+</body>
+</html>

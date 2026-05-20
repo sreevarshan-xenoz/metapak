@@ -281,14 +281,6 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
                 match pkg.source {
                     crate::models::PackageSource::Pacman => theme.repo_color(),
                     crate::models::PackageSource::Aur => theme.aur_color(),
-                    crate::models::PackageSource::Apt => theme.info(),
-                    crate::models::PackageSource::Dnf => theme.warning(),
-                    crate::models::PackageSource::Zypper => theme.secondary(),
-                    crate::models::PackageSource::Brew => theme.primary(),
-                    crate::models::PackageSource::Winget => theme.info(),
-                    crate::models::PackageSource::Chocolatey => theme.warning(),
-                    crate::models::PackageSource::Flatpak => theme.secondary(),
-                    crate::models::PackageSource::Snap => theme.primary(),
                     crate::models::PackageSource::Npm => theme.warning(),
                     crate::models::PackageSource::Cargo => theme.secondary(),
                     crate::models::PackageSource::Pip => theme.info(),
@@ -313,14 +305,6 @@ fn render_results_list(app: &App, f: &mut Frame, area: Rect, theme: &crate::them
             let source_indicator = match pkg.source {
                 crate::models::PackageSource::Pacman => "📦   ",
                 crate::models::PackageSource::Aur => "↑aur ",
-                crate::models::PackageSource::Apt => "apt  ",
-                crate::models::PackageSource::Dnf => "dnf  ",
-                crate::models::PackageSource::Zypper => "zyp  ",
-                crate::models::PackageSource::Brew => "brew ",
-                crate::models::PackageSource::Winget => "wing ",
-                crate::models::PackageSource::Chocolatey => "chco ",
-                crate::models::PackageSource::Flatpak => "flat ",
-                crate::models::PackageSource::Snap => "snap ",
                 crate::models::PackageSource::Npm => "npm  ",
                 crate::models::PackageSource::Cargo => "crgo ",
                 crate::models::PackageSource::Pip => "pip  ",
@@ -2500,7 +2484,7 @@ fn render_simulation_modal(app: &App, f: &mut Frame, theme: &crate::theme::Theme
         } else {
             format!(
                 "-{}",
-                crate::models::Package::format_size_bytes(result.disk_change_bytes.abs() as u64)
+                crate::models::Package::format_size_bytes(result.disk_change_bytes.unsigned_abs())
             )
         };
 

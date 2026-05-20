@@ -46,8 +46,11 @@ pub enum FilterOption {
     NotInstalled,
     RepoOnly,
     AurOnly,
+    #[allow(dead_code, clippy::upper_case_acronyms)]
     Updates,
+    #[allow(dead_code, clippy::upper_case_acronyms)]
     AUR,
+    #[allow(dead_code)]
     Group(String),
 }
 /// Sort options
@@ -63,10 +66,15 @@ pub enum SortOption {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum UpdatesSortOption {
+    #[allow(dead_code)]
     NameAsc,
+    #[allow(dead_code)]
     NameDesc,
+    #[allow(dead_code)]
     SizeAsc,
+    #[allow(dead_code)]
     SizeDesc,
+    #[allow(dead_code)]
     Repository,
     #[default]
     SecurityFirst,
@@ -76,11 +84,17 @@ pub enum UpdatesSortOption {
 pub enum UpdatesFilter {
     #[default]
     All,
+    #[allow(dead_code)]
     Security,
+    #[allow(dead_code)]
     SecurityOnly,
+    #[allow(dead_code)]
     Repository(String),
+    #[allow(dead_code)]
     Official,
+    #[allow(dead_code, clippy::upper_case_acronyms)]
     AUR,
+    #[allow(dead_code)]
     AurOnly,
 }
 /// Main application state
@@ -122,8 +136,10 @@ pub struct App {
     pub updates_cursor: Option<usize>,
     pub updates_sort: UpdatesSortOption,
     pub updates_filter: UpdatesFilter,
+    #[allow(dead_code)]
     pub updates_group_by_repo: bool,
     pub selected_updates: Vec<String>,
+    #[allow(dead_code)]
     pub updates_changelog_package: Option<String>,
     pub partial_update_warning_shown: bool,
 
@@ -171,6 +187,7 @@ pub struct App {
     pub system_info: Vec<crate::diagnostics::DiagnosticItem>,
     pub show_health_dashboard: bool,
     pub health_disk_info: Vec<crate::watchdog::DiskHealth>,
+    #[allow(dead_code)]
     pub health_mirror_info: Vec<crate::watchdog::MirrorHealth>,
     pub health_pacman_status: Option<crate::watchdog::PacmanStatus>,
     pub show_orphans: bool,
@@ -184,9 +201,7 @@ pub struct App {
     pub show_groups: bool,
     pub package_groups: Vec<crate::diagnostics::PackageGroup>,
     pub selected_group: Option<String>,
-    pub show_changelog: bool,
-    pub changelog_content: Option<String>,
-    pub changelog_package: Option<String>,
+
 
     // Pacnew/Pacsave files
     pub show_pacnew_pacsave: bool,
@@ -224,6 +239,7 @@ pub struct App {
     pub toasts: Vec<Toast>,
     pub results_scroll_state: ratatui::widgets::ScrollbarState,
     pub history_scroll_state: Option<ratatui::widgets::ScrollbarState>,
+    #[allow(dead_code)]
     pub dependency_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
@@ -362,9 +378,7 @@ impl App {
             show_groups: false,
             package_groups: Vec::new(),
             selected_group: None,
-            show_changelog: false,
-            changelog_content: None,
-            changelog_package: None,
+
 
             show_pacnew_pacsave: false,
             pacnew_pacsave_files: Vec::new(),
@@ -494,6 +508,7 @@ impl App {
         None
     }
 
+    #[allow(dead_code)]
     /// Get search suggestions based on current input
     pub fn get_search_suggestions(&self, input: &str, limit: usize) -> Vec<String> {
         if input.is_empty() {
@@ -779,6 +794,7 @@ impl App {
         self.apply_filter_and_sort();
     }
 
+    #[allow(dead_code)]
     pub fn get_available_groups(&self) -> Vec<String> {
         let mut groups: Vec<String> = self
             .results
@@ -791,6 +807,7 @@ impl App {
         groups
     }
 
+    #[allow(dead_code)]
     pub fn filter_by_group(&mut self, group: &str) {
         self.current_filter = FilterOption::Group(group.to_string());
         self.apply_filter_and_sort();
@@ -808,30 +825,7 @@ impl App {
         self.apply_filter_and_sort();
     }
 
-    // Theme cycling
-    pub fn cycle_theme_next(&mut self) {
-        use crate::theme::{Theme, ThemePreset};
-        let current_preset = if self.config.theme.preset == "latte" || self.config.theme.preset == "light" {
-            ThemePreset::Latte
-        } else {
-            ThemePreset::Mocha
-        };
-        let next_preset = match current_preset {
-            ThemePreset::Mocha => ThemePreset::Latte,
-            ThemePreset::Latte => ThemePreset::Mocha,
-        };
-        self.theme = Theme::from_preset(next_preset);
-        self.config.theme.preset = match next_preset {
-            ThemePreset::Mocha => "mocha".to_string(),
-            ThemePreset::Latte => "latte".to_string(),
-        };
-        self.add_toast(format!("Theme: {}", self.config.theme.preset), crate::animations::ToastStyle::Info);
-    }
 
-    pub fn cycle_theme_previous(&mut self) {
-        // Same as next since we only have 2 themes
-        self.cycle_theme_next();
-    }
 
     // View Management
     pub fn show_package_details(&mut self) {
@@ -909,14 +903,7 @@ impl App {
         self.show_system_info = !self.show_system_info;
     }
 
-    pub async fn toggle_health_dashboard(&mut self) {
-        if !self.show_health_dashboard {
-            let watchdog = crate::watchdog::HealthWatchdog::new(Duration::from_secs(5));
-            self.health_disk_info = watchdog.check_disk_space().await.unwrap_or_default();
-            self.health_pacman_status = watchdog.check_pacman_status().await.ok();
-        }
-        self.show_health_dashboard = !self.show_health_dashboard;
-    }
+
 
     pub fn toggle_orphans(&mut self) {
         if !self.show_orphans {
@@ -955,24 +942,12 @@ impl App {
         self.show_groups = !self.show_groups;
     }
 
+    #[allow(dead_code)]
     pub fn select_group(&mut self, group_name: String) {
         self.selected_group = Some(group_name);
     }
 
-    pub fn load_changelog(&mut self, pkg_name: String) {
-        match crate::diagnostics::get_changelog(&pkg_name) {
-            Ok(content) => {
-                self.changelog_content = Some(content);
-                self.changelog_package = Some(pkg_name);
-                self.show_changelog = true;
-            }
-            Err(e) => {
-                self.changelog_content = Some(format!("Error: {}", e));
-                self.changelog_package = Some(pkg_name);
-                self.show_changelog = true;
-            }
-        }
-    }
+
 
     pub fn toggle_pacnew_pacsave(&mut self) {
         if !self.show_pacnew_pacsave {
@@ -1020,6 +995,7 @@ impl App {
         self.downgrade_cursor = None;
     }
 
+    #[allow(dead_code)]
     pub fn toggle_updates_view(&mut self) {
         self.show_updates_view = !self.show_updates_view;
         if self.show_updates_view {
@@ -1129,10 +1105,12 @@ impl App {
             .count()
     }
 
+    #[allow(dead_code)]
     pub fn get_aur_updates_count(&self) -> usize {
         self.outdated_packages.iter().filter(|p| p.is_aur).count()
     }
 
+    #[allow(dead_code)]
     pub fn get_repo_updates_count(&self, repo: &str) -> usize {
         self.outdated_packages
             .iter()
@@ -1140,10 +1118,12 @@ impl App {
             .count()
     }
 
+    #[allow(dead_code)]
     pub fn show_changelog_for_package(&mut self, name: String) {
         self.updates_changelog_package = Some(name);
     }
 
+    #[allow(dead_code)]
     pub fn hide_changelog(&mut self) {
         self.updates_changelog_package = None;
     }
@@ -1289,6 +1269,97 @@ impl Default for App {
     }
 }
 
+impl App {
+    pub fn add_toast(&mut self, message: String, style: crate::animations::ToastStyle) {
+        let truncated = if message.chars().count() > 60 {
+            let truncated: String = message.chars().take(57).collect();
+            format!("{}...", truncated)
+        } else {
+            message
+        };
+
+        self.toasts
+            .push(crate::animations::Toast::new(truncated, style));
+
+        if self.toasts.len() > 3 {
+            self.toasts.remove(0);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn start_install_progress(&mut self, total: usize) {
+        self.install_total = total;
+        self.install_current = 0;
+        self.install_current_package = String::new();
+    }
+
+    #[allow(dead_code)]
+    pub fn update_install_progress(&mut self, current: usize, package_name: &str) {
+        self.install_current = current;
+        self.install_current_package = package_name.to_string();
+    }
+
+    #[allow(dead_code)]
+    pub fn finish_install_progress(&mut self) {
+        self.install_total = 0;
+        self.install_current = 0;
+        self.install_current_package.clear();
+    }
+
+    pub fn get_progress_percentage(&self) -> f64 {
+        if self.install_total == 0 {
+            0.0
+        } else {
+            (self.install_current as f64 / self.install_total as f64) * 100.0
+        }
+    }
+
+    pub fn expire_toasts(&mut self) {
+        self.toasts.retain(|t| !t.is_expired());
+    }
+
+    #[allow(dead_code)]
+    pub fn toggle_sidebar(&mut self) {
+        self.show_sidebar = !self.show_sidebar;
+        if self.show_sidebar && self.selected_index.is_none() && !self.results.is_empty() {
+            self.selected_index = Some(0);
+        }
+    }
+
+    pub fn tick(&mut self, delta_ms: u64) {
+        self.animation_state.tick(delta_ms);
+        self.expire_toasts();
+
+        // Update scroll state content positions
+        self.results_scroll_state = self
+            .results_scroll_state
+            .content_length(self.get_paginated_results().len());
+
+        if let Some(state) = self.history_scroll_state.as_mut() {
+            let len = self.transaction_history.len().min(30).saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.history_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.console_scroll_state.as_mut() {
+            *state = state.content_length(self.console_buffer.len());
+            if let Some(cursor) = self.console_cursor {
+                *state = state.position(cursor);
+            }
+        }
+
+        if let Some(state) = self.diagnostics_scroll_state.as_mut() {
+            let len = self.diagnostics.len().saturating_add(3);
+            *state = state.content_length(len);
+            if let Some(cursor) = self.diagnostics_cursor {
+                *state = state.position(cursor);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1392,92 +1463,5 @@ mod tests {
         app.apply_filter_and_sort();
         assert_eq!(app.filtered_results.len(), 1);
         assert_eq!(app.filtered_results[0].name, "aur-pkg");
-    }
-}
-
-impl App {
-    pub fn add_toast(&mut self, message: String, style: crate::animations::ToastStyle) {
-        let truncated = if message.chars().count() > 60 {
-            let truncated: String = message.chars().take(57).collect();
-            format!("{}...", truncated)
-        } else {
-            message
-        };
-
-        self.toasts
-            .push(crate::animations::Toast::new(truncated, style));
-
-        if self.toasts.len() > 3 {
-            self.toasts.remove(0);
-        }
-    }
-
-    pub fn start_install_progress(&mut self, total: usize) {
-        self.install_total = total;
-        self.install_current = 0;
-        self.install_current_package = String::new();
-    }
-
-    pub fn update_install_progress(&mut self, current: usize, package_name: &str) {
-        self.install_current = current;
-        self.install_current_package = package_name.to_string();
-    }
-
-    pub fn finish_install_progress(&mut self) {
-        self.install_total = 0;
-        self.install_current = 0;
-        self.install_current_package.clear();
-    }
-
-    pub fn get_progress_percentage(&self) -> f64 {
-        if self.install_total == 0 {
-            0.0
-        } else {
-            (self.install_current as f64 / self.install_total as f64) * 100.0
-        }
-    }
-
-    pub fn expire_toasts(&mut self) {
-        self.toasts.retain(|t| !t.is_expired());
-    }
-
-    pub fn toggle_sidebar(&mut self) {
-        self.show_sidebar = !self.show_sidebar;
-        if self.show_sidebar && self.selected_index.is_none() && !self.results.is_empty() {
-            self.selected_index = Some(0);
-        }
-    }
-
-    pub fn tick(&mut self, delta_ms: u64) {
-        self.animation_state.tick(delta_ms);
-        self.expire_toasts();
-
-        // Update scroll state content positions
-        self.results_scroll_state = self
-            .results_scroll_state
-            .content_length(self.get_paginated_results().len());
-
-        if let Some(state) = self.history_scroll_state.as_mut() {
-            let len = self.transaction_history.len().min(30).saturating_add(3);
-            *state = state.content_length(len);
-            if let Some(cursor) = self.history_cursor {
-                *state = state.position(cursor);
-            }
-        }
-
-        if let Some(state) = self.console_scroll_state.as_mut() {
-            *state = state.content_length(self.console_buffer.len());
-            if let Some(cursor) = self.console_cursor {
-                *state = state.position(cursor);
-            }
-        }
-
-        if let Some(state) = self.diagnostics_scroll_state.as_mut() {
-            let len = self.diagnostics.len().saturating_add(3);
-            *state = state.content_length(len);
-            if let Some(cursor) = self.diagnostics_cursor {
-                *state = state.position(cursor);
-            }
-        }
     }
 }

@@ -520,7 +520,7 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
                     if parts.len() >= 7 {
                         let mount = parts[6].to_string();
                         if mount == "/" || mount == "/home" {
-                            if let (Ok(total), Ok(used), Ok(available)) = (
+                            if let (Ok(total), Ok(used), Ok(_available)) = (
                                 parts[2].parse::<u64>(),
                                 parts[3].parse::<u64>(),
                                 parts[4].parse::<u64>(),
@@ -534,7 +534,6 @@ fn handle_normal_mode(app: &mut App, key: KeyCode) {
                                     mount_point: mount,
                                     total_bytes: total,
                                     used_bytes: used,
-                                    available_bytes: available,
                                     usage_percent: usage,
                                 });
                             }

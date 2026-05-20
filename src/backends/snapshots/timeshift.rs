@@ -9,6 +9,12 @@ use tokio::process::Command;
 /// Wraps the `timeshift` command-line utility.
 pub struct TimeshiftProvider;
 
+impl Default for TimeshiftProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeshiftProvider {
     pub fn new() -> Self {
         Self

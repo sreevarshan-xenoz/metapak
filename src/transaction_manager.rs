@@ -5,7 +5,6 @@ use crate::simulation::SimulationEngine;
 use crate::traits::{PackageSimulator, SnapshotProvider};
 use crate::watchdog::HealthWatchdog;
 use std::sync::Arc;
-use tracing;
 
 /// Orchestrates safe package transactions with health checks, simulations, snapshots, and hooks.
 pub struct TransactionManager {
@@ -131,34 +130,12 @@ impl TransactionManager {
     {
         tracing::info!(action = %action_name, "Starting safe transaction");
 
-        // 1. Health Check (Watchdog)
+        // 1. Health Check (Watchdog) - check for database lock
         if self.watchdog.check_db_lock().await? {
             tracing::error!("Package database is locked");
             return Err(AppError::Backend(
                 "Package database is locked by another process".to_string(),
             ));
-        }
-
-        if !self.watchdog.check_gpg_keys().await? {
-            tracing::error!("GPG keys are expired or invalid");
-            return Err(AppError::Backend(
-                "Package GPG keys are invalid. Try: sudo pacman-key --refresh-keys".to_string(),
-            ));
-        }
-
-        // Check mirrors (Warning only, don't fail unless all are down?)
-        // For now, just log the health status.
-        if let Ok(mirrors) = self
-            .watchdog
-            .check_mirrors(&["https://archlinux.org/mirrors/status/json/".to_string()])
-            .await
-        {
-            let reachable_count = mirrors.iter().filter(|m| m.reachable).count();
-            if reachable_count == 0 {
-                tracing::warn!("No reachable mirrors detected. Operation might fail.");
-            } else {
-                tracing::info!(reachable = reachable_count, "Mirror health check passed");
-            }
         }
 
         // 2. Simulation

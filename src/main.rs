@@ -2,7 +2,6 @@ mod action;
 mod animations;
 mod app;
 mod backends;
-mod command;
 mod config;
 mod constants;
 mod dependency_visualization;
@@ -15,13 +14,11 @@ mod input;
 mod models;
 mod notifications;
 mod operation_queue;
-mod parallel;
 mod platform;
 mod search;
 mod security;
 mod services;
 mod simulation;
-mod state;
 mod telemetry;
 mod theme;
 mod traits;
@@ -64,7 +61,11 @@ use crate::constants::ui::{
 
 use crate::action::{Action, ActionInner, ActionResult};
 use crate::app::{App, ViewMode};
-use crate::command::CommandRunResult;
+// CommandRunResult is defined locally below
+pub enum CommandRunResult {
+    Finished,
+    Cancelled,
+}
 use crate::errors::Result;
 use crate::notifications::DesktopNotifier;
 use crate::services::{AurHelperCommand, CommandSpec, PackageService};
@@ -564,7 +565,7 @@ async fn main() -> Result<()> {
     }
 
     // Handle --search flag (pre-fill search in TUI)
-    let initial_search = cli.search;
+    let _initial_search = cli.search;
 
     // Display platform and package manager info
     let platform_info = crate::platform::get_platform_info();
@@ -944,10 +945,6 @@ async fn main() -> Result<()> {
                     tracing::info!(action_id, "Processing SwitchViewMode action: {:?}", mode);
                     let _ = result_tx.send(ActionResult::ViewModeSwitched(*mode));
                 }
-                ActionInner::SwitchEcosystem(kind) => {
-                    tracing::info!(action_id, "Processing SwitchEcosystem action: {:?}", kind);
-                    let _ = result_tx.send(ActionResult::EcosystemSwitched(*kind));
-                }
                 ActionInner::SearchEcosystem { provider, query } => {
                     tracing::info!(action_id, "Processing SearchEcosystem action for {:?}: {}", provider, query);
                     let result_tx_clone = result_tx.clone();
@@ -1060,7 +1057,7 @@ async fn main() -> Result<()> {
 
         terminal.draw(|f| ui::render(&mut app, f))?;
 
-        app.tick(crate::constants::ui::TICK_INTERVAL_MS as u64);
+        app.tick(crate::constants::ui::TICK_INTERVAL_MS);
 
         // Handle Input with shorter timeout for responsiveness
         if event::poll(Duration::from_millis(INPUT_POLL_TIMEOUT_MS))? {
@@ -1087,7 +1084,7 @@ async fn main() -> Result<()> {
             tracing::info!("Shutdown requested, flushing telemetry...");
 
             // Flush telemetry before exit
-            let _ = crate::telemetry::flush();
+            crate::telemetry::flush();
 
             // Give time for graceful shutdown
             break;
@@ -1116,7 +1113,7 @@ async fn main() -> Result<()> {
                 ActionResult::Error(msg) => {
                     tracing::error!("Error received: {}", msg);
                     let notifier = DesktopNotifier::new();
-                    let _ = notifier.notify_error(&msg);
+                    notifier.notify_error(&msg);
                     crate::telemetry::append_log_line(&format!("[error] {}", msg));
                     app.error_message = Some(msg.clone());
                     app.is_loading = false;
@@ -1251,13 +1248,6 @@ async fn main() -> Result<()> {
                     app.view_mode = mode;
                     app.add_toast(
                         format!("Switched to {:?} mode", mode),
-                        crate::animations::ToastStyle::Info,
-                    );
-                }
-                ActionResult::EcosystemSwitched(kind) => {
-                    app.active_ecosystem = kind;
-                    app.add_toast(
-                        format!("Switched to {:?}", kind),
                         crate::animations::ToastStyle::Info,
                     );
                 }

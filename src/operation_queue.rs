@@ -7,7 +7,6 @@ use crate::errors::Result;
 use crate::models::Package;
 use crate::transaction_manager::TransactionManager;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,12 +23,16 @@ pub struct Operation {
     pub package_name: String,
     pub operation_type: OperationType,
     pub version: Option<String>,
+    #[allow(dead_code)]
     pub size: Option<u64>,
+    #[allow(dead_code)]
     pub reason: Option<String>,
+    #[allow(dead_code)]
     pub is_dep: bool,
 }
 
 impl Operation {
+    #[allow(dead_code)]
     pub fn install(package: &Package) -> Self {
         Self {
             id: generate_id(),
@@ -42,6 +45,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn remove(package: &Package) -> Self {
         Self {
             id: generate_id(),
@@ -54,6 +58,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn update(package: &Package) -> Self {
         Self {
             id: generate_id(),
@@ -66,6 +71,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_install(name: String, size: Option<u64>) -> Self {
         Self {
             id: generate_id(),
@@ -78,6 +84,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_remove(name: String, size: Option<u64>) -> Self {
         Self {
             id: generate_id(),
@@ -90,6 +97,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn summary(&self) -> String {
         match self.operation_type {
             OperationType::Install => format!("+{}", self.package_name),
@@ -100,6 +108,7 @@ impl Operation {
     }
 }
 
+#[allow(dead_code)]
 fn generate_id() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -111,15 +120,19 @@ fn generate_id() -> u64 {
 #[derive(Clone, Default)]
 pub struct OperationQueue {
     operations: Vec<Operation>,
+    #[allow(dead_code)]
     confirmed: bool,
+    #[allow(dead_code)]
     transaction_manager: Option<Arc<TransactionManager>>,
 }
 
 impl OperationQueue {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[allow(dead_code)]
     pub fn with_manager(manager: Arc<TransactionManager>) -> Self {
         Self {
             operations: Vec::new(),
@@ -128,8 +141,7 @@ impl OperationQueue {
         }
     }
 
-    /// Execute a safe transaction if a manager is configured.
-    /// Falls back to direct execution if no manager is present.
+    #[allow(dead_code)]
     pub async fn execute_safe<F, Fut, T>(
         &self,
         action_name: &str,
@@ -150,6 +162,7 @@ impl OperationQueue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add(&mut self, operation: Operation) {
         if !self.operations.iter().any(|o| {
             o.package_name == operation.package_name && o.operation_type == operation.operation_type
@@ -158,18 +171,22 @@ impl OperationQueue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_install(&mut self, package: &Package) {
         self.add(Operation::install(package));
     }
 
+    #[allow(dead_code)]
     pub fn add_remove(&mut self, package: &Package) {
         self.add(Operation::remove(package));
     }
 
+    #[allow(dead_code)]
     pub fn add_update(&mut self, package: &Package) {
         self.add(Operation::update(package));
     }
 
+    #[allow(dead_code)]
     pub fn remove(&mut self, id: u64) -> Option<Operation> {
         if let Some(pos) = self.operations.iter().position(|o| o.id == id) {
             Some(self.operations.remove(pos))
@@ -178,6 +195,7 @@ impl OperationQueue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn remove_by_name(&mut self, name: &str) -> Vec<Operation> {
         let mut removed = Vec::new();
         self.operations.retain(|op| {
@@ -191,6 +209,7 @@ impl OperationQueue {
         removed
     }
 
+    #[allow(dead_code)]
     pub fn move_up(&mut self, id: u64) -> bool {
         if let Some(pos) = self.operations.iter().position(|o| o.id == id) {
             if pos > 0 {
@@ -201,6 +220,7 @@ impl OperationQueue {
         false
     }
 
+    #[allow(dead_code)]
     pub fn move_down(&mut self, id: u64) -> bool {
         if let Some(pos) = self.operations.iter().position(|o| o.id == id) {
             if pos < self.operations.len() - 1 {
@@ -211,31 +231,38 @@ impl OperationQueue {
         false
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.operations.clear();
         self.confirmed = false;
     }
 
+    #[allow(dead_code)]
     pub fn operations(&self) -> &[Operation] {
         &self.operations
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.operations.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.operations.len()
     }
 
+    #[allow(dead_code)]
     pub fn confirm(&mut self) {
         self.confirmed = true;
     }
 
+    #[allow(dead_code)]
     pub fn is_confirmed(&self) -> bool {
         self.confirmed
     }
 
+    #[allow(dead_code)]
     pub fn preview(&self) -> OperationPreview {
         let mut to_install = Vec::new();
         let mut to_remove = Vec::new();
@@ -278,6 +305,7 @@ impl OperationQueue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_package_names(&self) -> Vec<&str> {
         self.operations
             .iter()
@@ -291,11 +319,14 @@ pub struct OperationPreview {
     pub to_install: Vec<String>,
     pub to_remove: Vec<String>,
     pub to_update: Vec<String>,
+    #[allow(dead_code)]
     pub total_download_size_kb: u64,
+    #[allow(dead_code)]
     pub total_removed_size_kb: u64,
 }
 
 impl OperationPreview {
+    #[allow(dead_code)]
     pub fn format_summary(&self) -> String {
         let mut parts = Vec::new();
 
@@ -316,126 +347,26 @@ impl OperationPreview {
         }
     }
 
+    #[allow(dead_code)]
     pub fn has_operations(&self) -> bool {
         !self.to_install.is_empty() || !self.to_remove.is_empty() || !self.to_update.is_empty()
     }
 }
 
-pub struct DependencyChecker;
-
-impl DependencyChecker {
-    pub fn check_conflicts(
-        operations: &[Operation],
-        installed_packages: &[Package],
-    ) -> Vec<Conflict> {
-        let mut conflicts = Vec::new();
-        let packages_to_remove: HashSet<&str> = operations
-            .iter()
-            .filter(|op| op.operation_type == OperationType::Remove)
-            .map(|op| op.package_name.as_str())
-            .collect();
-
-        let packages_to_install: HashSet<&str> = operations
-            .iter()
-            .filter(|op| op.operation_type == OperationType::Install)
-            .map(|op| op.package_name.as_str())
-            .collect();
-
-        for pkg in installed_packages {
-            if packages_to_remove.contains(pkg.name.as_str()) {
-                for dep in &pkg.depends_on {
-                    if packages_to_install.contains(dep.as_str()) {
-                        conflicts.push(Conflict {
-                            package1: pkg.name.clone(),
-                            package2: dep.clone(),
-                            conflict_type: ConflictType::ReverseDep,
-                        });
-                    }
-                }
-            }
-        }
-
-        conflicts
-    }
-
-    pub fn check_orphans(operations: &[Operation], installed_packages: &[Package]) -> Vec<String> {
-        let mut potential_orphans = Vec::new();
-        let packages_to_remove: HashSet<&str> = operations
-            .iter()
-            .filter(|op| op.operation_type == OperationType::Remove)
-            .map(|op| op.package_name.as_str())
-            .collect();
-
-        for pkg in installed_packages {
-            if packages_to_remove.contains(pkg.name.as_str()) {
-                continue;
-            }
-
-            let mut all_deps_satisfied = true;
-            for dep in &pkg.depends_on {
-                let dep_installed = installed_packages
-                    .iter()
-                    .any(|p| p.name == *dep && !packages_to_remove.contains(p.name.as_str()));
-                if !dep_installed {
-                    all_deps_satisfied = false;
-                    break;
-                }
-            }
-
-            if all_deps_satisfied {
-                let is_required_by_others = installed_packages.iter().any(|p| {
-                    !packages_to_remove.contains(p.name.as_str())
-                        && p.depends_on.iter().any(|d| d == &pkg.name)
-                });
-                if !is_required_by_others {
-                    potential_orphans.push(pkg.name.clone());
-                }
-            }
-        }
-
-        potential_orphans
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Conflict {
-    pub package1: String,
-    pub package2: String,
-    pub conflict_type: ConflictType,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConflictType {
-    ReverseDep,
-    Conflicts,
-    Provides,
-}
-
-impl Conflict {
-    pub fn description(&self) -> String {
-        match self.conflict_type {
-            ConflictType::ReverseDep => {
-                format!("{} is required by {}", self.package2, self.package1)
-            }
-            ConflictType::Conflicts => {
-                format!("{} conflicts with {}", self.package1, self.package2)
-            }
-            ConflictType::Provides => format!("{} provides {}", self.package1, self.package2),
-        }
-    }
-}
-
+#[allow(dead_code)]
 pub struct TransactionLog {
     entries: Vec<TransactionEntry>,
 }
 
 impl TransactionLog {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn log(&mut self, operation: &Operation, status: TransactionStatus) {
         self.entries.push(TransactionEntry {
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -446,10 +377,12 @@ impl TransactionLog {
         });
     }
 
+    #[allow(dead_code)]
     pub fn entries(&self) -> &[TransactionEntry] {
         &self.entries
     }
 
+    #[allow(dead_code)]
     pub fn successful_count(&self) -> usize {
         self.entries
             .iter()
@@ -457,6 +390,7 @@ impl TransactionLog {
             .count()
     }
 
+    #[allow(dead_code)]
     pub fn failed_count(&self) -> usize {
         self.entries
             .iter()
@@ -473,18 +407,24 @@ impl Default for TransactionLog {
 
 #[derive(Debug, Clone)]
 pub struct TransactionEntry {
+    #[allow(dead_code)]
     pub timestamp: String,
+    #[allow(dead_code)]
     pub package_name: String,
+    #[allow(dead_code)]
     pub operation_type: OperationType,
+    #[allow(dead_code)]
     pub version: Option<String>,
     pub status: TransactionStatus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransactionStatus {
+    #[allow(dead_code)]
     Pending,
     Success,
     Failed,
+    #[allow(dead_code)]
     Skipped,
 }
 

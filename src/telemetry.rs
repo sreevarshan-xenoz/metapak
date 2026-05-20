@@ -61,19 +61,6 @@ pub fn append_log_line(line: &str) {
     }
 }
 
-/// Append a structured event with operation type and details
-pub fn log_operation(operation: &str, packages: &[String], status: &str) {
-    let pkg_list = if packages.is_empty() {
-        "none".to_string()
-    } else {
-        packages.join(", ")
-    };
-    append_log_line(&format!(
-        "op={} packages=[{}] status={}",
-        operation, pkg_list, status
-    ));
-}
-
 pub fn flush() {
     // Force sync to ensure all pending writes are flushed
     let path = log_path();
@@ -86,8 +73,7 @@ pub fn flush() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
-    use tempfile::TempDir;
+
 
     #[test]
     fn test_log_path_is_valid() {

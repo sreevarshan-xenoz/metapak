@@ -1,0 +1,432 @@
+{
+  "$schema": "metapak-architecture-v1",
+  "lastUpdated": "2025-05-12T12:00:00Z",
+  "project": {
+    "name": "metapak",
+    "description": "Universal terminal-based (TUI) package manager in Rust — unifies search, install, and removal across system and ecosystem package managers through a single keyboard-driven interface.",
+    "language": "Rust",
+    "edition": "2021",
+    "license": "MIT",
+    "author": "sreevarshan-xenoz",
+    "platforms": ["linux", "macos", "windows"],
+    "tui_framework": "Ratatui + Crossterm",
+    "async_runtime": "Tokio",
+    "source_file_count": 37,
+    "test_file_count": 4
+  },
+
+  "module_tree": {
+    "src/lib.rs": {
+      "type": "module root",
+      "description": "Declares all public modules and re-exports the main library entry point"
+    },
+    "src/main.rs": {
+      "type": "binary entry",
+      "description": "CLI argument parsing (clap), initializes config, sets up terminal, runs the App event loop via App::run()"
+    },
+    "src/app.rs": {
+      "type": "core orchestrator",
+      "description": "Central application state: holds all UI state, search state, selected packages, pagination, filtering, sorting, mode switching, and the main run() event loop",
+      "key_types": ["App", "AppMode", "SearchState", "PackageListState", "DetailPaneState"],
+      "key_functions": ["App::run()", "App::handle_action()", "App::fetch_all_packages()"]
+    },
+    "src/ui.rs": {
+      "type": "rendering (~1500 lines)",
+      "description": "All TUI rendering logic: layouts, widgets, status bars, help overlays, popups, system info views, dependency trees, health dashboards",
+      "key_types": ["Ui"],
+      "key_functions": ["Ui::render()", "draw_main_layout()", "draw_package_list()", "draw_detail_pane()", "draw_help_overlay()"]
+    },
+    "src/services.rs": {
+      "type": "orchestration + built-in providers",
+      "description": "Unified package service with built-in providers (Pacman, AUR, Npm, Cargo, Pip). Delegates to providers, aggregates results, coordinates search/install/remove",
+      "key_types": ["PackageService", "PacmanProvider", "AurProvider", "NpmProvider", "CargoProvider", "PipProvider", "CircuitBreaker", "CommandSpec", "AurHelperCommand"],
+      "key_functions": ["PackageService::search_all()", "PackageService::check_updates()", "plan_package_transaction()"]
+    },
+    "src/backends/mod.rs": {
+      "type": "backend registry (minimal)",
+      "description": "Minimal module that only re-exports the snapshots submodule",
+      "key_types": []
+    },
+    "src/backends/snapshots/mod.rs": {
+      "type": "snapshot module root",
+      "description": "Declares snapshot provider modules (btrfs, timeshift) and the SnapshotProvider trait",
+      "key_types": ["SnapshotProvider"]
+    },
+    "src/backends/snapshots/btrfs.rs": {
+      "type": "snapshot provider",
+      "description": "Btrfs snapshot management via subprocess (btrfs, snapper). Create, list, rollback snapshots",
+      "key_types": ["BtrfsSnapshot"]
+    },
+    "src/backends/snapshots/timeshift.rs": {
+      "type": "snapshot provider",
+      "description": "Timeshift snapshot management via timeshift CLI. Create, list, rollback snapshots",
+      "key_types": ["TimeshiftSnapshot"]
+    },
+    "src/traits.rs": {
+      "type": "core traits",
+      "description": "Defines the PackageProvider trait (search, is_installed) and UpdateProvider trait (check_updates, get_outdated_packages). The heart of the provider abstraction layer",
+      "key_types": ["PackageProvider", "UpdateProvider", "PackageSimulator"],
+      "key_trait_methods": ["search()", "is_installed()", "check_updates()", "get_outdated_packages()"]
+    },
+    "src/models.rs": {
+      "type": "data models",
+      "description": "Core data types: Package, OutdatedPackage, PackageSource (Pacman, Aur, Npm, Cargo, Pip)",
+      "key_types": ["Package", "OutdatedPackage", "PackageSource"]
+    },
+    "src/config.rs": {
+      "type": "configuration",
+      "description": "Toml-based config loading from ~/.config/metapak/config.toml. Migration from legacy 'arch-tui' config path. Config struct includes hooks, telemetry, color, debounce, snapshot, theme settings",
+      "key_types": ["AppConfig", "HooksConfig", "TelemetryConfig", "SnapshotConfig"]
+    },
+    "src/constants.rs": {
+      "type": "constants",
+      "description": "Application-wide constants: app name, version indicators, config paths, debounce defaults, max results, terminal refresh rate, network config, search limits",
+      "key_constants": ["APP_NAME", "CONFIG_DIR", "DEBOUNCE_DELAY_MS", "MAX_SEARCH_RESULTS", "TERM_REFRESH_RATE"]
+    },
+    "src/action.rs": {
+      "type": "action enum",
+      "description": "Defines Action enum — all possible user-triggered actions (Search, Install, Remove, Update, Quit, Refresh, Sort, Filter, Select, Navigate, etc.)",
+      "key_types": ["Action"]
+    },
+    "src/errors.rs": {
+      "type": "error handling",
+      "description": "Centralized error types: AppError enum (Config, Io, Parse, Backend, Network, Permission, Snapshot, etc.) with conversion traits",
+      "key_types": ["AppError", "Result"]
+    },
+    "src/input.rs": {
+      "type": "input handling",
+      "description": "Keyboard input processing: normal mode keys, search mode text input, key event normalization (Crossterm events → internal Key enum)",
+      "key_types": ["InputHandler", "Key", "parse_event()"]
+    },
+    "src/keybindings.rs": {
+      "type": "key binding config",
+      "description": "Maps keys to Actions: configurable keybindings, default bindings (/, ?, q, Tab, Enter, Esc, h, j, k, d, v, f, s, u, i, o, p, c, G, g, I, F, O, P, C)",
+      "key_types": ["Keybindings", "KeybindingMap"]
+    },
+    "src/theme.rs": {
+      "type": "theme system",
+      "description": "Two built-in themes: Catppuccin Mocha (dark) and Catppuccin Latte (light). Colors for all UI elements. Runtime switching via T key",
+      "key_types": ["Theme", "ThemePreset"]
+    },
+    "src/ui_utils.rs": {
+      "type": "UI utilities",
+      "description": "Helper functions for rendering: truncated text, styled blocks, progress bars, scrollable lists, formatted sizes, colored status badges",
+      "key_types": ["truncate_text()", "styled_block()", "progress_bar()", "scrollable_list()", "format_size()", "status_badge()"]
+    },
+    "src/search.rs": {
+      "type": "search engine",
+      "description": "Fuzzy matching and scoring with EnhancedSearch: parses queries with AND/OR/NOT operators and filters (repo:, aur:, installed:, etc.), ranks by relevance, regex support",
+      "key_types": ["EnhancedSearch", "FuzzySearch", "SearchQuery", "SearchToken"]
+    },
+    "src/parallel.rs": {
+      "type": "parallel execution",
+      "description": "Async concurrent backend operations: runs search/install/remove across all active backends concurrently via tokio tasks. Cancellation support",
+      "key_types": ["run_parallel()", "ParallelContext"]
+    },
+    "src/operation_queue.rs": {
+      "type": "operation queue",
+      "description": "Batch operation orchestration: queues multiple package operations, resolves dependencies, orders operations, manages execution with progress tracking",
+      "key_types": ["OperationQueue", "OperationPreview", "OperationType"]
+    },
+    "src/simulation.rs": {
+      "type": "dry-run simulation",
+      "description": "Pre-execution simulation: runs dry-run mode to show what operations would do before committing",
+      "key_types": ["PackageSimulator", "simulate_upgrade()"]
+    },
+    "src/transaction_manager.rs": {
+      "type": "transaction management",
+      "description": "Safe transactional execution: pre-snapshot, execute operations, verify success, rollback on failure, post-snapshot on success. Wraps operations in rollback-safe transactions",
+      "key_types": ["TransactionManager", "TransactionConfig"]
+    },
+    "src/transaction_history.rs": {
+      "type": "transaction history",
+      "description": "Persistent log of all package operations: timestamps, package names, operation type, result status, duration. Structured log file with rotation",
+      "key_types": ["TransactionHistory"]
+    },
+    "src/hooks.rs": {
+      "type": "hook system",
+      "description": "Pre/post execution hooks: runs user-configured shell commands before and after package operations. Supports conditional hooks based on operation type",
+      "key_types": ["HookRunner", "HookConfig"]
+    },
+    "src/notifications.rs": {
+      "type": "desktop notifications",
+      "description": "Desktop notification dispatch: sends system notifications on operation completion (success/failure) via notify-rust or platform-native mechanisms",
+      "key_types": ["Notifier", "NotificationType"]
+    },
+    "src/export.rs": {
+      "type": "export (deprecated/empty)",
+      "description": "Historically exported package lists. All contents removed during dead code cleanup — module retained only for structural compatibility"
+    },
+    "src/diagnostics.rs": {
+      "type": "health diagnostics",
+      "description": "System health checks: disk space, package manager status, mirror health, backend availability",
+      "key_types": ["DiagnosticItem", "RecentlyInstalled"]
+    },
+    "src/dependency_visualization.rs": {
+      "type": "dependency viewer",
+      "description": "Interactive dependency tree visualization: builds dependency graph from package metadata, renders as collapsible tree in TUI",
+      "key_types": ["DependencyVisualizer", "DependencyNode"]
+    },
+    "src/watchdog.rs": {
+      "type": "watchdog / health monitor",
+      "description": "System health monitoring: disk usage checking, mirror latency tracking, GPG key verification. Provides HealthWatchdog struct with periodic checks",
+      "key_types": ["HealthWatchdog", "DiskHealth", "MirrorHealth"]
+    },
+    "src/telemetry.rs": {
+      "type": "telemetry/logging",
+      "description": "Structured operation logging: logs all package operations with metadata (timestamp, duration, backend, result)",
+      "key_types": ["log_operation()"]
+    },
+    "src/animations.rs": {
+      "type": "UI animations",
+      "description": "TUI animation utilities: loading spinners, progress animations, transition effects for UI state changes"
+    },
+    "src/i18n.rs": {
+      "type": "internationalization",
+      "description": "Multi-language support: loads locale from environment, provides translated strings for UI labels, messages, errors. Auto-detection and fallback to English",
+      "key_types": ["I18nTranslations", "t()"]
+    },
+    "src/utils.rs": {
+      "type": "misc utilities",
+      "description": "General-purpose helper functions: string formatting, platform checks, path utilities, time formatting"
+    },
+    "src/platform.rs": {
+      "type": "platform detection",
+      "description": "OS/platform detection: identifies current OS (Linux/macOS/Windows), distribution (Arch/Debian/Fedora/etc.), and available package managers",
+      "key_types": ["Platform", "OS", "Distribution"]
+    },
+    "src/security.rs": {
+      "type": "security utilities",
+      "description": "Basic security/verification utilities: validates command paths, checks permissions"
+    }
+  },
+
+  "architecture_overview": {
+    "pattern": "Provider + Event Loop + Orchestrator",
+    "layers": [
+      {
+        "layer": "Entry",
+        "description": "CLI parsing and initialization (main.rs)"
+      },
+      {
+        "layer": "UI + Input",
+        "description": "TUI rendering (ui.rs, ui_utils.rs) and keyboard input handling (input.rs, keybindings.rs, action.rs)"
+      },
+      {
+        "layer": "Application State",
+        "description": "Central state machine (app.rs) — search state, package list, detail pane, mode switching"
+      },
+      {
+        "layer": "Orchestration",
+        "description": "Package service (services.rs): coordinates all providers, parallel execution (parallel.rs), operation queue (operation_queue.rs)"
+      },
+      {
+        "layer": "Business Logic",
+        "description": "Package search/filter/sort (search.rs), simulation (simulation.rs), transaction management (transaction_manager.rs), dependency visualization (dependency_visualization.rs)"
+      },
+      {
+        "layer": "Provider Adapters",
+        "description": "5 built-in providers in services.rs (Pacman, AUR, npm, Cargo, pip) + 2 snapshot providers (btrfs, timeshift)"
+      },
+      {
+        "layer": "Infrastructure",
+        "description": "Command execution (command.rs), error handling (errors.rs), config (config.rs), telemetry (telemetry.rs), hooks (hooks.rs), notifications (notifications.rs), diagnostics (diagnostics.rs), watchdog (watchdog.rs), security (security.rs), platform detection (platform.rs)"
+      },
+      {
+        "layer": "Cross-cutting",
+        "description": "Theme (theme.rs), i18n (i18n.rs), animations (animations.rs), constants (constants.rs), utils (utils.rs), transaction history (transaction_history.rs)"
+      }
+    ]
+  },
+
+  "trait_hierarchy": {
+    "PackageProvider": {
+      "description": "Interface implemented by all 5 package providers",
+      "methods": ["search()", "is_installed()"],
+      "implementors": ["PacmanProvider", "AurProvider", "NpmProvider", "CargoProvider", "PipProvider"]
+    },
+    "UpdateProvider": {
+      "description": "Interface for checking system updates",
+      "methods": ["check_updates()", "get_outdated_packages()"],
+      "implementors": ["SystemUpdateProvider"]
+    },
+    "SnapshotProvider": {
+      "description": "Interface for filesystem snapshot providers",
+      "methods": ["create_snapshot()", "list_snapshots()", "rollback_snapshot()", "is_available()"],
+      "implementors": ["BtrfsSnapshotProvider", "TimeshiftSnapshotProvider"]
+    }
+  },
+
+  "data_flow": {
+    "search_flow": [
+      "User types query → input.rs parses key events → Action::Search(query) → app.rs updates SearchState",
+      "Debounce timer (300ms) → triggers PackageService::search_all()",
+      "PackageService delegates to all 5 providers concurrently via tokio tasks",
+      "Each provider runs provider.search() → subprocess or reqwest HTTP call",
+      "Results returned as Vec<Package> → services.rs aggregates and deduplicates",
+      "search.rs EnhancedSearch applies query parsing + filtering + ranking",
+      "Results stored and rendered in TUI package list"
+    ],
+    "install_flow": [
+      "User selects packages → presses Enter → Action triggers transaction",
+      "PackageService::plan_package_transaction() generates CommandSpec list",
+      "TransactionManager executes with pre-snapshot (if configured), install/remove commands, post-snapshot",
+      "On failure: rollback via snapshot provider",
+      "Hooks: pre hooks → operations → post hooks",
+      "Notifications and telemetry on completion"
+    ]
+  },
+
+  "provider_matrix": {
+    "linux": {
+      "native": ["pacman (Arch + AUR)"],
+      "ecosystem": ["npm", "cargo", "pip"]
+    },
+    "macos": {
+      "ecosystem": ["npm", "cargo", "pip"]
+    },
+    "windows": {
+      "ecosystem": ["npm", "cargo", "pip"]
+    }
+  },
+
+  "dependencies_graph": {
+    "nodes": [
+      {"id": "app_rs", "label": "App (app.rs)", "group": "core"},
+      {"id": "ui_rs", "label": "UI (ui.rs)", "group": "rendering"},
+      {"id": "services_rs", "label": "PackageService (services.rs)", "group": "orchestration"},
+      {"id": "traits_rs", "label": "PackageProvider trait (traits.rs)", "group": "interfaces"},
+      {"id": "models_rs", "label": "Package model (models.rs)", "group": "data"},
+      {"id": "snapshot_mod", "label": "SnapshotProviders", "group": "snapshots"},
+      {"id": "parallel_rs", "label": "Parallel Exec (parallel.rs)", "group": "infra"},
+      {"id": "command_rs", "label": "Command Exec (command.rs)", "group": "infra"},
+      {"id": "simulation_rs", "label": "Simulator (simulation.rs)", "group": "business"},
+      {"id": "transaction_rs", "label": "TransactionManager", "group": "business"},
+      {"id": "search_rs", "label": "Search Engine (search.rs)", "group": "business"},
+      {"id": "config_rs", "label": "Config (config.rs)", "group": "infra"},
+      {"id": "input_rs", "label": "Input (input.rs)", "group": "input"},
+      {"id": "keybindings_rs", "label": "Keybindings", "group": "input"},
+      {"id": "hooks_rs", "label": "Hooks (hooks.rs)", "group": "infra"},
+      {"id": "notifications_rs", "label": "Notifications", "group": "infra"},
+      {"id": "telemetry_rs", "label": "Telemetry", "group": "infra"},
+      {"id": "watchdog_rs", "label": "HealthWatchdog", "group": "infra"},
+      {"id": "errors_rs", "label": "Error types (errors.rs)", "group": "infra"},
+      {"id": "action_rs", "label": "Action enum (action.rs)", "group": "core"},
+      {"id": "diagnostics_rs", "label": "Diagnostics (diagnostics.rs)", "group": "infra"},
+      {"id": "dependency_vis_rs", "label": "Dep Visualizer", "group": "business"},
+      {"id": "theme_rs", "label": "Theme (theme.rs)", "group": "ui"},
+      {"id": "search_engine_rs", "label": "EnhancedSearch (search.rs)", "group": "business"}
+    ],
+    "edges": [
+      {"from": "app_rs", "to": "ui_rs"},
+      {"from": "app_rs", "to": "services_rs"},
+      {"from": "app_rs", "to": "input_rs"},
+      {"from": "app_rs", "to": "action_rs"},
+      {"from": "app_rs", "to": "config_rs"},
+      {"from": "services_rs", "to": "traits_rs"},
+      {"from": "services_rs", "to": "parallel_rs"},
+      {"from": "services_rs", "to": "search_engine_rs"},
+      {"from": "services_rs", "to": "models_rs"},
+      {"from": "traits_rs", "to": "models_rs"},
+      {"from": "transaction_rs", "to": "snapshot_mod"},
+      {"from": "transaction_rs", "to": "simulation_rs"},
+      {"from": "transaction_rs", "to": "hooks_rs"},
+      {"from": "transaction_rs", "to": "telemetry_rs"},
+      {"from": "transaction_rs", "to": "notifications_rs"},
+      {"from": "ui_rs", "to": "models_rs"},
+      {"from": "ui_rs", "to": "keybindings_rs"},
+      {"from": "input_rs", "to": "keybindings_rs"},
+      {"from": "input_rs", "to": "action_rs"},
+      {"from": "parallel_rs", "to": "command_rs"},
+      {"from": "config_rs", "to": "errors_rs"},
+      {"from": "watchdog_rs", "to": "services_rs"},
+      {"from": "telemetry_rs", "to": "errors_rs"},
+      {"from": "app_rs", "to": "diagnostics_rs"},
+      {"from": "app_rs", "to": "dependency_vis_rs"},
+      {"from": "app_rs", "to": "theme_rs"}
+    ]
+  },
+
+  "key_features": {
+    "unified_search": "Queries 5 package providers simultaneously, merges results, filters with query syntax (AND/OR/NOT/repo:/aur:), ranks by relevance",
+    "batch_operations": "Select multiple packages with Tab, install/remove in one batched transaction",
+    "simulation_mode": "Dry-run to preview what operations would do before committing",
+    "snapshot_rollback": "Btrfs/Timeshift snapshot before operations, automatic rollback on failure",
+    "circuit_breaker": "AUR API protection: disables AUR queries on error threshold, periodic recovery attempts",
+    "transaction_safety": "Pre-check → snapshot → execute → verify → rollback-on-failure → post-snapshot pipeline",
+    "health_dashboard": "Disk space, package manager status, mirror connectivity checks",
+    "dependency_visualization": "Interactive dependency tree viewer with forward/reverse dependency traversal",
+    "theme_system": "Catppuccin Mocha (dark) / Latte (light) runtime theme switching",
+    "i18n": "Locale auto-detection with translated UI strings and fallback to English",
+    "pre_post_hooks": "User-configurable shell commands executed before/after package operations",
+    "telemetry_logging": "Structured operation logs with auto-rotation and configurable verbosity"
+  },
+
+  "config_structure": {
+    "config_path": "~/.config/metapak/config.toml",
+    "format": "TOML",
+    "example_path": "config.example.toml",
+    "migration": "Auto-migration from legacy ~/.config/arch-tui/config.toml",
+    "sections": {
+      "general": {"debounce_delay_ms": "u64 (default 300)", "max_results": "usize (default 100)", "refresh_rate": "u64 (default 60)", "cache_ttl_seconds": "u64 (default 60)"},
+      "search": {"cache_ttl_seconds": "u64 (default 60)"},
+      "color": {"theme": "String ('mocha' | 'latte')"},
+      "snapshot": {"enabled": "bool", "provider": "String ('btrfs' | 'timeshift')", "create_before": "bool", "create_after": "bool", "max_snapshots": "u32", "snapshot_prefix": "String"},
+      "hooks": {"pre_install": "Vec<String>", "post_install": "Vec<String>", "pre_remove": "Vec<String>", "post_remove": "Vec<String>", "pre_update": "Vec<String>", "post_update": "Vec<String>"},
+      "telemetry": {"enabled": "bool", "log_dir": "String", "max_log_files": "u32", "max_log_size_mb": "u32"}
+    }
+  },
+
+  "testing": {
+    "unit_tests": {
+      "file": "src/app_test.rs",
+      "description": "Application state tests"
+    },
+    "integration_tests": {
+      "files": ["tests/robustness_tests.rs", "tests/simulation_tests.rs", "tests/btrfs_snapshot_tests.rs"],
+      "description": "Robustness, simulation, and snapshot integration tests"
+    },
+    "ci_pipeline": {
+      "steps": ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"],
+      "platforms": ["ubuntu-latest", "macos-latest", "windows-latest"]
+    }
+  },
+
+  "build_system": {
+    "tool": "Cargo",
+    "commands": {
+      "build": "cargo build",
+      "release": "cargo build --release",
+      "run": "cargo run",
+      "test": "cargo test",
+      "fmt": "cargo fmt",
+      "clippy": "cargo clippy --all-targets -- -D warnings"
+    }
+  },
+
+  "key_design_principles": [
+    "Provider abstraction via PackageProvider trait — all 5 providers implement the same interface",
+    "Built-in providers in services.rs — no separate backend files, all providers defined inline",
+    "Fail-safe transactions — snapshot before, rollback on failure, post-snapshot on success",
+    "Parallel async execution — all providers queried concurrently via tokio tasks",
+    "Debounced search — avoids flooding providers with intermediate keystrokes",
+    "Circuit breaker pattern — protects AUR API from overload during outages",
+    "Separation of concerns — each source file has a focused responsibility"
+  ],
+
+  "safety_patterns": [
+    "Command timeout handling (command.rs)",
+    "Automatic retry logic for db locks and dependency errors",
+    "Permission/security validation before subprocess calls (security.rs)",
+    "Operation simulation before execution (simulation.rs)",
+    "Snapshot-based rollback on transaction failure (transaction_manager.rs + snapshots)",
+    "Circuit breaker for external API protection (watchdog.rs)",
+    "Input sanitization for subprocess commands (security.rs)",
+    "Error type hierarchy for structured error handling (errors.rs)"
+  ],
+
+  "file_size_estimates": {
+    "largest_files": ["src/ui.rs (~1500 lines)", "src/app.rs (~800 lines)", "src/services.rs (~800 lines)", "src/search.rs (~500 lines)"],
+    "test_files": ["tests/robustness_tests.rs (~200 lines)", "tests/simulation_tests.rs (~100 lines)", "tests/btrfs_snapshot_tests.rs (~50 lines)", "src/app_test.rs (~100 lines)"]
+  }
+}

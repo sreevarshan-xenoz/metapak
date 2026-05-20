@@ -4,7 +4,7 @@
 //! allowing for pluggable implementations and easier testing.
 
 use crate::errors::Result;
-use crate::models::{OutdatedPackage, Package};
+use crate::models::Package;
 use async_trait::async_trait;
 
 /// Trait for package search providers
@@ -26,9 +26,10 @@ pub trait UpdateProvider: Send + Sync {
     #[must_use = "this async method should be .await'd"]
     async fn check_updates(&self) -> Result<usize>;
 
-    /// Get detailed list of outdated packages
+    /// Get a detailed list of outdated packages
     #[must_use = "this async method should be .await'd"]
-    async fn get_outdated_packages(&self) -> Result<Vec<OutdatedPackage>>;
+    #[allow(dead_code)]
+    async fn get_outdated_packages(&self) -> Result<Vec<crate::models::OutdatedPackage>>;
 }
 
 /// Trait for filesystem snapshots
@@ -64,8 +65,6 @@ pub trait PackageSimulator: Send + Sync {
     /// Simulate installing a set of packages
     async fn simulate_install(&self, packages: &[&str]) -> Result<SimulationResult>;
 
-    /// Simulate a full system upgrade
-    async fn simulate_upgrade(&self) -> Result<SimulationResult>;
 }
 
 /// Result of a package operation simulation

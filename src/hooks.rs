@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct HookConfig {
     pub pre_install: Vec<String>,
     pub post_install: Vec<String>,
@@ -12,18 +13,6 @@ pub struct HookConfig {
     pub post_update: Vec<String>,
 }
 
-impl Default for HookConfig {
-    fn default() -> Self {
-        Self {
-            pre_install: vec![],
-            post_install: vec![],
-            pre_remove: vec![],
-            post_remove: vec![],
-            pre_update: vec![],
-            post_update: vec![],
-        }
-    }
-}
 
 impl From<HooksConfig> for HookConfig {
     fn from(cfg: HooksConfig) -> Self {
@@ -43,10 +32,6 @@ pub struct HookRunner {
 }
 
 impl HookRunner {
-    pub fn new(config: HookConfig) -> Self {
-        Self { config }
-    }
-
     /// Create a HookRunner from the application's HooksConfig
     pub fn from_config(config: &HooksConfig) -> Self {
         Self {
@@ -109,23 +94,6 @@ impl HookRunner {
         self.run_hooks(&self.config.post_update, "post-update")
     }
 
-    /// Check if any hooks are configured
-    pub fn has_hooks(&self) -> bool {
-        !self.config.pre_install.is_empty()
-            || !self.config.post_install.is_empty()
-            || !self.config.pre_remove.is_empty()
-            || !self.config.post_remove.is_empty()
-            || !self.config.pre_update.is_empty()
-            || !self.config.post_update.is_empty()
-    }
-}
-
-pub fn load_hooks_from_config() -> HookConfig {
-    // Load from AppConfig if available, otherwise return defaults
-    match crate::config::AppConfig::load() {
-        Ok(config) => HookConfig::from(config.hooks),
-        Err(_) => HookConfig::default(),
-    }
 }
 
 #[cfg(test)]
@@ -137,23 +105,6 @@ mod tests {
         let config = HookConfig::default();
         assert!(config.pre_install.is_empty());
         assert!(config.post_install.is_empty());
-    }
-
-    #[test]
-    fn test_hook_runner_empty() {
-        let runner = HookRunner::new(HookConfig::default());
-        assert!(runner.run_pre_install().is_empty());
-        assert!(!runner.has_hooks());
-    }
-
-    #[test]
-    fn test_hook_runner_has_hooks() {
-        let config = HookConfig {
-            pre_install: vec!["echo hello".to_string()],
-            ..Default::default()
-        };
-        let runner = HookRunner::new(config);
-        assert!(runner.has_hooks());
     }
 
     #[test]

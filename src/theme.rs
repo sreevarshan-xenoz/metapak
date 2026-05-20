@@ -47,13 +47,6 @@ pub enum ColorDef {
     Rgb { r: u8, g: u8, b: u8 },
 }
 
-/// Theme preset identifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemePreset {
-    Mocha,
-    Latte,
-}
-
 impl Theme {
     /// Catppuccin Mocha (dark theme) — default
     pub fn catppuccin_mocha() -> Self {
@@ -92,24 +85,6 @@ impl Theme {
             highlight_fg: ColorDef::Hex("#eff1f5".to_string()),
             repo_color: ColorDef::Hex("#209fb5".to_string()),
             aur_color: ColorDef::Hex("#fe640b".to_string()),
-        }
-    }
-
-    /// Legacy default dark theme (kept for backward compatibility)
-    pub fn default_dark() -> Self {
-        Self::catppuccin_mocha()
-    }
-
-    /// Legacy light theme
-    pub fn light() -> Self {
-        Self::catppuccin_latte()
-    }
-
-    /// Get theme by preset
-    pub fn from_preset(preset: ThemePreset) -> Self {
-        match preset {
-            ThemePreset::Mocha => Self::catppuccin_mocha(),
-            ThemePreset::Latte => Self::catppuccin_latte(),
         }
     }
 
@@ -327,12 +302,5 @@ mod tests {
         assert!((ratio - 1.0).abs() < 0.01);
     }
 
-    #[test]
-    fn test_theme_preset_from_enum() {
-        let mocha = Theme::from_preset(ThemePreset::Mocha);
-        assert_eq!(mocha.primary(), Color::Rgb(137, 180, 250));
 
-        let latte = Theme::from_preset(ThemePreset::Latte);
-        assert_eq!(latte.primary(), Color::Rgb(30, 102, 245));
-    }
 }

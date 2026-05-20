@@ -256,7 +256,7 @@ mod tests {
             state.tick(33);
             let brightness = state.border_pulse_brightness();
             assert!(
-                brightness >= 0.7 - 1e-5 && brightness <= 1.0 + 1e-5,
+                (0.7 - 1e-5..=1.0 + 1e-5).contains(&brightness),
                 "Brightness out of range: {} (phase={})",
                 brightness,
                 state.border_phase

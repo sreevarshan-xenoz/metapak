@@ -60,20 +60,6 @@ impl DesktopNotifier {
         Err("No notification tool available".to_string())
     }
 
-    pub fn notify_install(&self, package_name: &str) {
-        let _ = self.send(
-            "Package Installed",
-            &format!("{} has been installed successfully.", package_name),
-        );
-    }
-
-    pub fn notify_update(&self, count: usize) {
-        let _ = self.send(
-            "System Updated",
-            &format!("{} packages have been updated.", count),
-        );
-    }
-
     pub fn notify_error(&self, error: &str) {
         let _ = self.send("Error", error);
     }

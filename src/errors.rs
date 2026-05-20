@@ -23,12 +23,6 @@ pub enum AppError {
     #[error("Cargo command failed: {0}")]
     Cargo(String),
 
-    #[error("Pip command failed: {0}")]
-    Pip(String),
-
-    #[error("Sudo authentication failed")]
-    SudoAuthFailed,
-
     #[error("Command execution failed: {0}")]
     Command(String),
 
@@ -40,9 +34,6 @@ pub enum AppError {
 
     #[error("Configuration validation error: {0}")]
     ConfigValidation(String),
-
-    #[error("Operation timed out: {0}")]
-    Timeout(String),
 
     #[error("Input validation failed: {0}")]
     Validation(String),
@@ -58,9 +49,6 @@ pub enum AppError {
 
     #[error("Other error: {0}")]
     Other(String),
-
-    #[error("Cancelled by user")]
-    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -115,18 +103,12 @@ mod tests {
         let error_msg = format!("{}", pacman_err);
         assert!(error_msg.contains("Pacman command failed"));
         assert!(error_msg.contains("command failed"));
-
-        let cancelled = AppError::Cancelled;
-        assert_eq!(format!("{}", cancelled), "Cancelled by user");
     }
 
     #[test]
     fn test_custom_errors() {
         let aur_err = AppError::Aur("network timeout".to_string());
         assert!(format!("{}", aur_err).contains("AUR command failed"));
-
-        let sudo_err = AppError::SudoAuthFailed;
-        assert_eq!(format!("{}", sudo_err), "Sudo authentication failed");
 
         let cmd_err = AppError::Command("not found".to_string());
         assert!(format!("{}", cmd_err).contains("Command execution failed"));

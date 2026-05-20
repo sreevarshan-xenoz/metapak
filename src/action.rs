@@ -44,9 +44,6 @@ pub enum ActionInner {
     /// Switch between System and Ecosystem view
     SwitchViewMode(ViewMode),
 
-    /// Switch active ecosystem manager
-    SwitchEcosystem(EcosystemKind),
-
     /// Search for packages in an ecosystem
     SearchEcosystem {
         provider: EcosystemKind,
@@ -125,9 +122,6 @@ pub enum ActionResult {
 
     /// View mode was switched
     ViewModeSwitched(ViewMode),
-
-    /// Ecosystem was switched
-    EcosystemSwitched(EcosystemKind),
 
     /// Ecosystem search results
     EcosystemSearchResults(Vec<Package>),

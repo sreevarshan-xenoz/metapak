@@ -80,9 +80,7 @@ impl SimulationEngine {
             // Detect conflicts
             if let Some(caps) = TRANSACTION_FAILED_RE.captures(line) {
                 conflicts.push(caps[1].trim().to_string());
-            } else if line.contains("conflicting files") || line.contains("exists in filesystem") {
-                conflicts.push(line.trim().to_string());
-            } else if CONFLICT_PKG_RE.is_match(line) || UNRESOLVABLE_RE.is_match(line) {
+            } else if line.contains("conflicting files") || line.contains("exists in filesystem") || CONFLICT_PKG_RE.is_match(line) || UNRESOLVABLE_RE.is_match(line) {
                 conflicts.push(line.trim().to_string());
             }
         }
@@ -169,67 +167,6 @@ fn convert_to_bytes(val: f64, unit: &str) -> i64 {
     (val * multiplier) as i64
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_apt_install_output() {
-        let output = r#"
-Reading package lists... Done
-Building dependency tree       
-Reading state information... Done
-The following NEW packages will be installed:
-  vim-runtime
-0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
-Need to get 123 kB of archives.
-After this operation, 456 kB of additional disk space will be used.
-"#;
-        let result = SimulationEngine::parse_apt_output(output);
-        assert_eq!(result.total_download_bytes, 123 * 1024);
-        assert_eq!(result.disk_change_bytes, 456 * 1024);
-        assert!(result.conflicts.is_empty());
-    }
-
-    #[test]
-    fn test_parse_apt_remove_output() {
-        let output = r#"
-Reading package lists... Done
-Building dependency tree       
-Reading state information... Done
-The following packages will be REMOVED:
-  vim-runtime*
-0 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.
-After this operation, 789 kB disk space will be freed.
-"#;
-        let result = SimulationEngine::parse_apt_output(output);
-        assert_eq!(result.total_download_bytes, 0);
-        assert_eq!(result.disk_change_bytes, -789 * 1024);
-        assert!(result.conflicts.is_empty());
-    }
-
-    #[test]
-    fn test_parse_apt_conflict_output() {
-        let output = r#"
-Reading package lists... Done
-Building dependency tree       
-Reading state information... Done
-Some packages could not be installed. This may mean that you have
-requested an impossible situation or if you are using the unstable
-distribution that some required packages have not yet been created
-or been moved out of Incoming.
-The following information may help to resolve the situation:
-
-The following packages have unmet dependencies:
- libssl-dev : Conflicts: libssl1.0-dev but 1.0.2n-1ubuntu5.3 is to be installed
-E: Unable to correct problems, you have held broken packages.
-"#;
-        let result = SimulationEngine::parse_apt_output(output);
-        assert!(!result.conflicts.is_empty());
-        assert!(result.conflicts[0].contains("unmet dependencies"));
-    }
-}
-
 #[async_trait]
 impl PackageSimulator for SimulationEngine {
     async fn simulate_install(&self, packages: &[&str]) -> Result<SimulationResult> {
@@ -292,56 +229,66 @@ impl PackageSimulator for SimulationEngine {
         }
     }
 
-    async fn simulate_upgrade(&self) -> Result<SimulationResult> {
-        match self.backend.as_str() {
-            "pacman" => {
-                // -Syuw: simulate full system upgrade (download only)
-                let output = Command::new("pacman")
-                    .env("LC_ALL", "C")
-                    .args(["-Syuw", "--noconfirm"])
-                    .output()
-                    .await?;
 
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}\n{}", stdout, stderr);
+}
 
-                let result = Self::parse_pacman_output(&combined);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-                if !output.status.success() && result.conflicts.is_empty() {
-                    return Err(AppError::Pacman(stderr.trim().to_string()));
-                }
+    #[test]
+    fn test_parse_apt_install_output() {
+        let output = r#"
+Reading package lists... Done
+Building dependency tree       
+Reading state information... Done
+The following NEW packages will be installed:
+  vim-runtime
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 123 kB of archives.
+After this operation, 456 kB of additional disk space will be used.
+"#;
+        let result = SimulationEngine::parse_apt_output(output);
+        assert_eq!(result.total_download_bytes, 123 * 1024);
+        assert_eq!(result.disk_change_bytes, 456 * 1024);
+        assert!(result.conflicts.is_empty());
+    }
 
-                Ok(result)
-            }
-            "apt" => {
-                let output = Command::new("apt-get")
-                    .env("LC_ALL", "C")
-                    .args(["dist-upgrade", "-s", "-y"])
-                    .output()
-                    .await?;
+    #[test]
+    fn test_parse_apt_remove_output() {
+        let output = r#"
+Reading package lists... Done
+Building dependency tree       
+Reading state information... Done
+The following packages will be REMOVED:
+  vim-runtime*
+0 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.
+After this operation, 789 kB disk space will be freed.
+"#;
+        let result = SimulationEngine::parse_apt_output(output);
+        assert_eq!(result.total_download_bytes, 0);
+        assert_eq!(result.disk_change_bytes, -789 * 1024);
+        assert!(result.conflicts.is_empty());
+    }
 
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}\n{}", stdout, stderr);
+    #[test]
+    fn test_parse_apt_conflict_output() {
+        let output = r#"
+Reading package lists... Done
+Building dependency tree       
+Reading state information... Done
+Some packages could not be installed. This may mean that you have
+requested an impossible situation or if you are using the unstable
+distribution that some required packages have not yet been created
+or been moved out of Incoming.
+The following information may help to resolve the situation:
 
-                let result = Self::parse_apt_output(&combined);
-
-                if !output.status.success() && result.conflicts.is_empty() {
-                    return Err(AppError::Command(format!(
-                        "apt-get failed: {}",
-                        stderr.trim()
-                    )));
-                }
-
-                Ok(result)
-            }
-            _ => Ok(SimulationResult {
-                total_download_bytes: 0,
-                disk_change_bytes: 0,
-                conflicts: Vec::new(),
-                config_changes: Vec::new(),
-            }),
-        }
+The following packages have unmet dependencies:
+ libssl-dev : Conflicts: libssl1.0-dev but 1.0.2n-1ubuntu5.3 is to be installed
+E: Unable to correct problems, you have held broken packages.
+"#;
+        let result = SimulationEngine::parse_apt_output(output);
+        assert!(!result.conflicts.is_empty());
+        assert!(result.conflicts[0].contains("unmet dependencies"));
     }
 }
