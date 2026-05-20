@@ -688,10 +688,7 @@ impl PipProvider {
 impl PackageProvider for PipProvider {
     async fn search(&self, query: &str) -> Result<Vec<Package>> {
         // Try exact match via JSON API first since pip search is deprecated
-        let url = format!(
-            "https://pypi.org/pypi/{}/json",
-            urlencoding::encode(query)
-        );
+        let url = format!("https://pypi.org/pypi/{}/json", urlencoding::encode(query));
 
         let response = self.client.get(&url).send().await;
 
@@ -1006,7 +1003,7 @@ pub fn plan_package_transaction(packages: &[Package], config: &AppConfig) -> Vec
     for (source, names) in to_remove {
         let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
         match source {
-            PackageSource::Pacman |            PackageSource::Aur => {
+            PackageSource::Pacman | PackageSource::Aur => {
                 commands.push(helper.remove_command(&name_refs));
             }
             PackageSource::Npm => {
@@ -1236,13 +1233,17 @@ impl PackageService {
     }
 
     /// Search for packages in a specific ecosystem
-    pub async fn search_ecosystem(&self, kind: crate::app::EcosystemKind, query: &str) -> Result<Vec<Package>> {
+    pub async fn search_ecosystem(
+        &self,
+        kind: crate::app::EcosystemKind,
+        query: &str,
+    ) -> Result<Vec<Package>> {
         let provider: Arc<dyn PackageProvider> = match kind {
             crate::app::EcosystemKind::Npm => Arc::new(NpmProvider::new()),
             crate::app::EcosystemKind::Cargo => Arc::new(CargoProvider::new()),
             crate::app::EcosystemKind::Pip => Arc::new(PipProvider::new()),
         };
-        
+
         provider.search(query).await
     }
 
@@ -2011,7 +2012,11 @@ mod tests {
     fn test_command_spec_display() {
         let spec = CommandSpec {
             prog: "sudo".to_string(),
-            args: vec!["pacman".to_string(), "-S".to_string(), "firefox".to_string()],
+            args: vec![
+                "pacman".to_string(),
+                "-S".to_string(),
+                "firefox".to_string(),
+            ],
         };
         assert_eq!(command_display(&spec), "sudo pacman -S firefox");
     }
@@ -2108,7 +2113,9 @@ tokio = "1.36.0" # An event-driven, non-blocking I/O platform for writing asynch
         assert_eq!(packages[0].name, "cargo-edit");
         assert_eq!(packages[0].version, "0.12.2");
         assert_eq!(packages[0].source, PackageSource::Cargo);
-        assert!(packages[0].description.contains("managing cargo dependencies"));
+        assert!(packages[0]
+            .description
+            .contains("managing cargo dependencies"));
 
         assert_eq!(packages[1].name, "tokio");
         assert_eq!(packages[1].version, "1.36.0");
@@ -2139,7 +2146,7 @@ tokio = "1.36.0" # An event-driven, non-blocking I/O platform for writing asynch
     #[test]
     fn test_plan_package_transaction_ecosystems() {
         let config = AppConfig::default();
-        
+
         // NPM
         let pkg_npm = Package {
             name: "express".to_string(),

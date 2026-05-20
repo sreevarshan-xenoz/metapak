@@ -2,8 +2,7 @@ use crate::config::HooksConfig;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HookConfig {
     pub pre_install: Vec<String>,
     pub post_install: Vec<String>,
@@ -12,7 +11,6 @@ pub struct HookConfig {
     pub pre_update: Vec<String>,
     pub post_update: Vec<String>,
 }
-
 
 impl From<HooksConfig> for HookConfig {
     fn from(cfg: HooksConfig) -> Self {
@@ -93,7 +91,6 @@ impl HookRunner {
     pub fn run_post_update(&self) -> Vec<Result<String, String>> {
         self.run_hooks(&self.config.post_update, "post-update")
     }
-
 }
 
 #[cfg(test)]

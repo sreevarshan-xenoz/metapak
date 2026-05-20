@@ -80,7 +80,11 @@ impl SimulationEngine {
             // Detect conflicts
             if let Some(caps) = TRANSACTION_FAILED_RE.captures(line) {
                 conflicts.push(caps[1].trim().to_string());
-            } else if line.contains("conflicting files") || line.contains("exists in filesystem") || CONFLICT_PKG_RE.is_match(line) || UNRESOLVABLE_RE.is_match(line) {
+            } else if line.contains("conflicting files")
+                || line.contains("exists in filesystem")
+                || CONFLICT_PKG_RE.is_match(line)
+                || UNRESOLVABLE_RE.is_match(line)
+            {
                 conflicts.push(line.trim().to_string());
             }
         }
@@ -228,8 +232,6 @@ impl PackageSimulator for SimulationEngine {
             }
         }
     }
-
-
 }
 
 #[cfg(test)]

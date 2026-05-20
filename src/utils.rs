@@ -116,7 +116,12 @@ pub fn validate_path(path: &std::path::Path) -> bool {
             Component::ParentDir => return false,
             Component::Normal(s) => {
                 let s_str = s.to_string_lossy();
-                if s_str.starts_with('.') && s_str != ".config" && s_str != ".local" && s_str != ".cache" && !s_str.starts_with(".tmp") {
+                if s_str.starts_with('.')
+                    && s_str != ".config"
+                    && s_str != ".local"
+                    && s_str != ".cache"
+                    && !s_str.starts_with(".tmp")
+                {
                     return false;
                 }
             }
@@ -125,7 +130,6 @@ pub fn validate_path(path: &std::path::Path) -> bool {
     }
     true
 }
-
 
 #[cfg(test)]
 mod tests {

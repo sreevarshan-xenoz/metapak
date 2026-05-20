@@ -74,7 +74,6 @@ pub fn flush() {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_log_path_is_valid() {
         let path = log_path();

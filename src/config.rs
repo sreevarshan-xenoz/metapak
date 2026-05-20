@@ -357,8 +357,6 @@ impl AppConfig {
         }
         theme
     }
-
-
 }
 
 /// Configuration validation errors

@@ -110,14 +110,6 @@ impl Package {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn format_installed_size(&self) -> String {
-        match self.installed_size {
-            Some(size) if size > 0 => Self::format_size_kb(size),
-            _ => "-".to_string(),
-        }
-    }
-
     pub fn format_download_size(&self) -> String {
         match self.download_size {
             Some(size) if size > 0 => Self::format_size_kb(size),

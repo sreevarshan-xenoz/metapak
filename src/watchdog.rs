@@ -3,12 +3,6 @@ use std::path::Path;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
-pub struct MirrorHealth {
-    #[allow(dead_code)]
-    pub reachable: bool,
-}
-
-#[derive(Debug, Clone)]
 pub struct DiskHealth {
     pub mount_point: String,
     pub total_bytes: u64,
@@ -24,7 +18,9 @@ pub struct HealthWatchdog {
 impl HealthWatchdog {
     #[allow(dead_code)]
     pub fn new(ping_timeout: Duration) -> Self {
-        Self { _ping_timeout: ping_timeout }
+        Self {
+            _ping_timeout: ping_timeout,
+        }
     }
 
     pub async fn check_db_lock(&self) -> Result<bool> {
@@ -37,5 +33,3 @@ pub struct PacmanStatus {
     pub db_locked: bool,
     pub gpg_valid: bool,
 }
-
-

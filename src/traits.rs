@@ -64,7 +64,6 @@ pub struct SnapshotInfo {
 pub trait PackageSimulator: Send + Sync {
     /// Simulate installing a set of packages
     async fn simulate_install(&self, packages: &[&str]) -> Result<SimulationResult>;
-
 }
 
 /// Result of a package operation simulation

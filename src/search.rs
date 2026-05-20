@@ -494,9 +494,10 @@ impl EnhancedSearch {
             }
 
             if query.matches_package(&pkg.name, &pkg.description, pkg)
-                && seen.insert(pkg.name.clone()) {
-                    suggestions.push(pkg.name.clone());
-                }
+                && seen.insert(pkg.name.clone())
+            {
+                suggestions.push(pkg.name.clone());
+            }
         }
 
         suggestions

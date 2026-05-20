@@ -4,7 +4,6 @@ pub mod search {
     pub const DEBOUNCE_MS_DEFAULT: u64 = 300;
     pub const HISTORY_MAX_SIZE_DEFAULT: usize = 50;
     pub const UNDO_HISTORY_MAX_DEFAULT: usize = 20;
-    
 }
 
 pub mod ui {

@@ -301,6 +301,4 @@ mod tests {
         let ratio = Theme::calculate_contrast_ratio(&Color::White, &Color::White);
         assert!((ratio - 1.0).abs() < 0.01);
     }
-
-
 }

@@ -7,7 +7,6 @@ mod constants;
 mod dependency_visualization;
 mod diagnostics;
 mod errors;
-mod export;
 mod hooks;
 mod i18n;
 mod input;
@@ -308,9 +307,12 @@ async fn run_command_sequence(
                         let _ = tx.send(ActionResult::CommandOutput(
                             "Dependency issue detected. Running system upgrade...".to_string(),
                         ));
-                        
+
                         let fix = if cfg!(windows) {
-                            CommandSpec::new_no_sudo("winget", vec!["upgrade".to_string(), "--all".to_string()])
+                            CommandSpec::new_no_sudo(
+                                "winget",
+                                vec!["upgrade".to_string(), "--all".to_string()],
+                            )
                         } else {
                             CommandSpec {
                                 prog: "sudo".to_string(),
@@ -321,7 +323,7 @@ async fn run_command_sequence(
                                 ],
                             }
                         };
-                        
+
                         match run_single_command(
                             &fix,
                             tx.clone(),
@@ -610,7 +612,11 @@ async fn main() -> Result<()> {
 
     // Detect and initialize snapshot provider
     let root_path = if cfg!(windows) { "C:\\" } else { "/" };
-    let snapshots_dir = if cfg!(windows) { "C:\\.snapshots" } else { "/.snapshots" };
+    let snapshots_dir = if cfg!(windows) {
+        "C:\\.snapshots"
+    } else {
+        "/.snapshots"
+    };
     let snapshot_provider: Option<Arc<dyn crate::traits::SnapshotProvider>> = if cfg!(windows) {
         // Windows-specific snapshot provider could be added here (e.g. VSS)
         None
@@ -946,7 +952,12 @@ async fn main() -> Result<()> {
                     let _ = result_tx.send(ActionResult::ViewModeSwitched(*mode));
                 }
                 ActionInner::SearchEcosystem { provider, query } => {
-                    tracing::info!(action_id, "Processing SearchEcosystem action for {:?}: {}", provider, query);
+                    tracing::info!(
+                        action_id,
+                        "Processing SearchEcosystem action for {:?}: {}",
+                        provider,
+                        query
+                    );
                     let result_tx_clone = result_tx.clone();
                     let query = query.clone();
                     let provider = *provider;
@@ -956,12 +967,15 @@ async fn main() -> Result<()> {
                         let package_service = PackageService::new(config);
                         match package_service.search_ecosystem(provider, &query).await {
                             Ok(results) => {
-                                let _ = result_tx_clone.send(ActionResult::EcosystemSearchResults(results));
+                                let _ = result_tx_clone
+                                    .send(ActionResult::EcosystemSearchResults(results));
                             }
                             Err(e) => {
                                 tracing::error!(action_id, "Ecosystem search failed: {}", e);
-                                let _ = result_tx_clone
-                                    .send(ActionResult::Error(format!("Ecosystem search failed: {}", e)));
+                                let _ = result_tx_clone.send(ActionResult::Error(format!(
+                                    "Ecosystem search failed: {}",
+                                    e
+                                )));
                             }
                         }
                     });

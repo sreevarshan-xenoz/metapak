@@ -66,8 +66,6 @@ mod circuit_breaker_tests {
 mod error_type_tests {
     use metapak::errors::AppError;
 
-
-
     #[test]
     fn test_validation_error() {
         let err = AppError::Validation("Invalid input".to_string());

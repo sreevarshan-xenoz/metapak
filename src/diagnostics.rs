@@ -447,8 +447,6 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-
-
 #[derive(Debug, Clone)]
 pub struct ForeignPackage {
     pub name: String,
@@ -566,4 +564,3 @@ pub fn get_package_groups() -> Vec<PackageGroup> {
     groups.sort_by(|a, b| b.member_count.cmp(&a.member_count));
     groups
 }
-

@@ -136,11 +136,7 @@ pub struct App {
     pub updates_cursor: Option<usize>,
     pub updates_sort: UpdatesSortOption,
     pub updates_filter: UpdatesFilter,
-    #[allow(dead_code)]
-    pub updates_group_by_repo: bool,
     pub selected_updates: Vec<String>,
-    #[allow(dead_code)]
-    pub updates_changelog_package: Option<String>,
     pub partial_update_warning_shown: bool,
 
     // Password - using secure input
@@ -187,8 +183,7 @@ pub struct App {
     pub system_info: Vec<crate::diagnostics::DiagnosticItem>,
     pub show_health_dashboard: bool,
     pub health_disk_info: Vec<crate::watchdog::DiskHealth>,
-    #[allow(dead_code)]
-    pub health_mirror_info: Vec<crate::watchdog::MirrorHealth>,
+
     pub health_pacman_status: Option<crate::watchdog::PacmanStatus>,
     pub show_orphans: bool,
     pub orphan_packages: Vec<crate::diagnostics::OrphanPackage>,
@@ -201,7 +196,6 @@ pub struct App {
     pub show_groups: bool,
     pub package_groups: Vec<crate::diagnostics::PackageGroup>,
     pub selected_group: Option<String>,
-
 
     // Pacnew/Pacsave files
     pub show_pacnew_pacsave: bool,
@@ -239,8 +233,6 @@ pub struct App {
     pub toasts: Vec<Toast>,
     pub results_scroll_state: ratatui::widgets::ScrollbarState,
     pub history_scroll_state: Option<ratatui::widgets::ScrollbarState>,
-    #[allow(dead_code)]
-    pub dependency_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub console_scroll_state: Option<ratatui::widgets::ScrollbarState>,
     pub diagnostics_scroll_state: Option<ratatui::widgets::ScrollbarState>,
 
@@ -324,9 +316,7 @@ impl App {
             updates_cursor: None,
             updates_sort: UpdatesSortOption::default(),
             updates_filter: UpdatesFilter::default(),
-            updates_group_by_repo: true,
             selected_updates: Vec::new(),
-            updates_changelog_package: None,
             partial_update_warning_shown: false,
 
             show_password_prompt: cfg!(not(target_os = "windows")),
@@ -365,7 +355,6 @@ impl App {
             system_info: Vec::new(),
             show_health_dashboard: false,
             health_disk_info: Vec::new(),
-            health_mirror_info: Vec::new(),
             health_pacman_status: None,
             show_orphans: false,
             orphan_packages: Vec::new(),
@@ -378,7 +367,6 @@ impl App {
             show_groups: false,
             package_groups: Vec::new(),
             selected_group: None,
-
 
             show_pacnew_pacsave: false,
             pacnew_pacsave_files: Vec::new(),
@@ -407,7 +395,6 @@ impl App {
             toasts: Vec::new(),
             results_scroll_state: ratatui::widgets::ScrollbarState::new(0),
             history_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
-            dependency_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             console_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
             diagnostics_scroll_state: Some(ratatui::widgets::ScrollbarState::new(0)),
 
@@ -508,22 +495,6 @@ impl App {
         None
     }
 
-    #[allow(dead_code)]
-    /// Get search suggestions based on current input
-    pub fn get_search_suggestions(&self, input: &str, limit: usize) -> Vec<String> {
-        if input.is_empty() {
-            return self.search_history.iter().take(limit).cloned().collect();
-        }
-
-        let input_lower = input.to_lowercase();
-        self.search_history
-            .iter()
-            .filter(|q| q.to_lowercase().contains(&input_lower))
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
     pub fn clear_pending_search(&mut self) {
         self.pending_search = None;
         self.last_search_time = None;
@@ -570,7 +541,8 @@ impl App {
     pub fn get_paginated_results(&self) -> Vec<&Package> {
         if matches!(self.view_mode, ViewMode::Ecosystem) {
             let start = self.current_page * self.items_per_page;
-            let end = ((self.current_page + 1) * self.items_per_page).min(self.ecosystem_results.len());
+            let end =
+                ((self.current_page + 1) * self.items_per_page).min(self.ecosystem_results.len());
 
             if start >= self.ecosystem_results.len() {
                 return Vec::new();
@@ -794,25 +766,6 @@ impl App {
         self.apply_filter_and_sort();
     }
 
-    #[allow(dead_code)]
-    pub fn get_available_groups(&self) -> Vec<String> {
-        let mut groups: Vec<String> = self
-            .results
-            .iter()
-            .flat_map(|p| p.groups.clone())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        groups.sort();
-        groups
-    }
-
-    #[allow(dead_code)]
-    pub fn filter_by_group(&mut self, group: &str) {
-        self.current_filter = FilterOption::Group(group.to_string());
-        self.apply_filter_and_sort();
-    }
-
     pub fn cycle_sort(&mut self) {
         self.current_sort = match self.current_sort {
             SortOption::NameAsc => SortOption::NameDesc,
@@ -824,8 +777,6 @@ impl App {
         };
         self.apply_filter_and_sort();
     }
-
-
 
     // View Management
     pub fn show_package_details(&mut self) {
@@ -903,8 +854,6 @@ impl App {
         self.show_system_info = !self.show_system_info;
     }
 
-
-
     pub fn toggle_orphans(&mut self) {
         if !self.show_orphans {
             self.orphan_packages = crate::diagnostics::find_orphan_packages();
@@ -941,13 +890,6 @@ impl App {
         }
         self.show_groups = !self.show_groups;
     }
-
-    #[allow(dead_code)]
-    pub fn select_group(&mut self, group_name: String) {
-        self.selected_group = Some(group_name);
-    }
-
-
 
     pub fn toggle_pacnew_pacsave(&mut self) {
         if !self.show_pacnew_pacsave {
@@ -993,16 +935,6 @@ impl App {
         self.downgrade_package = None;
         self.available_versions.clear();
         self.downgrade_cursor = None;
-    }
-
-    #[allow(dead_code)]
-    pub fn toggle_updates_view(&mut self) {
-        self.show_updates_view = !self.show_updates_view;
-        if self.show_updates_view {
-            self.hide_package_details();
-            self.hide_dependency_visualization();
-            self.hide_help();
-        }
     }
 
     pub fn hide_updates_view(&mut self) {
@@ -1103,29 +1035,6 @@ impl App {
             .iter()
             .filter(|p| p.is_security_update)
             .count()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_aur_updates_count(&self) -> usize {
-        self.outdated_packages.iter().filter(|p| p.is_aur).count()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_repo_updates_count(&self, repo: &str) -> usize {
-        self.outdated_packages
-            .iter()
-            .filter(|p| p.repository == repo)
-            .count()
-    }
-
-    #[allow(dead_code)]
-    pub fn show_changelog_for_package(&mut self, name: String) {
-        self.updates_changelog_package = Some(name);
-    }
-
-    #[allow(dead_code)]
-    pub fn hide_changelog(&mut self) {
-        self.updates_changelog_package = None;
     }
 
     // Console Management
@@ -1286,26 +1195,6 @@ impl App {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn start_install_progress(&mut self, total: usize) {
-        self.install_total = total;
-        self.install_current = 0;
-        self.install_current_package = String::new();
-    }
-
-    #[allow(dead_code)]
-    pub fn update_install_progress(&mut self, current: usize, package_name: &str) {
-        self.install_current = current;
-        self.install_current_package = package_name.to_string();
-    }
-
-    #[allow(dead_code)]
-    pub fn finish_install_progress(&mut self) {
-        self.install_total = 0;
-        self.install_current = 0;
-        self.install_current_package.clear();
-    }
-
     pub fn get_progress_percentage(&self) -> f64 {
         if self.install_total == 0 {
             0.0
@@ -1316,14 +1205,6 @@ impl App {
 
     pub fn expire_toasts(&mut self) {
         self.toasts.retain(|t| !t.is_expired());
-    }
-
-    #[allow(dead_code)]
-    pub fn toggle_sidebar(&mut self) {
-        self.show_sidebar = !self.show_sidebar;
-        if self.show_sidebar && self.selected_index.is_none() && !self.results.is_empty() {
-            self.selected_index = Some(0);
-        }
     }
 
     pub fn tick(&mut self, delta_ms: u64) {

@@ -14,8 +14,7 @@ pub struct Vulnerability {
     pub details: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[allow(dead_code)]
 pub enum Severity {
     Critical,

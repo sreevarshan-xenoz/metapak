@@ -530,7 +530,6 @@ impl Localizer {
         // Return the key if no translation is found
         key.to_string()
     }
-
 }
 
 impl Default for Localizer {
@@ -554,6 +553,4 @@ mod tests {
         let localizer = Localizer::new();
         assert_eq!(localizer.t("nonexistent_key"), "nonexistent_key");
     }
-
-
 }
