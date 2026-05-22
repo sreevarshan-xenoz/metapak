@@ -33,7 +33,6 @@ pub mod errors;
 pub mod hooks;
 pub mod i18n;
 pub mod input;
-pub mod keybindings;
 pub mod models;
 pub mod notifications;
 pub mod operation_queue;
