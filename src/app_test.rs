@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::app::{App, InputMode};
     use crate::models::{Package, PackageSource};
 
     fn create_test_package(name: &str, source: PackageSource, installed: bool) -> Package {
@@ -57,8 +57,12 @@ mod tests {
         assert!(app.pending_command.is_none());
         assert!(app.error_message.is_none());
         assert!(app.available_updates.is_none());
+        // show_password_prompt defaults to true on Unix, false on Windows
+        #[cfg(not(target_os = "windows"))]
         assert!(app.show_password_prompt);
-        assert_eq!(app.password_input, "");
+        #[cfg(target_os = "windows")]
+        assert!(!app.show_password_prompt);
+        assert!(app.password_input.is_empty());
         assert_eq!(app.selected_packages.len(), 0);
         assert!(!app.show_confirm_prompt);
         assert_eq!(app.packages_pending_confirmation.len(), 0);

@@ -27,6 +27,9 @@ mod ui_utils;
 mod utils;
 mod watchdog;
 
+#[cfg(test)]
+mod app_test;
+
 // CLI arguments disabled - cargo not available for testing
 // use clap::{Arg, Command as ClapCommand};
 
