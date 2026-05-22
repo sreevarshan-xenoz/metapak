@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn test_app_initialization() {
         let app = App::new();
-        
+
         assert_eq!(app.search_input, "");
         assert!(matches!(app.input_mode, InputMode::Normal));
         assert_eq!(app.results.len(), 0);
@@ -96,7 +96,11 @@ mod tests {
         let mut app = App::new();
 
         for i in 0..3 {
-            app.results.push(create_test_package(&format!("package-{}", i), PackageSource::Pacman, false));
+            app.results.push(create_test_package(
+                &format!("package-{}", i),
+                PackageSource::Pacman,
+                false,
+            ));
         }
 
         assert!(app.selected_index.is_none());
