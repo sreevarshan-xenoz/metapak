@@ -565,9 +565,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Handle --search flag (pre-fill search in TUI)
-    let _initial_search = cli.search;
-
     // Display platform and package manager info
     let platform_info = crate::platform::get_platform_info();
     tracing::info!("Starting Universal TUI on {}", platform_info);
@@ -660,6 +657,12 @@ async fn main() -> Result<()> {
     app.set_sender(action_tx.clone());
     if let Ok(history) = crate::transaction_history::load_history() {
         app.transaction_history = history.into();
+    }
+
+    // Wire --search flag to pre-fill search input
+    if let Some(query) = cli.search {
+        app.search_input = query;
+        app.input_mode = crate::app::InputMode::Editing;
     }
 
     // Rotate telemetry logs if needed
