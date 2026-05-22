@@ -224,9 +224,6 @@ pub struct App {
     pub transaction_history: VecDeque<TransactionRecord>,
     pub current_transaction: Option<TransactionRecord>,
 
-    // Operation queue for batch operations
-    pub operation_queue: crate::operation_queue::OperationQueue,
-
     // Visual overhaul - sidebar, animations, toasts, scroll states
     pub show_sidebar: bool,
     pub animation_state: crate::animations::AnimationState,
@@ -388,7 +385,6 @@ impl App {
 
             transaction_history: VecDeque::new(),
             current_transaction: None,
-            operation_queue: crate::operation_queue::OperationQueue::new(),
 
             show_sidebar: false,
             animation_state: crate::animations::AnimationState::new(),

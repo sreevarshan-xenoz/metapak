@@ -35,7 +35,6 @@ pub mod i18n;
 pub mod input;
 pub mod models;
 pub mod notifications;
-pub mod operation_queue;
 pub mod platform;
 pub mod search;
 pub mod services;

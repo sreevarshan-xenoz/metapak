@@ -12,7 +12,6 @@ mod i18n;
 mod input;
 mod models;
 mod notifications;
-mod operation_queue;
 mod platform;
 mod search;
 mod services;
@@ -649,8 +648,6 @@ async fn main() -> Result<()> {
     let aur_helper = app_config.aur_helper.clone();
     let mut app = App::new();
     app.config = app_config.clone();
-    app.operation_queue =
-        crate::operation_queue::OperationQueue::with_manager(transaction_manager.clone());
     app.items_per_page = app.config.ui.items_per_page;
     app.search_debounce_duration = Duration::from_millis(app.config.ui.search_debounce_ms);
     app.max_history_size = app.config.ui.max_search_history;
