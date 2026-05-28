@@ -1,3 +1,8 @@
+//! Test utilities and helper functions for application testing.
+//!
+//! Provides mock data, test fixtures, and helper methods used
+//! across unit and integration tests.
+
 #[cfg(test)]
 mod tests {
     use crate::app::{App, InputMode};
