@@ -185,8 +185,7 @@ Colors can be hex strings, named colors (`blue`, `red`, `green`, etc.), or RGB o
 ### AUR Helper
 
 ```toml
-[aur]
-helper = "auto"   # "auto", "yay", "paru", or "pacman"
+aur_helper = "auto"   # "auto", "yay", "paru", or "pacman"
 ```
 
 ### Keyboard Bindings
@@ -199,14 +198,22 @@ All keys are fully customizable under `[keyboard]`. Default bindings:
 | `search` | `"/"` |
 | `install` | `"enter"` |
 | `toggle_selection` | `"tab"` |
+| `next_page` | `"n"` |
+| `prev_page` | `"p"` |
 | `next` | `"j"` |
 | `prev` | `"k"` |
 | `help` | `"?"` |
+| `history` | `"t"` |
+| `diagnostics` | `"h"` |
 | `filter` | `"f"` |
 | `sort` | `"s"` |
-| `diagnostics` | `"h"` |
+| `undo` | `"u"` |
+| `details` | `"d"` |
+| `dependencies` | `"v"` |
+| `sidebar` | `"\\"` |
+| `refresh` | `"r"` |
 | `update` | `"U"` |
-| *(and more — see `config.example.toml` for the full list)* |
+| `rollback` | `"R"` |
 
 ### UI
 
