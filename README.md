@@ -287,16 +287,101 @@ max_log_files = 5       # Number of rotated log files to keep
 
 ---
 
+## View Reference
+
+metapak provides several specialized views accessible via keyboard shortcuts:
+
+### Updates View (`U`)
+Shows all available package updates from your configured repositories. Displays package name, current version, and new version. Press `Shift+U` to upgrade all packages.
+
+### Diagnostics (`h`)
+System health overview: package manager status, AUR helper detection, disk space usage, database lock status. Useful for troubleshooting.
+
+### System Info (`I`)
+Hardware and OS overview: CPU model and usage, total and used RAM, system uptime, OS name and kernel version, desktop environment.
+
+### Orphan Packages (`O`)
+Lists packages that were installed as dependencies but are no longer required by any installed package. Useful for cleanup.
+
+### Package Sizes (`P`)
+Top 30 largest installed packages sorted by installed size. Helps identify disk space usage.
+
+### Cache Info (`C`)
+Shows package manager cache sizes (pacman, AUR helper caches). Helps manage disk space.
+
+### Foreign Packages (`F`)
+Lists explicitly installed packages from AUR or other external sources (not from the main repositories).
+
+### Package Groups (`G`)
+Browse and manage package groups. Select a group to see its member packages and install/remove them.
+
+### Dependency Tree (`v`)
+Visualizes package dependencies as an interactive tree. Select a package to see what it depends on and what depends on it.
+
+## Troubleshooting
+
+### "sudo password prompt fails or loops"
+Use the startup password prompt to cache your sudo credentials for the session. If you dismiss it, you'll be prompted during operations. On systems without sudo (e.g., some containers), run metapak as root.
+
+### "Search returns no results"
+- Ensure at least one supported package manager is installed
+- Check that the package name is correct (typos tolerated — fuzzy matching is enabled)
+- Check network connectivity if searching AUR
+
+### "AUR helper not detected"
+metapak auto-detects `yay` and `paru`. Set `aur_helper = "yay"` explicitly in `config.toml` if auto-detection fails.
+
+### "Operation hangs or is slow"
+- Large repository updates (especially `apt update`) can take time
+- The search debounce (300ms by default) adds a small delay before executing queries
+- Check `[ui] search_debounce_ms` in config to tune responsiveness
+
+### "Windows: scoop commands fail"
+Ensure Scoop is installed and in your PATH. Run `scoop help` in PowerShell to verify.
+
+### "Error: database locked"
+Another package manager instance (e.g., `apt`, `pacman`) is running. Close it and retry.
+
+### "How do I reset the configuration?"
+Delete `~/.config/metapak/config.toml` — metapak will use built-in defaults. The example config at `config.example.toml` shows all options.
+
 ## 🛠️ Architecture
 
-Built with the **Rust** ecosystem for speed and safety:
+metapak is built in **Rust** for speed and safety. The architecture follows an action-driven, async-first design:
 
-*   **Ratatui**: Robust TUI rendering engine.
-*   **Tokio**: Async runtime for non-blocking I/O and background search tasks.
-*   **Crossterm**: Cross-platform terminal handling.
-*   **Reqwest**: Async HTTP client for AUR RPC v5 queries.
-*   **Dashmap**: Concurrent cache for search results.
-*   **Thiserror**: Error handling with custom error types.
+```
+src/
+├── main.rs              # Entry point, CLI parsing, event loop
+├── app.rs               # Application state (App struct, mode management)
+├── ui.rs                # TUI rendering (Ratatui)
+├── services.rs          # Package service layer (search, install, remove)
+├── backends/
+│   ├── mod.rs
+│   └── snapshots/       # Snapshot providers (btrfs, timeshift)
+├── config.rs            # Configuration loading from TOML
+├── search.rs            # Fuzzy search with query syntax
+├── traits.rs            # PackageProvider, PackageSimulator traits
+├── hooks.rs             # Pre/post operation shell hooks
+├── i18n.rs              # Internationalization subsystem
+├── theme.rs             # Dynamic theming (Catppuccin palettes)
+├── diagnostics.rs       # System diagnostics collection
+├── notifications.rs     # Desktop notification support
+├── telemetry.rs         # Operation logging with rotation
+├── transaction_manager.rs # Safe orchestration of system changes
+├── watchdog.rs          # Health monitoring / circuit breaker
+├── simulation.rs        # Dry-run simulation engine
+├── models.rs            # Core data types (Package, PackageSource)
+├── errors.rs            # Custom error types
+└── ...                  # Supporting modules
+```
+
+### Key Design Patterns
+
+- **Action-Driven State**: UI state updates via `Action` messages sent through async channels — decouples rendering from backend logic
+- **Trait-Based Backends**: Package managers implement the `PackageProvider` trait for pluggable, testable backends
+- **Async First**: Most I/O is non-blocking using `tokio` — search, install, updates all run in background tasks
+- **Circuit Breaker**: AUR API calls protected by a circuit breaker to handle outages gracefully
+- **Robustness Suite**: Simulation engine for dry-run testing, health watchdog, and snapshot providers for system safety
 
 ## 🤝 Contributing
 
