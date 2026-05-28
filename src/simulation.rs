@@ -1,3 +1,8 @@
+//! Dry-run simulation engine for package operations.
+//!
+//! Provides a `PackageSimulator` implementation that logs what would
+//! happen without actually modifying the system, useful for testing.
+
 use crate::errors::{AppError, Result};
 use crate::traits::{PackageSimulator, SimulationResult};
 use async_trait::async_trait;

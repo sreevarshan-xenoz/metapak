@@ -1,3 +1,8 @@
+//! Orchestration of safe system modifications.
+//!
+//! Coordinates pre-operation snapshots, command execution, error
+//! handling, and post-operation cleanup for package transactions.
+
 use crate::errors::{AppError, Result};
 use crate::hooks::HookRunner;
 use crate::services::CommandSpec;

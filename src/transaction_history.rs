@@ -1,3 +1,8 @@
+//! Transaction history tracking.
+//!
+//! Records package install/remove operations across sessions for
+//! undo support and audit trails.
+
 use crate::errors::{AppError, Result};
 use crate::services::CommandSpec;
 use serde::{Deserialize, Serialize};

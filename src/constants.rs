@@ -1,3 +1,8 @@
+//! Application-wide constants.
+//!
+//! Defines shared constants for paths, timeouts, limits, and
+//! other configuration values used across the application.
+
 #![cfg_attr(not(test), allow(dead_code))]
 
 pub mod search {
