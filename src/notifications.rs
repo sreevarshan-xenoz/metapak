@@ -1,3 +1,8 @@
+//! Desktop notification support.
+//!
+//! Sends OS-level notifications for package operations, available
+//! updates, and errors using platform-specific notification mechanisms.
+
 use std::process::Command;
 
 pub struct DesktopNotifier;

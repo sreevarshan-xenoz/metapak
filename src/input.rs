@@ -1,3 +1,8 @@
+//! Keyboard input handling.
+//!
+//! Processes raw terminal input, maps keys to application actions
+//! based on the current input mode and configurable key bindings.
+
 use crate::app::{App, InputMode};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 

@@ -1,3 +1,8 @@
+//! Pre- and post-operation hook execution.
+//!
+//! Runs configurable shell commands before and after package install,
+//! remove, and update operations.
+
 use crate::config::HooksConfig;
 use serde::{Deserialize, Serialize};
 use std::process::Command;

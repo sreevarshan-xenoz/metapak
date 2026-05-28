@@ -1,3 +1,8 @@
+//! System diagnostics collection.
+//!
+//! Gathers system health information: package manager status, disk usage,
+//! AUR helper availability, database lock status, and other diagnostics.
+
 use std::fs;
 use std::process::Command;
 
