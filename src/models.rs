@@ -1,3 +1,8 @@
+//! Core data models for package management.
+//!
+//! Defines the primary types: `Package`, `PackageSource`, `OutdatedPackage`,
+//! and related enums used throughout the application.
+
 #[derive(Debug, Clone, Default)]
 pub struct Package {
     pub name: String,

@@ -1,3 +1,9 @@
+//! Custom error types for metapak.
+//!
+//! Defines `AppError` with typed variants for package operations,
+//! configuration errors, IO failures, and external command execution,
+//! using `thiserror` for ergonomic error handling.
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]

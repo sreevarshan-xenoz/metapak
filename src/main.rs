@@ -1,3 +1,8 @@
+//! Application entry point for metapak.
+//!
+//! Parses CLI arguments with clap, initializes terminal and application
+//! state, spawns background tasks, and runs the main event loop.
+
 mod action;
 mod animations;
 mod app;

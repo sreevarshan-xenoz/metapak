@@ -1,3 +1,8 @@
+//! Action types for state communication.
+//!
+//! Defines the `Action` enum used to send messages between background tasks
+//! and the TUI rendering loop, decoupling UI state from backend logic.
+
 use crate::app::{EcosystemKind, ViewMode};
 use crate::models::Package;
 use crate::services::CommandSpec;

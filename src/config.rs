@@ -1,3 +1,9 @@
+//! Configuration loading and management.
+//!
+//! Loads TOML configuration from `~/.config/metapak/config.toml` with
+//! built-in defaults, supporting theme, keyboard, search, hooks, i18n,
+//! notifications, and telemetry settings.
+
 use crate::theme::{ColorDef, Theme};
 use config::{Config, File};
 use serde::Deserialize;
