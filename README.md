@@ -165,6 +165,121 @@ metapak
 5.  **Watch**: The console overlay appears, showing the installation progress.
 6.  **Done**: Press `Esc` to return to the search list.
 
+## Configuration
+
+metapak reads configuration from `~/.config/metapak/config.toml`. A full example with defaults is in `config.example.toml` at the project root.
+
+### Theme
+
+```toml
+[theme]
+preset = "mocha"   # "mocha" (dark), "latte" (light), "dark", "light", or "custom"
+# Color overrides (optional):
+# primary_color = "#89b4fa"
+# secondary_color = "#fab387"
+# accent_color = "#a6e3a1"
+```
+
+Colors can be hex strings, named colors (`blue`, `red`, `green`, etc.), or RGB objects `{ r = 137, g = 180, b = 250 }`.
+
+### AUR Helper
+
+```toml
+[aur]
+helper = "auto"   # "auto", "yay", "paru", or "pacman"
+```
+
+### Keyboard Bindings
+
+All keys are fully customizable under `[keyboard]`. Default bindings:
+
+| Key | Default |
+|-----|---------|
+| `quit` | `"q"` |
+| `search` | `"/"` |
+| `install` | `"enter"` |
+| `toggle_selection` | `"tab"` |
+| `next` | `"j"` |
+| `prev` | `"k"` |
+| `help` | `"?"` |
+| `filter` | `"f"` |
+| `sort` | `"s"` |
+| `diagnostics` | `"h"` |
+| `update` | `"U"` |
+| *(and more — see `config.example.toml` for the full list)* |
+
+### UI
+
+```toml
+[ui]
+items_per_page = 20
+search_debounce_ms = 300
+max_search_history = 50
+max_undo_history = 20
+auto_check_updates = false
+update_check_interval_minutes = 60
+auto_update_on_startup = false
+```
+
+### Search
+
+```toml
+[search]
+cache_ttl_seconds = 300   # How long to cache search results
+```
+
+### Robustness
+
+```toml
+[robustness]
+snapshot_keep_count = 5    # Number of btrfs snapshots to keep
+simulation_backend = "auto" # "auto" or "mock"
+```
+
+### Hooks
+
+Execute custom shell commands before or after package operations:
+
+```toml
+[hooks]
+pre_install = ["echo 'Starting installation...'"]
+post_install = ["echo 'Installation complete!'"]
+pre_remove = []
+post_remove = []
+pre_update = []
+post_update = []
+```
+
+### Internationalization
+
+```toml
+[i18n]
+language = "auto"   # "auto", "en", "es", "fr", "de", "zh", "ja"
+```
+
+When set to `"auto"`, metapak detects the system locale automatically.
+
+### Notifications
+
+```toml
+[notifications]
+enabled = true
+on_install = true
+on_update = true
+on_error = true
+```
+
+### Telemetry
+
+```toml
+[telemetry]
+enabled = true          # Operation logging
+max_log_size_mb = 5     # Max log file size before rotation
+max_log_files = 5       # Number of rotated log files to keep
+```
+
+---
+
 ## 🛠️ Architecture
 
 Built with the **Rust** ecosystem for speed and safety:
