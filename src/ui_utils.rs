@@ -1,3 +1,8 @@
+//! Shared UI rendering utilities.
+//!
+//! Provides reusable layout helpers, widget rendering functions, and
+//! formatting utilities used across the TUI components.
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

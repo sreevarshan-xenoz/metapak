@@ -1,3 +1,8 @@
+//! Health monitoring and circuit breaker.
+//!
+//! Monitors application health, tracks AUR API failures, and provides
+//! circuit breaker protection against cascading service failures.
+
 use crate::errors::Result;
 use std::path::Path;
 use std::time::Duration;

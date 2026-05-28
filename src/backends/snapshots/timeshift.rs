@@ -1,3 +1,8 @@
+//! Timeshift snapshot provider implementation.
+//!
+//! Integrates with Timeshift to create system snapshots before
+//! package operations for rollback safety.
+
 use crate::errors::{AppError, Result};
 use crate::traits::{SnapshotInfo, SnapshotProvider};
 use async_trait::async_trait;

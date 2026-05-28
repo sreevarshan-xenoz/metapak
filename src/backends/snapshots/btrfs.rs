@@ -1,3 +1,8 @@
+//! btrfs snapshot provider implementation.
+//!
+//! Creates and manages btrfs filesystem snapshots before package
+//! operations, with automatic cleanup of old snapshots.
+
 use crate::errors::{AppError, Result};
 use crate::traits::{SnapshotInfo, SnapshotProvider};
 use crate::utils::validate_path;

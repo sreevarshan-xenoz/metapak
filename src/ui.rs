@@ -1,3 +1,9 @@
+//! Main TUI rendering engine.
+//!
+//! Uses Ratatui to render all application views including the package
+//! list, detail panels, diagnostics, help screen, and status bar.
+//! This is the largest module and the primary UI entry point.
+
 #![allow(dead_code)]
 #![allow(unused_imports)]
 use crate::app::{App, FilterOption, InputMode};
