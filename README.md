@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/built_with-Rust-orange.svg)
-![Platform](https://img.shields.io/badge/platform-Arch_Linux-1793d1.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)
 
 **metapak** is a modern, terminal-based user interface for managing packages. It creates a unified experience for searching, installing, and removing packages across system package managers (pacman, apt, dnf, zypper, brew, scoop, apk) and language ecosystems (npm, pip, cargo), all without ever leaving the TUI.
 
@@ -52,9 +52,12 @@
 You can install metapak using the included automated script.
 
 ### Prerequisites
-*   A supported OS (Linux, macOS, Windows)
-*   `rustup` (Rust toolchain) - *Script will attempt to install if missing*
-*   One or more supported package managers (pacman, apt, brew, scoop, dnf, etc.)
+*   **OS**: Linux (any distro), macOS, or Windows
+*   **Rust**: `rustup` — the installer scripts will attempt to install it if missing
+*   **Package Manager**: At least one of the supported backends:
+    *   **Linux**: `pacman`, `apt`, `dnf`, `zypper`, `apk`
+    *   **macOS**: `brew`
+    *   **Windows**: `scoop`
 
 ### Automated Install (One-Liner)
 
@@ -85,6 +88,31 @@ If you prefer to install manually:
     # Copy target/release/metapak to your PATH
     ```
 
+## CLI Usage
+
+```bash
+metapak [OPTIONS] [COMMAND]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-s`, `--search <QUERY>` | Open the TUI with a search query pre-filled |
+| `-h`, `--help` | Print help information |
+| `-V`, `--version` | Print version information |
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `search <query>` | Search for packages (headless, output to stdout) |
+| `check` | Check for available updates |
+| `install <packages...>` | Install one or more packages |
+| `remove <packages...>` | Remove one or more packages |
+
+---
+
 ## 🎮 Usage
 
 Launch the application from your terminal or application launcher:
@@ -93,32 +121,40 @@ Launch the application from your terminal or application launcher:
 metapak
 ```
 
-### Controls
+### Keyboard Controls
 
 | Key | Action |
-| --- | --- |
-| **Input** | |
-| `/` or `i` | Enter **Search Mode** (type generic query) |
-| `Esc` | Exit Search Mode / Cancel Popup / Quit |
-| **Navigation** | |
+|-----|--------|
+| **Search & Navigation** |
+| `/` or `i` | Enter search mode |
+| `Esc` | Exit search mode / cancel popup / go back |
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
-| `n` / `p` | Next / Previous page |
-| **Actions** | |
-| `Tab` | **Toggle Selection** (for batch operations) |
-| `Enter` | **Install/Remove** selected package(s) |
-| **Views** | |
-| `h` | System Diagnostics |
-| `I` | System Information |
-| `O` | Orphan Packages |
-| `P` | Package Sizes (top 30) |
-| `C` | Cache Information |
-| `F` | Foreign Packages (AUR) |
-| `G` | Package Groups |
-| `U` | Updates View |
-| `d` | Package Details |
-| `v` | Dependency Tree |
-| `?` | Help |
+| `n` / `p` | Next / previous page |
+| **Selection & Actions** |
+| `Tab` | Toggle package selection (for batch operations) |
+| `Enter` | Install / remove selected package(s) |
+| `u` | Undo last selection |
+| `r` | Refresh current view |
+| **Views** |
+| `h` | System diagnostics |
+| `I` | System information (CPU, RAM, OS) |
+| `O` | Orphan packages (unrequired) |
+| `P` | Top 30 largest installed packages |
+| `C` | Cache information |
+| `F` | Foreign/AUR packages |
+| `G` | Package groups |
+| `U` | Available updates |
+| `d` | Package details |
+| `v` | Dependency tree visualization |
+| `?` | Help screen |
+| **Filters & Sort** |
+| `f` | Cycle filters: All → Installed → Not Installed → Repo → AUR |
+| `s` | Cycle sort order: Name ↑ → Name ↓ → Source → Size |
+| **Modifiers** |
+| `Shift+U` | System update (upgrade all) |
+| `T` / `Shift+T` | Cycle UI theme (Mocha, Latte, Dark, Light) |
+| `Ctrl+C` | Graceful shutdown |
 | `q` | Quit application |
 
 ### Workflow Example
@@ -128,15 +164,6 @@ metapak
 4.  **Confirm**: Press `Enter`. A popup confirms "Install 2 items?".
 5.  **Watch**: The console overlay appears, showing the installation progress.
 6.  **Done**: Press `Esc` to return to the search list.
-
-### Filter & Sort
-*   `f` - Cycle filters (All → Installed → Not Installed → Repo → AUR)
-*   `s` - Cycle sort (Name ↑ → Name ↓ → Source → Size)
-
-### Keyboard Modifiers
-*   `Shift+U` - System update
-*   `T` or `Shift+T` - Cycle UI Theme
-*   `Ctrl+C` - Graceful shutdown
 
 ## 🛠️ Architecture
 
